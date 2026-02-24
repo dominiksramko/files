@@ -1,30 +1,105 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, isPreviewable } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
-defineProps<{
-  entries: FileEntry[]
-  loading: boolean
-}>()
-
+const props = defineProps<{ entries: FileEntry[]; loading: boolean }>()
 const emit = defineEmits<{
   navigate: [path: string]
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
 }>()
 
-function handleClick(entry: FileEntry) {
-  if (entry.is_dir) {
-    emit('navigate', entry.path)
-  } else if (fileCategory(entry.mime, entry.name) === 'archive') {
-    emit('archivePreview', entry)
-  } else if (isPreviewable(entry.mime)) {
-    emit('preview', entry)
-  } else {
-    window.open(filesApi.downloadUrl(entry.path), '_blank')
+// ── Virtual scroll constants ────────────────────────────────────────────────
+const PADDING = 16   // matches p-4
+const GAP = 12       // matches gap-3
+const META_H = 52    // fixed height of the name+size area below thumbnail
+const OVERSCAN = 2   // extra rows rendered above and below the viewport
+
+// ── Measurements ────────────────────────────────────────────────────────────
+const containerRef = ref<HTMLElement | null>(null)
+const scrollTop = ref(0)
+const vpW = ref(800)
+const vpH = ref(600)
+
+// Match Tailwind breakpoints used in the old grid
+function calcCols(w: number): number {
+  if (w >= 1280) return 6
+  if (w >= 1024) return 5
+  if (w >= 768) return 4
+  if (w >= 640) return 3
+  return 2
+}
+
+// Inner width after padding
+const innerW = computed(() => vpW.value - PADDING * 2)
+const numCols = computed(() => calcCols(innerW.value))
+const itemW = computed(() => (innerW.value - GAP * (numCols.value - 1)) / numCols.value)
+// Square thumbnail + fixed meta area
+const itemH = computed(() => itemW.value + META_H)
+const rowH = computed(() => itemH.value + GAP)
+const numRows = computed(() => Math.ceil(props.entries.length / numCols.value))
+// Total scrollable height (padding top + all rows + padding bottom)
+const totalH = computed(() => PADDING + numRows.value * rowH.value - GAP + PADDING)
+
+// ── Visible slice ────────────────────────────────────────────────────────────
+const visibleItems = computed(() => {
+  const firstRow = Math.max(0, Math.floor((scrollTop.value - PADDING) / rowH.value) - OVERSCAN)
+  const visRowCount = Math.ceil(vpH.value / rowH.value) + OVERSCAN * 2 + 1
+  const lastRow = Math.min(numRows.value, firstRow + visRowCount)
+
+  const items: Array<{
+    entry: FileEntry
+    top: number
+    left: number
+    w: number
+    h: number
+    thumbH: number
+  }> = []
+
+  for (let row = firstRow; row < lastRow; row++) {
+    for (let col = 0; col < numCols.value; col++) {
+      const idx = row * numCols.value + col
+      if (idx >= props.entries.length) break
+      items.push({
+        entry: props.entries[idx]!,
+        top: PADDING + row * rowH.value,
+        left: PADDING + col * (itemW.value + GAP),
+        w: itemW.value,
+        h: itemH.value,
+        thumbH: itemW.value, // square
+      })
+    }
   }
+  return items
+})
+
+// ── DOM plumbing ─────────────────────────────────────────────────────────────
+function onScroll() {
+  scrollTop.value = containerRef.value?.scrollTop ?? 0
+}
+
+let ro: ResizeObserver | null = null
+onMounted(() => {
+  if (!containerRef.value) return
+  vpW.value = containerRef.value.clientWidth
+  vpH.value = containerRef.value.clientHeight
+  ro = new ResizeObserver(() => {
+    vpW.value = containerRef.value!.clientWidth
+    vpH.value = containerRef.value!.clientHeight
+  })
+  ro.observe(containerRef.value)
+})
+onUnmounted(() => ro?.disconnect())
+
+// ── Click handlers ───────────────────────────────────────────────────────────
+function handleClick(entry: FileEntry) {
+  if (entry.is_dir) emit('navigate', entry.path)
+  else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
+  else if (isPreviewable(entry.mime)) emit('preview', entry)
+  else window.open(filesApi.downloadUrl(entry.path), '_blank')
 }
 
 function download(entry: FileEntry, e: Event) {
@@ -32,7 +107,8 @@ function download(entry: FileEntry, e: Event) {
   window.open(filesApi.downloadUrl(entry.path), '_blank')
 }
 
-const categoryBg: Record<string, string> = {
+// ── Category helpers (icon colours) ─────────────────────────────────────────
+const catBg: Record<string, string> = {
   folder: 'bg-yellow-950/60',
   image: 'bg-green-950/60',
   video: 'bg-purple-950/60',
@@ -43,8 +119,7 @@ const categoryBg: Record<string, string> = {
   text: 'bg-zinc-800/60',
   other: 'bg-zinc-800/60',
 }
-
-const categoryIcon: Record<string, string> = {
+const catIcon: Record<string, string> = {
   folder: 'text-yellow-400',
   image: 'text-green-400',
   video: 'text-purple-400',
@@ -79,34 +154,47 @@ const categoryIcon: Record<string, string> = {
     <span class="text-sm">This folder is empty</span>
   </div>
 
-  <!-- Grid -->
+  <!-- Virtual grid -->
   <div
     v-else
-    class="h-full overflow-y-auto p-4"
+    ref="containerRef"
+    class="h-full overflow-y-auto"
+    @scroll.passive="onScroll"
   >
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+    <!-- Spacer sized to the full virtual height -->
+    <div :style="{ height: totalH + 'px', position: 'relative' }">
+      <!-- Only visible cards are in the DOM -->
       <div
-        v-for="entry in entries"
-        :key="entry.path"
-        class="group relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-600 hover:bg-zinc-800/80 transition-all select-none"
-        @click="handleClick(entry)"
+        v-for="item in visibleItems"
+        :key="item.entry.path"
+        :style="{
+          position: 'absolute',
+          top: item.top + 'px',
+          left: item.left + 'px',
+          width: item.w + 'px',
+          height: item.h + 'px',
+          willChange: 'transform',
+        }"
+        class="group bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-600 hover:bg-zinc-800/80 transition-all select-none"
+        @click="handleClick(item.entry)"
       >
-        <!-- Thumbnail area -->
-        <div class="aspect-square w-full overflow-hidden relative">
-
-          <!-- Image thumbnail -->
+        <!-- Thumbnail area (square) -->
+        <div
+          :style="{ height: item.thumbH + 'px' }"
+          class="overflow-hidden relative"
+        >
+          <!-- Image — only loaded when this item is rendered (i.e. in view) -->
           <img
-            v-if="!entry.is_dir && entry.mime.startsWith('image/')"
-            :src="filesApi.streamUrl(entry.path)"
-            :alt="entry.name"
+            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
+            :src="filesApi.streamUrl(item.entry.path)"
+            :alt="item.entry.name"
             class="w-full h-full object-cover"
-            loading="lazy"
           />
 
-          <!-- Video thumbnail (icon-based, no auto-load) -->
+          <!-- Video -->
           <div
-            v-else-if="!entry.is_dir && entry.mime.startsWith('video/')"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['video']]"
+            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/')"
+            class="w-full h-full flex items-center justify-center bg-purple-950/60"
           >
             <svg class="size-12 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -116,8 +204,8 @@ const categoryIcon: Record<string, string> = {
 
           <!-- Audio -->
           <div
-            v-else-if="!entry.is_dir && entry.mime.startsWith('audio/')"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['audio']]"
+            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('audio/')"
+            class="w-full h-full flex items-center justify-center bg-pink-950/60"
           >
             <svg class="size-12 text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -127,8 +215,8 @@ const categoryIcon: Record<string, string> = {
 
           <!-- PDF -->
           <div
-            v-else-if="!entry.is_dir && entry.mime === 'application/pdf'"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['pdf']]"
+            v-else-if="!item.entry.is_dir && item.entry.mime === 'application/pdf'"
+            class="w-full h-full flex items-center justify-center bg-red-950/60"
           >
             <svg class="size-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -138,8 +226,8 @@ const categoryIcon: Record<string, string> = {
 
           <!-- Archive -->
           <div
-            v-else-if="!entry.is_dir && fileCategory(entry.mime, entry.name) === 'archive'"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['archive']]"
+            v-else-if="!item.entry.is_dir && fileCategory(item.entry.mime, item.entry.name) === 'archive'"
+            class="w-full h-full flex items-center justify-center bg-orange-950/60"
           >
             <svg class="size-12 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -149,32 +237,21 @@ const categoryIcon: Record<string, string> = {
 
           <!-- Folder -->
           <div
-            v-else-if="entry.is_dir"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['folder']]"
+            v-else-if="item.entry.is_dir"
+            class="w-full h-full flex items-center justify-center bg-yellow-950/60"
           >
             <svg class="size-14 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
               <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
             </svg>
           </div>
 
-          <!-- Office -->
-          <div
-            v-else-if="fileCategory(entry.mime, entry.name) === 'office'"
-            :class="['w-full h-full flex items-center justify-center', categoryBg['office']]"
-          >
-            <svg class="size-12 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </div>
-
-          <!-- Generic file -->
+          <!-- Generic fallback -->
           <div
             v-else
-            :class="['w-full h-full flex items-center justify-center', categoryBg[fileCategory(entry.mime, entry.name)] ?? categoryBg['other']]"
+            :class="['w-full h-full flex items-center justify-center', catBg[fileCategory(item.entry.mime, item.entry.name)] ?? catBg['other']]"
           >
             <svg
-              :class="['size-12', categoryIcon[fileCategory(entry.mime, entry.name)] ?? categoryIcon['other']]"
+              :class="['size-12', catIcon[fileCategory(item.entry.mime, item.entry.name)] ?? catIcon['other']]"
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
             >
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -184,10 +261,10 @@ const categoryIcon: Record<string, string> = {
 
           <!-- Download button (hover, files only) -->
           <button
-            v-if="!entry.is_dir"
+            v-if="!item.entry.is_dir"
             class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 text-white rounded-lg p-1.5 backdrop-blur-sm"
             title="Download"
-            @click="download(entry, $event)"
+            @click="download(item.entry, $event)"
           >
             <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -196,11 +273,11 @@ const categoryIcon: Record<string, string> = {
           </button>
         </div>
 
-        <!-- Name + meta -->
-        <div class="px-2.5 py-2">
-          <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ entry.name }}</p>
-          <p class="text-xs text-zinc-500 mt-0.5 tabular-nums">
-            {{ entry.is_dir ? 'Folder' : formatSize(entry.size) }}
+        <!-- Name + meta (fixed META_H height) -->
+        <div class="px-2.5 py-2 overflow-hidden">
+          <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
+          <p class="text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
+            {{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}
           </p>
         </div>
       </div>
