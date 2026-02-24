@@ -1,0 +1,64 @@
+import type { FileCategory } from '@/types'
+
+export function formatSize(bytes: number): string {
+  if (bytes === 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
+}
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+export function fileCategory(mime: string, name: string): FileCategory {
+  if (!mime || mime === 'application/octet-stream') {
+    // Fall back to extension
+    const ext = name.split('.').pop()?.toLowerCase() ?? ''
+    const archiveExts = ['zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'rar', '7z', 'zst']
+    if (archiveExts.includes(ext)) return 'archive'
+    return 'other'
+  }
+
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime === 'application/pdf') return 'pdf'
+  if (
+    mime.includes('word') ||
+    mime.includes('excel') ||
+    mime.includes('powerpoint') ||
+    mime.includes('spreadsheet') ||
+    mime.includes('presentation') ||
+    mime.includes('opendocument')
+  )
+    return 'office'
+  if (
+    mime === 'application/zip' ||
+    mime === 'application/x-tar' ||
+    mime === 'application/gzip' ||
+    mime === 'application/x-bzip2' ||
+    mime === 'application/x-xz' ||
+    mime === 'application/x-rar-compressed' ||
+    mime === 'application/x-7z-compressed'
+  )
+    return 'archive'
+  if (mime.startsWith('text/')) return 'text'
+  return 'other'
+}
+
+export function isPreviewable(mime: string): boolean {
+  if (!mime) return false
+  return (
+    mime.startsWith('image/') ||
+    mime.startsWith('video/') ||
+    mime.startsWith('audio/') ||
+    mime === 'application/pdf'
+  )
+}

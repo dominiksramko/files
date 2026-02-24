@@ -1,0 +1,170 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import type { FileEntry } from '@/types'
+import { fileCategory, formatSize, formatDate, isPreviewable } from '@/utils/formatters'
+import { files as filesApi } from '@/utils/api'
+import FileIcon from './FileIcon.vue'
+import AppSpinner from '@/components/ui/AppSpinner.vue'
+
+const props = defineProps<{
+  entries: FileEntry[]
+  loading: boolean
+  currentPath: string
+}>()
+
+const emit = defineEmits<{
+  navigate: [path: string]
+  preview: [entry: FileEntry]
+  archivePreview: [entry: FileEntry]
+}>()
+
+type SortKey = 'name' | 'size' | 'mod_time'
+const sortKey = ref<SortKey>('name')
+const sortDesc = ref(false)
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortDesc.value = !sortDesc.value
+  } else {
+    sortKey.value = key
+    sortDesc.value = false
+  }
+}
+
+const sorted = computed(() => {
+  const arr = [...props.entries]
+  arr.sort((a, b) => {
+    // Folders always first
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+
+    let cmp = 0
+    if (sortKey.value === 'name') cmp = a.name.localeCompare(b.name)
+    else if (sortKey.value === 'size') cmp = a.size - b.size
+    else cmp = new Date(a.mod_time).getTime() - new Date(b.mod_time).getTime()
+
+    return sortDesc.value ? -cmp : cmp
+  })
+  return arr
+})
+
+function handleClick(entry: FileEntry) {
+  if (entry.is_dir) {
+    emit('navigate', entry.path)
+  } else if (fileCategory(entry.mime, entry.name) === 'archive') {
+    emit('archivePreview', entry)
+  } else if (isPreviewable(entry.mime)) {
+    emit('preview', entry)
+  } else {
+    window.open(filesApi.downloadUrl(entry.path), '_blank')
+  }
+}
+
+function download(entry: FileEntry, e: Event) {
+  e.stopPropagation()
+  window.open(filesApi.downloadUrl(entry.path), '_blank')
+}
+</script>
+
+<template>
+  <div class="h-full flex flex-col">
+    <!-- Loading overlay -->
+    <div v-if="loading" class="flex-1 flex items-center justify-center">
+      <AppSpinner size="lg" class="text-blue-500" />
+    </div>
+
+    <!-- Empty state -->
+    <div
+      v-else-if="entries.length === 0"
+      class="flex-1 flex flex-col items-center justify-center gap-2 text-zinc-500"
+    >
+      <svg class="size-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="1"
+          d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
+        />
+      </svg>
+      <span class="text-sm">This folder is empty</span>
+    </div>
+
+    <!-- Table -->
+    <div v-else class="flex-1 overflow-auto">
+      <table class="w-full text-sm">
+        <thead class="sticky top-0 bg-zinc-900 border-b border-zinc-800 z-10">
+          <tr>
+            <th
+              class="text-left px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none"
+              @click="toggleSort('name')"
+            >
+              Name
+              <span v-if="sortKey === 'name'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
+            </th>
+            <th
+              class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-24"
+              @click="toggleSort('size')"
+            >
+              Size
+              <span v-if="sortKey === 'size'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
+            </th>
+            <th
+              class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-44 hidden sm:table-cell"
+              @click="toggleSort('mod_time')"
+            >
+              Modified
+              <span v-if="sortKey === 'mod_time'" class="ml-1 text-xs">{{
+                sortDesc ? '↓' : '↑'
+              }}</span>
+            </th>
+            <th class="w-10 px-2" />
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="entry in sorted"
+            :key="entry.path"
+            class="border-b border-zinc-800/50 hover:bg-zinc-800/50 cursor-pointer group transition-colors"
+            @click="handleClick(entry)"
+          >
+            <td class="px-4 py-2.5">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <FileIcon :mime="entry.mime" :name="entry.name" :is-dir="entry.is_dir" />
+                <span class="truncate text-zinc-100">{{ entry.name }}</span>
+                <!-- Archive badge -->
+                <span
+                  v-if="!entry.is_dir && fileCategory(entry.mime, entry.name) === 'archive'"
+                  class="shrink-0 text-xs bg-orange-950 text-orange-300 border border-orange-900 rounded px-1.5 py-0.5"
+                >
+                  archive
+                </span>
+              </div>
+            </td>
+            <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">
+              {{ entry.is_dir ? '—' : formatSize(entry.size) }}
+            </td>
+            <td class="px-4 py-2.5 text-right text-zinc-500 text-xs hidden sm:table-cell">
+              {{ formatDate(entry.mod_time) }}
+            </td>
+            <td class="px-2 py-2.5">
+              <button
+                v-if="!entry.is_dir"
+                class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
+                title="Download"
+                @click="download(entry, $event)"
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
