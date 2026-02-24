@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { isPreviewable } from '@/utils/formatters'
@@ -10,6 +11,8 @@ import FilePreview from '@/components/files/FilePreview.vue'
 import ArchiveContents from '@/components/archive/ArchiveContents.vue'
 
 const filesStore = useFilesStore()
+const route = useRoute()
+const router = useRouter()
 
 // ── View mode ──────────────────────────────────────────────────────────────
 const viewMode = ref<'grid' | 'list'>(
@@ -76,20 +79,38 @@ function nextPreview() {
   if (previewIndex.value < previewableEntries.value.length - 1) previewIndex.value++
 }
 
+// ── URL-synced navigation ──────────────────────────────────────────────────
+function navigate(path: string) {
+  filesStore.navigate(path)
+  router.replace({ query: path ? { path } : {} })
+}
+
+// Sync store when browser back/forward changes the URL
+watch(
+  () => route.query.path,
+  (qPath) => {
+    const p = (qPath as string) || ''
+    if (p !== filesStore.currentPath) filesStore.navigate(p)
+  },
+)
+
 // ── Archive ────────────────────────────────────────────────────────────────
 function onExtracted() {
   archiveEntry.value = null
   filesStore.refresh()
 }
 
-onMounted(() => filesStore.navigate(''))
+onMounted(() => {
+  const initialPath = (route.query.path as string) || ''
+  filesStore.navigate(initialPath)
+})
 </script>
 
 <template>
   <div class="h-full flex flex-col">
     <!-- Toolbar -->
     <div class="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-3 bg-zinc-900 shrink-0">
-      <FileBreadcrumb :path="filesStore.currentPath" @navigate="filesStore.navigate" />
+      <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
       <div class="flex-1" />
 
       <!-- View toggle -->
@@ -156,7 +177,7 @@ onMounted(() => filesStore.navigate(''))
         v-if="viewMode === 'grid'"
         :entries="sortedEntries"
         :loading="filesStore.loading"
-        @navigate="filesStore.navigate"
+        @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
       />
@@ -167,7 +188,7 @@ onMounted(() => filesStore.navigate(''))
         :current-path="filesStore.currentPath"
         :sort-key="sortKey"
         :sort-desc="sortDesc"
-        @navigate="filesStore.navigate"
+        @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
         @toggle-sort="toggleSort"
