@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate, isPreviewable } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
@@ -7,45 +6,19 @@ import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
 const props = defineProps<{
-  entries: FileEntry[]
+  entries: FileEntry[] // pre-sorted from parent
   loading: boolean
   currentPath: string
+  sortKey: string
+  sortDesc: boolean
 }>()
 
 const emit = defineEmits<{
   navigate: [path: string]
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
+  toggleSort: [key: string]
 }>()
-
-type SortKey = 'name' | 'size' | 'mod_time'
-const sortKey = ref<SortKey>('name')
-const sortDesc = ref(false)
-
-function toggleSort(key: SortKey) {
-  if (sortKey.value === key) {
-    sortDesc.value = !sortDesc.value
-  } else {
-    sortKey.value = key
-    sortDesc.value = false
-  }
-}
-
-const sorted = computed(() => {
-  const arr = [...props.entries]
-  arr.sort((a, b) => {
-    // Folders always first
-    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
-
-    let cmp = 0
-    if (sortKey.value === 'name') cmp = a.name.localeCompare(b.name)
-    else if (sortKey.value === 'size') cmp = a.size - b.size
-    else cmp = new Date(a.mod_time).getTime() - new Date(b.mod_time).getTime()
-
-    return sortDesc.value ? -cmp : cmp
-  })
-  return arr
-})
 
 function handleClick(entry: FileEntry) {
   if (entry.is_dir) {
@@ -95,21 +68,21 @@ function download(entry: FileEntry, e: Event) {
           <tr>
             <th
               class="text-left px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none"
-              @click="toggleSort('name')"
+              @click="emit('toggleSort', 'name')"
             >
               Name
               <span v-if="sortKey === 'name'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
             </th>
             <th
               class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-24"
-              @click="toggleSort('size')"
+              @click="emit('toggleSort', 'size')"
             >
               Size
               <span v-if="sortKey === 'size'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
             </th>
             <th
               class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-44 hidden sm:table-cell"
-              @click="toggleSort('mod_time')"
+              @click="emit('toggleSort', 'mod_time')"
             >
               Modified
               <span v-if="sortKey === 'mod_time'" class="ml-1 text-xs">{{
@@ -121,7 +94,7 @@ function download(entry: FileEntry, e: Event) {
         </thead>
         <tbody>
           <tr
-            v-for="entry in sorted"
+            v-for="entry in entries"
             :key="entry.path"
             class="border-b border-zinc-800/50 hover:bg-zinc-800/50 cursor-pointer group transition-colors"
             @click="handleClick(entry)"
