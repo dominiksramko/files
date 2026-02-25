@@ -3,7 +3,9 @@
     "allow": [
       "Bash(go build ./...)",
       "Bash(/home/dom/git/mix/files/frontend/src/views/FilesView.vue:*)",
-      "Bash(npm run type-check)"
+      "Bash(npm run type-check)",
+      "Bash(npm install marked highlight.js)",
+      "Bash(npx vite build)"
     ]
   }
 }
