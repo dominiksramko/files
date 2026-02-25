@@ -201,76 +201,80 @@ onMounted(() => {
 <template>
   <div class="h-full flex flex-col">
     <!-- Toolbar -->
-    <div class="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-3 bg-zinc-900 shrink-0">
-      <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
+    <div class="px-4 py-2 border-b border-zinc-800 bg-zinc-900 shrink-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+      <!-- Row 1: breadcrumbs -->
+      <div class="flex-1 min-w-0">
+        <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
+      </div>
 
-      <div class="flex-1" />
+      <!-- Row 2 on mobile / inline on desktop: action buttons -->
+      <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+        <!-- View toggle -->
+        <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5">
+          <button
+            :class="[
+              'p-1.5 rounded-md transition-colors',
+              viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
+            ]"
+            title="Grid view"
+            @click="setView('grid')"
+          >
+            <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M4 4h6v6H4V4zm0 10h6v6H4v-6zm10-10h6v6h-6V4zm0 10h6v6h-6v-6z" />
+            </svg>
+          </button>
+          <button
+            :class="[
+              'p-1.5 rounded-md transition-colors',
+              viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
+            ]"
+            title="List view"
+            @click="setView('list')"
+          >
+            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 6h16M4 10h16M4 14h16M4 18h16"
+              />
+            </svg>
+          </button>
+        </div>
 
-      <!-- View toggle -->
-      <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5">
+        <!-- Show/hide hidden files -->
         <button
           :class="[
-            'p-1.5 rounded-md transition-colors',
-            viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
+            'transition-colors p-1.5 rounded hover:bg-zinc-800',
+            showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white',
           ]"
-          title="Grid view"
-          @click="setView('grid')"
+          :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
+          @click="toggleHidden"
         >
-          <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M4 4h6v6H4V4zm0 10h6v6H4v-6zm10-10h6v6h-6V4zm0 10h6v6h-6v-6z" />
+          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
           </svg>
         </button>
+
+        <!-- Refresh -->
         <button
-          :class="[
-            'p-1.5 rounded-md transition-colors',
-            viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
-          ]"
-          title="List view"
-          @click="setView('list')"
+          class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded hover:bg-zinc-800"
+          title="Refresh"
+          @click="filesStore.refresh()"
         >
           <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
-              d="M4 6h16M4 10h16M4 14h16M4 18h16"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
             />
           </svg>
         </button>
       </div>
-
-      <!-- Show/hide hidden files -->
-      <button
-        :class="[
-          'transition-colors p-1.5 rounded hover:bg-zinc-800',
-          showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white',
-        ]"
-        :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
-        @click="toggleHidden"
-      >
-        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-      </button>
-
-      <!-- Refresh -->
-      <button
-        class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded hover:bg-zinc-800"
-        title="Refresh"
-        @click="filesStore.refresh()"
-      >
-        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-          />
-        </svg>
-      </button>
     </div>
 
     <!-- Error banner -->
