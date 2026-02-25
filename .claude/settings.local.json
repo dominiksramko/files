@@ -5,7 +5,9 @@
       "Bash(/home/dom/git/mix/files/frontend/src/views/FilesView.vue:*)",
       "Bash(npm run type-check)",
       "Bash(npm install marked highlight.js)",
-      "Bash(npx vite build)"
+      "Bash(npx vite build)",
+      "Bash(npx vue-tsc --noEmit)",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

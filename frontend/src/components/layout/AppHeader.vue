@@ -1,13 +1,57 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 const menuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
 
+// ── Search ──────────────────────────────────────────────────────────────────
+const isFilesPage = computed(() => route.name === 'files')
+const searchInput = ref('')
+const searchExpanded = ref(false) // mobile expand state
+const mobileInputRef = ref<HTMLInputElement | null>(null)
+
+// Sync input from URL (handles back/forward navigation)
+watch(
+  () => route.query.q,
+  (q) => {
+    const val = (q as string) ?? ''
+    if (searchInput.value !== val) searchInput.value = val
+  },
+  { immediate: true },
+)
+
+// Auto-focus input when mobile search expands
+watch(searchExpanded, (val) => {
+  if (val) nextTick(() => mobileInputRef.value?.focus())
+})
+
+function onSearchInput() {
+  const current = (route.query.q as string) ?? ''
+  if (current !== searchInput.value) {
+    router.replace({ query: { ...route.query, q: searchInput.value || undefined } })
+  }
+}
+
+function openSearch() {
+  searchExpanded.value = true
+}
+
+function closeSearch() {
+  searchExpanded.value = false
+}
+
+function clearSearch() {
+  searchInput.value = ''
+  searchExpanded.value = false
+  router.replace({ query: { ...route.query, q: undefined } })
+}
+
+// ── User menu ───────────────────────────────────────────────────────────────
 function logout() {
   menuOpen.value = false
   auth.logout()
@@ -25,16 +69,57 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 </script>
 
 <template>
-  <header class="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center px-4 gap-4 shrink-0">
+  <header class="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center px-4 gap-4 shrink-0 relative">
     <!-- Logo -->
-    <RouterLink to="/" class="flex items-center gap-2 font-semibold text-white text-sm">
+    <RouterLink to="/" class="flex items-center gap-2 font-semibold text-white text-sm shrink-0">
       <svg class="size-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
         <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
       </svg>
       files
     </RouterLink>
 
+    <!-- Desktop search (files page only, sm+) -->
+    <div v-if="isFilesPage" class="hidden sm:flex flex-1 relative max-w-sm">
+      <svg
+        class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
+        fill="none" viewBox="0 0 24 24" stroke="currentColor"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+      </svg>
+      <input
+        v-model="searchInput"
+        type="text"
+        placeholder="Search files…"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg pl-8 pr-7 py-1.5 border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+        @input="onSearchInput"
+        @keydown.escape="clearSearch"
+      />
+      <button
+        v-if="searchInput"
+        class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+        @click="clearSearch"
+      >
+        <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
     <div class="flex-1" />
+
+    <!-- Mobile search icon (files page only, before nav) -->
+    <button
+      v-if="isFilesPage"
+      class="sm:hidden p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+      title="Search"
+      @click="openSearch"
+    >
+      <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+      </svg>
+    </button>
 
     <!-- Nav -->
     <nav class="flex items-center gap-1">
@@ -118,6 +203,48 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
         </div>
       </Transition>
     </div>
+
+    <!-- Mobile expanded search overlay (covers header) -->
+    <Transition name="search-expand">
+      <div
+        v-if="isFilesPage && searchExpanded"
+        class="sm:hidden absolute inset-0 bg-zinc-900 flex items-center px-4 gap-3 z-20"
+      >
+        <div class="relative flex-1">
+          <svg
+            class="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-zinc-500 pointer-events-none"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+          </svg>
+          <input
+            ref="mobileInputRef"
+            v-model="searchInput"
+            type="text"
+            placeholder="Search files…"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg pl-9 pr-8 py-2 border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+            @input="onSearchInput"
+            @keydown.escape="closeSearch"
+          />
+          <button
+            v-if="searchInput"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            @click="clearSearch"
+          >
+            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <button
+          class="text-sm text-zinc-400 hover:text-white transition-colors shrink-0"
+          @click="closeSearch"
+        >
+          Cancel
+        </button>
+      </div>
+    </Transition>
   </header>
 </template>
 
@@ -132,5 +259,14 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
 .dropdown-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+
+.search-expand-enter-active,
+.search-expand-leave-active {
+  transition: opacity 0.15s ease;
+}
+.search-expand-enter-from,
+.search-expand-leave-to {
+  opacity: 0;
 }
 </style>

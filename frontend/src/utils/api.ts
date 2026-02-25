@@ -57,6 +57,9 @@ export const auth = {
 export const files = {
   list: (path = '') => request<FileEntry[]>('GET', `/files/list${qs({ path })}`),
 
+  search: (q: string, path = '') =>
+    request<FileEntry[]>('GET', `/files/search${qs({ q, ...(path ? { path } : {}) })}`),
+
   downloadUrl: (path: string) =>
     `${BASE}/files/download?path=${encodeURIComponent(path)}&token=${token()}`,
 

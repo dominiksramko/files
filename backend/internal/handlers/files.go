@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -115,6 +116,58 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 	}
 
 	c.File(abs) // Gin handles Range headers automatically
+}
+
+// GET /api/v1/files/search?q=query&path=optional_subfolder
+func (h *FilesHandler) Search(c *gin.Context) {
+	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
+	basePath := c.Query("path")
+	root := userRoot(c)
+
+	if query == "" {
+		c.JSON(http.StatusOK, []FileEntry{})
+		return
+	}
+
+	abs, err := safePath(root, basePath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	const maxResults = 200
+	results := make([]FileEntry, 0, 32)
+
+	_ = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || path == abs {
+			return nil
+		}
+		if len(results) >= maxResults {
+			return filepath.SkipAll
+		}
+		if strings.Contains(strings.ToLower(d.Name()), query) {
+			info, ierr := d.Info()
+			if ierr != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(root, path)
+			mime := ""
+			if !d.IsDir() {
+				mime = mimeByExt(filepath.Ext(d.Name()))
+			}
+			results = append(results, FileEntry{
+				Name:    d.Name(),
+				Path:    rel,
+				IsDir:   d.IsDir(),
+				Size:    info.Size(),
+				ModTime: info.ModTime(),
+				Mime:    mime,
+			})
+		}
+		return nil
+	})
+
+	c.JSON(http.StatusOK, results)
 }
 
 // helpers

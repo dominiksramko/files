@@ -57,6 +57,7 @@ func main() {
 
 			// Files
 			authed.GET("/files/list", filesH.List)
+			authed.GET("/files/search", filesH.Search)
 			authed.GET("/files/download", filesH.Download)
 			authed.GET("/files/stream", filesH.Stream)
 			authed.GET("/files/archive", archiveH.Contents)

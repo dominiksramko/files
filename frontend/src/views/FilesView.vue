@@ -4,9 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory } from '@/utils/formatters'
+import { files as filesApi } from '@/utils/api'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
+import FileSearch from '@/components/files/FileSearch.vue'
 import FilePreview from '@/components/files/FilePreview.vue'
 import ArchiveContents from '@/components/archive/ArchiveContents.vue'
 
@@ -28,6 +30,42 @@ const showHidden = ref(localStorage.getItem('showHidden') === 'true')
 function toggleHidden() {
   showHidden.value = !showHidden.value
   localStorage.setItem('showHidden', String(showHidden.value))
+}
+
+// ── Search ──────────────────────────────────────────────────────────────────
+const searchQuery = ref('')
+const searchResults = ref<FileEntry[]>([])
+const searchLoading = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchQuery, (query) => {
+  // Sync URL (guard against circular updates with the route watcher)
+  if (((route.query.q as string) ?? '') !== query) {
+    router.replace({ query: routeQuery() })
+  }
+
+  // Debounce API call
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!query.trim()) {
+    searchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  searchLoading.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      searchResults.value = await filesApi.search(query.trim())
+    } catch {
+      searchResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }, 300)
+})
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
 }
 
 // ── Sort state (shared between both views) ─────────────────────────────────
@@ -65,10 +103,12 @@ const visibleEntries = computed(() =>
 const previewIndex = ref(-1)
 const archiveEntry = ref<FileEntry | null>(null)
 
-// All non-folder, non-archive files — archives have their own modal
-const previewableEntries = computed(() =>
-  visibleEntries.value.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive'),
-)
+// All non-folder, non-archive files available for preview/arrow navigation.
+// When a search is active use search results as the pool.
+const previewableEntries = computed(() => {
+  const pool = searchQuery.value ? searchResults.value : visibleEntries.value
+  return pool.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive')
+})
 
 const previewEntry = computed<FileEntry | null>(
   () => previewableEntries.value[previewIndex.value] ?? null,
@@ -95,6 +135,7 @@ function nextPreview() {
 function routeQuery() {
   const q: Record<string, string> = {}
   if (filesStore.currentPath) q.path = filesStore.currentPath
+  if (searchQuery.value) q.q = searchQuery.value
   if (previewEntry.value) q.preview = previewEntry.value.path
   return q
 }
@@ -112,13 +153,17 @@ watch(previewEntry, (entry) => {
   router.replace({ query: routeQuery() })
 })
 
-// Sync store when browser back/forward changes path or preview
+// Sync store when browser back/forward changes path, search, or preview
 watch(
   () => route.query,
   (q) => {
     // Folder path
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) filesStore.navigate(p)
+
+    // Search query
+    const qParam = (q.q as string) ?? ''
+    if (searchQuery.value !== qParam) searchQuery.value = qParam
 
     // Preview file
     const previewPath = q.preview as string | undefined
@@ -149,6 +194,7 @@ function onExtracted() {
 onMounted(() => {
   const initialPath = (route.query.path as string) || ''
   filesStore.navigate(initialPath)
+  if (route.query.q) searchQuery.value = route.query.q as string
 })
 </script>
 
@@ -157,6 +203,7 @@ onMounted(() => {
     <!-- Toolbar -->
     <div class="px-4 py-2.5 border-b border-zinc-800 flex items-center gap-3 bg-zinc-900 shrink-0">
       <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
+
       <div class="flex-1" />
 
       <!-- View toggle -->
@@ -236,8 +283,19 @@ onMounted(() => {
 
     <!-- Content -->
     <div class="flex-1 overflow-hidden">
+      <!-- Search results (overrides grid/list when query is active) -->
+      <FileSearch
+        v-if="searchQuery"
+        :entries="searchResults"
+        :loading="searchLoading"
+        :query="searchQuery"
+        @navigate="(p) => { navigate(p); clearSearch() }"
+        @preview="openPreview"
+        @archive-preview="archiveEntry = $event"
+      />
+
       <FileGrid
-        v-if="viewMode === 'grid'"
+        v-else-if="viewMode === 'grid'"
         :entries="visibleEntries"
         :loading="filesStore.loading"
         @navigate="navigate"
