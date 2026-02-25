@@ -76,6 +76,15 @@ export const files = {
     request<{ message: string }>('POST', '/files/extract', { path, dest, password }),
 }
 
+// --- Folders ---
+export const folders = {
+  getPref: (path: string) =>
+    request<{ view_mode: 'grid' | 'list' }>('GET', `/folders/pref${qs({ path })}`),
+
+  setPref: (path: string, view_mode: 'grid' | 'list') =>
+    request<{ view_mode: 'grid' | 'list' }>('PUT', '/folders/pref', { path, view_mode }),
+}
+
 // --- Users ---
 export const users = {
   list: () => request<User[]>('GET', '/users'),

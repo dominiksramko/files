@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory } from '@/utils/formatters'
-import { files as filesApi } from '@/utils/api'
+import { files as filesApi, folders as foldersApi } from '@/utils/api'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
@@ -16,13 +16,30 @@ const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
 
-// ── View mode ──────────────────────────────────────────────────────────────
-const viewMode = ref<'grid' | 'list'>(
-  (localStorage.getItem('viewMode') as 'grid' | 'list') ?? 'grid',
-)
-function setView(mode: 'grid' | 'list') {
+// ── View mode (per-folder, stored on server) ────────────────────────────────
+const viewMode = ref<'grid' | 'list'>('list')
+const prefLoading = ref(false)
+
+async function fetchFolderPref(path: string) {
+  prefLoading.value = true
+  try {
+    const { view_mode } = await foldersApi.getPref(path)
+    // Guard against stale responses if the user navigated away before this resolved
+    if (filesStore.currentPath === path) viewMode.value = view_mode
+  } catch {
+    // keep current viewMode on error
+  } finally {
+    prefLoading.value = false
+  }
+}
+
+async function setView(mode: 'grid' | 'list') {
   viewMode.value = mode
-  localStorage.setItem('viewMode', mode)
+  try {
+    await foldersApi.setPref(filesStore.currentPath, mode)
+  } catch {
+    // ignore — pref will re-auto-detect on next visit
+  }
 }
 
 // ── Hidden files ────────────────────────────────────────────────────────────
@@ -142,6 +159,7 @@ function routeQuery() {
 
 function navigate(path: string) {
   filesStore.navigate(path)
+  fetchFolderPref(path)
   // push so browser back/forward works between folders
   router.push({ query: path ? { path } : {} })
 }
@@ -159,7 +177,10 @@ watch(
   (q) => {
     // Folder path
     const p = (q.path as string) || ''
-    if (p !== filesStore.currentPath) filesStore.navigate(p)
+    if (p !== filesStore.currentPath) {
+      filesStore.navigate(p)
+      fetchFolderPref(p)
+    }
 
     // Search query
     const qParam = (q.q as string) ?? ''
@@ -194,6 +215,7 @@ function onExtracted() {
 onMounted(() => {
   const initialPath = (route.query.path as string) || ''
   filesStore.navigate(initialPath)
+  fetchFolderPref(initialPath)
   if (route.query.q) searchQuery.value = route.query.q as string
 })
 </script>
@@ -301,7 +323,7 @@ onMounted(() => {
       <FileGrid
         v-else-if="viewMode === 'grid'"
         :entries="visibleEntries"
-        :loading="filesStore.loading"
+        :loading="filesStore.loading || prefLoading"
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
@@ -309,7 +331,7 @@ onMounted(() => {
       <FileList
         v-else
         :entries="visibleEntries"
-        :loading="filesStore.loading"
+        :loading="filesStore.loading || prefLoading"
         :current-path="filesStore.currentPath"
         :sort-key="sortKey"
         :sort-desc="sortDesc"

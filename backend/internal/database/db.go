@@ -38,6 +38,15 @@ func migrate(db *sql.DB) error {
 			root_dir TEXT    NOT NULL DEFAULT '',
 			is_admin INTEGER NOT NULL DEFAULT 0
 		);
+
+		CREATE TABLE IF NOT EXISTS folder_prefs (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id   INTEGER NOT NULL,
+			path      TEXT    NOT NULL DEFAULT '',
+			view_mode TEXT    NOT NULL DEFAULT 'list',
+			UNIQUE(user_id, path),
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		);
 	`)
 	if err != nil {
 		return err

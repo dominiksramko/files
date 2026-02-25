@@ -38,6 +38,7 @@ func main() {
 	authH := handlers.NewAuthHandler(db, cfg.JWTSecret)
 	filesH := handlers.NewFilesHandler()
 	archiveH := handlers.NewArchiveHandler()
+	foldersH := handlers.NewFoldersHandler(db)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 
 	// Auth middleware (applied per group)
@@ -62,6 +63,10 @@ func main() {
 			authed.GET("/files/stream", filesH.Stream)
 			authed.GET("/files/archive", archiveH.Contents)
 			authed.POST("/files/extract", archiveH.Extract)
+
+			// Folder preferences
+			authed.GET("/folders/pref", foldersH.GetPref)
+			authed.PUT("/folders/pref", foldersH.SetPref)
 
 			// Admin only
 			admin := authed.Group("", adminOnly)
