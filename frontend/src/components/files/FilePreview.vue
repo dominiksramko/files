@@ -286,7 +286,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             </div>
 
             <!-- No preview — file info + download card -->
-            <div v-else class="flex flex-col items-center gap-6 p-8 max-w-sm w-full" @click.stop>
+            <div v-else class="flex flex-col items-center gap-6 p-8 w-full" @click.stop>
               <div :class="['size-24 rounded-2xl flex items-center justify-center', catStyle.bg]">
                 <svg
                   :class="['size-12', catStyle.icon]"
