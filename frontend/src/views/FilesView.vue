@@ -142,8 +142,8 @@ function routeQuery() {
 
 function navigate(path: string) {
   filesStore.navigate(path)
-  // Navigating to a new folder closes any open preview
-  router.replace({ query: path ? { path } : {} })
+  // push so browser back/forward works between folders
+  router.push({ query: path ? { path } : {} })
 }
 
 // Sync URL when preview opens / changes / closes
