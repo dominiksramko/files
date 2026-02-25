@@ -81,19 +81,53 @@ function nextPreview() {
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
+function routeQuery() {
+  const q: Record<string, string> = {}
+  if (filesStore.currentPath) q.path = filesStore.currentPath
+  if (previewEntry.value) q.preview = previewEntry.value.path
+  return q
+}
+
 function navigate(path: string) {
   filesStore.navigate(path)
+  // Navigating to a new folder closes any open preview
   router.replace({ query: path ? { path } : {} })
 }
 
-// Sync store when browser back/forward changes the URL
+// Sync URL when preview opens / changes / closes
+watch(previewEntry, (entry) => {
+  const currentPreview = route.query.preview as string | undefined
+  if (entry?.path === currentPreview) return
+  router.replace({ query: routeQuery() })
+})
+
+// Sync store when browser back/forward changes path or preview
 watch(
-  () => route.query.path,
-  (qPath) => {
-    const p = (qPath as string) || ''
+  () => route.query,
+  (q) => {
+    // Folder path
+    const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) filesStore.navigate(p)
+
+    // Preview file
+    const previewPath = q.preview as string | undefined
+    if (previewEntry.value?.path === previewPath) return
+    if (!previewPath) {
+      previewIndex.value = -1
+      return
+    }
+    const idx = previewableEntries.value.findIndex((e) => e.path === previewPath)
+    previewIndex.value = idx >= 0 ? idx : -1
   },
 )
+
+// When entries finish loading, restore preview from URL (e.g. on page refresh)
+watch(previewableEntries, (entries) => {
+  const previewPath = route.query.preview as string | undefined
+  if (!previewPath || previewIndex.value >= 0) return
+  const idx = entries.findIndex((e) => e.path === previewPath)
+  previewIndex.value = idx
+})
 
 // ── Archive ────────────────────────────────────────────────────────────────
 function onExtracted() {
