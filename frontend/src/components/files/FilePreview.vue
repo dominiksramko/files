@@ -135,10 +135,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       <div
         v-if="entry"
         class="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm"
-        @click.self="emit('close')"
+        @click="emit('close')"
       >
         <!-- Top bar -->
-        <div class="flex items-center justify-between px-4 py-3 shrink-0">
+        <div class="flex items-center justify-between px-4 py-3 shrink-0" @click.stop>
           <span class="text-sm text-white font-medium truncate max-w-xs">{{ entry.name }}</span>
           <div class="flex items-center gap-3 shrink-0 ml-4">
             <span class="text-xs text-zinc-400 tabular-nums">{{ index + 1 }} / {{ total }}</span>
@@ -176,7 +176,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
             ]"
-            @click="emit('prev')"
+            @click.stop="emit('prev')"
           >
             <svg class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -195,6 +195,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               class="max-w-full max-h-full object-contain rounded-lg select-none"
               style="max-height: calc(100vh - 120px)"
               draggable="false"
+              @click.stop
             />
 
             <!-- Video -->
@@ -206,10 +207,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               class="max-w-full rounded-lg"
               style="max-height: calc(100vh - 120px)"
               preload="metadata"
+              @click.stop
             />
 
             <!-- Audio -->
-            <div v-else-if="isAudio" class="w-full max-w-md px-6">
+            <div v-else-if="isAudio" class="w-full max-w-md px-6" @click.stop>
               <div class="flex items-center gap-5 mb-6">
                 <div class="size-20 rounded-2xl bg-pink-950/60 flex items-center justify-center shrink-0">
                   <svg class="size-10 text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -236,6 +238,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <div
               v-else-if="isText"
               class="self-stretch flex-1 min-w-0 overflow-auto"
+              @click.stop
             >
               <!-- Loading -->
               <div
@@ -282,7 +285,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             </div>
 
             <!-- No preview — file info + download card -->
-            <div v-else class="flex flex-col items-center gap-6 p-8 max-w-sm w-full">
+            <div v-else class="flex flex-col items-center gap-6 p-8 max-w-sm w-full" @click.stop>
               <div :class="['size-24 rounded-2xl flex items-center justify-center', catStyle.bg]">
                 <svg
                   :class="['size-12', catStyle.icon]"
@@ -320,7 +323,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
             ]"
-            @click="emit('next')"
+            @click.stop="emit('next')"
           >
             <svg class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
