@@ -237,7 +237,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <!-- Text / Markdown / Code -->
             <div
               v-else-if="isText"
-              class="self-stretch flex-1 min-w-0 overflow-auto"
+              class="flex-1 min-w-0 overflow-y-auto"
+              style="max-height: calc(100vh - 120px)"
               @click.stop
             >
               <!-- Loading -->
