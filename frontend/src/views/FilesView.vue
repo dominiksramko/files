@@ -23,6 +23,13 @@ function setView(mode: 'grid' | 'list') {
   localStorage.setItem('viewMode', mode)
 }
 
+// ── Hidden files ────────────────────────────────────────────────────────────
+const showHidden = ref(localStorage.getItem('showHidden') === 'true')
+function toggleHidden() {
+  showHidden.value = !showHidden.value
+  localStorage.setItem('showHidden', String(showHidden.value))
+}
+
 // ── Sort state (shared between both views) ─────────────────────────────────
 type SortKey = 'name' | 'size' | 'mod_time'
 const sortKey = ref<SortKey>('name')
@@ -50,13 +57,17 @@ const sortedEntries = computed(() => {
   return arr
 })
 
+const visibleEntries = computed(() =>
+  showHidden.value ? sortedEntries.value : sortedEntries.value.filter((e) => !e.name.startsWith('.')),
+)
+
 // ── Preview navigation ─────────────────────────────────────────────────────
 const previewIndex = ref(-1)
 const archiveEntry = ref<FileEntry | null>(null)
 
 // All non-folder, non-archive files — archives have their own modal
 const previewableEntries = computed(() =>
-  sortedEntries.value.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive'),
+  visibleEntries.value.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive'),
 )
 
 const previewEntry = computed<FileEntry | null>(
@@ -181,6 +192,23 @@ onMounted(() => {
         </button>
       </div>
 
+      <!-- Show/hide hidden files -->
+      <button
+        :class="[
+          'transition-colors p-1.5 rounded hover:bg-zinc-800',
+          showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white',
+        ]"
+        :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
+        @click="toggleHidden"
+      >
+        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </svg>
+      </button>
+
       <!-- Refresh -->
       <button
         class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded hover:bg-zinc-800"
@@ -210,7 +238,7 @@ onMounted(() => {
     <div class="flex-1 overflow-hidden">
       <FileGrid
         v-if="viewMode === 'grid'"
-        :entries="sortedEntries"
+        :entries="visibleEntries"
         :loading="filesStore.loading"
         @navigate="navigate"
         @preview="openPreview"
@@ -218,7 +246,7 @@ onMounted(() => {
       />
       <FileList
         v-else
-        :entries="sortedEntries"
+        :entries="visibleEntries"
         :loading="filesStore.loading"
         :current-path="filesStore.currentPath"
         :sort-key="sortKey"
