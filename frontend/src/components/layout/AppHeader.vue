@@ -79,7 +79,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
     </RouterLink>
 
     <!-- Desktop search (files page only, sm+) -->
-    <div v-if="isFilesPage" class="hidden sm:flex flex-1 relative max-w-sm">
+    <div v-if="isFilesPage" class="hidden sm:flex flex-1 relative max-w-md">
       <svg
         class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
         fill="none" viewBox="0 0 24 24" stroke="currentColor"
@@ -121,26 +121,6 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
       </svg>
     </button>
 
-    <!-- Nav -->
-    <nav class="flex items-center gap-1">
-      <RouterLink
-        to="/"
-        class="px-3 py-1.5 text-sm rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-800"
-        active-class="!text-white !bg-zinc-800"
-        exact-active-class="!text-white !bg-zinc-800"
-      >
-        Browse
-      </RouterLink>
-      <RouterLink
-        v-if="auth.isAdmin"
-        to="/admin"
-        class="px-3 py-1.5 text-sm rounded-lg transition-colors text-zinc-400 hover:text-white hover:bg-zinc-800"
-        active-class="!text-white !bg-zinc-800"
-      >
-        Admin
-      </RouterLink>
-    </nav>
-
     <!-- User menu -->
     <div ref="menuRef" class="relative">
       <button
@@ -164,6 +144,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
           v-if="menuOpen"
           class="absolute right-0 top-full mt-1 w-44 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-40 py-1"
         >
+          <!-- Settings -->
           <RouterLink
             to="/settings"
             class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
@@ -186,6 +167,31 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
             Settings
           </RouterLink>
           <hr class="border-zinc-700 my-1" />
+          <!-- Admin -->
+          <template v-if="auth.isAdmin">
+            <RouterLink
+              to="/admin"
+              class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
+              @click="menuOpen = false"
+            >
+              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              Admin
+            </RouterLink>
+            <hr class="border-zinc-700 my-1" />
+          </template>
           <button
             class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors"
             @click="logout"
