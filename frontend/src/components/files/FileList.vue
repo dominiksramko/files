@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, formatDate, isPreviewable } from '@/utils/formatters'
+import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -25,10 +25,8 @@ function handleClick(entry: FileEntry) {
     emit('navigate', entry.path)
   } else if (fileCategory(entry.mime, entry.name) === 'archive') {
     emit('archivePreview', entry)
-  } else if (isPreviewable(entry.mime)) {
-    emit('preview', entry)
   } else {
-    window.open(filesApi.downloadUrl(entry.path), '_blank')
+    emit('preview', entry)
   }
 }
 

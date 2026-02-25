@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
-import { isPreviewable } from '@/utils/formatters'
+import { fileCategory } from '@/utils/formatters'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
@@ -54,8 +54,9 @@ const sortedEntries = computed(() => {
 const previewIndex = ref(-1)
 const archiveEntry = ref<FileEntry | null>(null)
 
+// All non-folder, non-archive files — archives have their own modal
 const previewableEntries = computed(() =>
-  sortedEntries.value.filter((e) => !e.is_dir && isPreviewable(e.mime)),
+  sortedEntries.value.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive'),
 )
 
 const previewEntry = computed<FileEntry | null>(

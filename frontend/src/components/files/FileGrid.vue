@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, isPreviewable } from '@/utils/formatters'
+import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
@@ -98,8 +98,7 @@ onUnmounted(() => ro?.disconnect())
 function handleClick(entry: FileEntry) {
   if (entry.is_dir) emit('navigate', entry.path)
   else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
-  else if (isPreviewable(entry.mime)) emit('preview', entry)
-  else window.open(filesApi.downloadUrl(entry.path), '_blank')
+  else emit('preview', entry)
 }
 
 function download(entry: FileEntry, e: Event) {
