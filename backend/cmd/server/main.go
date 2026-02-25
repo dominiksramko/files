@@ -39,6 +39,7 @@ func main() {
 	filesH := handlers.NewFilesHandler()
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
+	opsH := handlers.NewFileOpsHandler()
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 
 	// Auth middleware (applied per group)
@@ -63,6 +64,10 @@ func main() {
 			authed.GET("/files/stream", filesH.Stream)
 			authed.GET("/files/archive", archiveH.Contents)
 			authed.POST("/files/extract", archiveH.Extract)
+			authed.DELETE("/files", opsH.Delete)
+			authed.POST("/files/copy", opsH.Copy)
+			authed.POST("/files/move", opsH.Move)
+			authed.POST("/files/upload", opsH.Upload)
 
 			// Folder preferences
 			authed.GET("/folders/pref", foldersH.GetPref)

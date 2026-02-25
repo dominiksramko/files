@@ -5,11 +5,12 @@ import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
-const props = defineProps<{ entries: FileEntry[]; loading: boolean }>()
+const props = defineProps<{ entries: FileEntry[]; loading: boolean; selected: string[] }>()
 const emit = defineEmits<{
   navigate: [path: string]
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
+  toggleSelect: [path: string]
 }>()
 
 // ── Virtual scroll constants ────────────────────────────────────────────────
@@ -100,6 +101,11 @@ watch(() => props.entries, () => {
 
 // ── Click handlers ───────────────────────────────────────────────────────────
 function handleClick(entry: FileEntry) {
+  // If anything is selected, clicks toggle selection
+  if (props.selected.length > 0) {
+    emit('toggleSelect', entry.path)
+    return
+  }
   if (entry.is_dir) emit('navigate', entry.path)
   else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
   else emit('preview', entry)
@@ -178,7 +184,12 @@ const catIcon: Record<string, string> = {
           height: item.h + 'px',
           willChange: 'transform',
         }"
-        class="group bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-600 hover:bg-zinc-800/80 transition-all select-none"
+        :class="[
+          'group border rounded-xl overflow-hidden cursor-pointer transition-all select-none',
+          selected.includes(item.entry.path)
+            ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/40'
+            : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
+        ]"
         @click="handleClick(item.entry)"
       >
         <!-- Thumbnail area (square) -->
@@ -261,6 +272,31 @@ const catIcon: Record<string, string> = {
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
+
+          <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
+          <button
+            class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
+            :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+            :title="selected.includes(item.entry.path) ? 'Deselect' : 'Select'"
+            @click.stop="emit('toggleSelect', item.entry.path)"
+          >
+            <span
+              class="size-5 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+              :class="selected.includes(item.entry.path) ? 'bg-blue-500' : 'bg-black/60'"
+            >
+              <svg
+                class="size-3.5 text-white"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              >
+                <path
+                  v-if="selected.includes(item.entry.path)"
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                  d="M5 13l4 4L19 7"
+                />
+                <circle v-else cx="12" cy="12" r="9" stroke-width="1.5" />
+              </svg>
+            </span>
+          </button>
 
           <!-- Download button (hover, files only) -->
           <button

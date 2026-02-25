@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory } from '@/utils/formatters'
-import { files as filesApi, folders as foldersApi } from '@/utils/api'
+import { files as filesApi, folders as foldersApi, fileops } from '@/utils/api'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
@@ -24,7 +24,6 @@ async function fetchFolderPref(path: string) {
   prefLoading.value = true
   try {
     const { view_mode } = await foldersApi.getPref(path)
-    // Guard against stale responses if the user navigated away before this resolved
     if (filesStore.currentPath === path) viewMode.value = view_mode
   } catch {
     // keep current viewMode on error
@@ -56,12 +55,9 @@ const searchLoading = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(searchQuery, (query) => {
-  // Sync URL (guard against circular updates with the route watcher)
   if (((route.query.q as string) ?? '') !== query) {
     router.replace({ query: routeQuery() })
   }
-
-  // Debounce API call
   if (searchTimer) clearTimeout(searchTimer)
   if (!query.trim()) {
     searchResults.value = []
@@ -85,7 +81,7 @@ function clearSearch() {
   searchResults.value = []
 }
 
-// ── Sort state (shared between both views) ─────────────────────────────────
+// ── Sort state ─────────────────────────────────────────────────────────────
 type SortKey = 'name' | 'size' | 'mod_time'
 const sortKey = ref<SortKey>('name')
 const sortDesc = ref(false)
@@ -120,8 +116,6 @@ const visibleEntries = computed(() =>
 const previewIndex = ref(-1)
 const archiveEntry = ref<FileEntry | null>(null)
 
-// All non-folder, non-archive files available for preview/arrow navigation.
-// When a search is active use search results as the pool.
 const previewableEntries = computed(() => {
   const pool = searchQuery.value ? searchResults.value : visibleEntries.value
   return pool.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive')
@@ -132,18 +126,11 @@ const previewEntry = computed<FileEntry | null>(
 )
 
 function openPreview(entry: FileEntry) {
-  const idx = previewableEntries.value.findIndex((e) => e.path === entry.path)
-  previewIndex.value = idx
+  previewIndex.value = previewableEntries.value.findIndex((e) => e.path === entry.path)
 }
 
-function closePreview() {
-  previewIndex.value = -1
-}
-
-function prevPreview() {
-  if (previewIndex.value > 0) previewIndex.value--
-}
-
+function closePreview() { previewIndex.value = -1 }
+function prevPreview() { if (previewIndex.value > 0) previewIndex.value-- }
 function nextPreview() {
   if (previewIndex.value < previewableEntries.value.length - 1) previewIndex.value++
 }
@@ -160,50 +147,40 @@ function routeQuery() {
 function navigate(path: string) {
   filesStore.navigate(path)
   fetchFolderPref(path)
-  // push so browser back/forward works between folders
+  selectedPaths.value = []
   router.push({ query: path ? { path } : {} })
 }
 
-// Sync URL when preview opens / changes / closes
 watch(previewEntry, (entry) => {
   const currentPreview = route.query.preview as string | undefined
   if (entry?.path === currentPreview) return
   router.replace({ query: routeQuery() })
 })
 
-// Sync store when browser back/forward changes path, search, or preview
 watch(
   () => route.query,
   (q) => {
-    // Folder path
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) {
       filesStore.navigate(p)
       fetchFolderPref(p)
+      selectedPaths.value = []
     }
-
-    // Search query
     const qParam = (q.q as string) ?? ''
     if (searchQuery.value !== qParam) searchQuery.value = qParam
 
-    // Preview file
     const previewPath = q.preview as string | undefined
     if (previewEntry.value?.path === previewPath) return
-    if (!previewPath) {
-      previewIndex.value = -1
-      return
-    }
+    if (!previewPath) { previewIndex.value = -1; return }
     const idx = previewableEntries.value.findIndex((e) => e.path === previewPath)
     previewIndex.value = idx >= 0 ? idx : -1
   },
 )
 
-// When entries finish loading, restore preview from URL (e.g. on page refresh)
 watch(previewableEntries, (entries) => {
   const previewPath = route.query.preview as string | undefined
   if (!previewPath || previewIndex.value >= 0) return
-  const idx = entries.findIndex((e) => e.path === previewPath)
-  previewIndex.value = idx
+  previewIndex.value = entries.findIndex((e) => e.path === previewPath)
 })
 
 // ── Archive ────────────────────────────────────────────────────────────────
@@ -211,6 +188,141 @@ function onExtracted() {
   archiveEntry.value = null
   filesStore.refresh()
 }
+
+// ── Selection ──────────────────────────────────────────────────────────────
+const selectedPaths = ref<string[]>([])
+
+function toggleSelect(path: string) {
+  const idx = selectedPaths.value.indexOf(path)
+  if (idx >= 0) selectedPaths.value.splice(idx, 1)
+  else selectedPaths.value.push(path)
+}
+
+function selectAll() {
+  selectedPaths.value = visibleEntries.value.map((e) => e.path)
+}
+
+function deselectAll() {
+  selectedPaths.value = []
+}
+
+// ── Clipboard ──────────────────────────────────────────────────────────────
+const clipboard = ref<{ mode: 'copy' | 'move'; paths: string[] } | null>(null)
+
+function onCopy() {
+  clipboard.value = { mode: 'copy', paths: [...selectedPaths.value] }
+}
+
+function onMove() {
+  clipboard.value = { mode: 'move', paths: [...selectedPaths.value] }
+  selectedPaths.value = []
+}
+
+async function onPaste() {
+  if (!clipboard.value) return
+  const { mode, paths } = clipboard.value
+  try {
+    if (mode === 'copy') {
+      await fileops.copy(paths, filesStore.currentPath)
+    } else {
+      await fileops.move(paths, filesStore.currentPath)
+    }
+    clipboard.value = null
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
+// ── Delete with inline confirmation ────────────────────────────────────────
+const confirmingDelete = ref(false)
+
+async function onDelete() {
+  if (!confirmingDelete.value) {
+    confirmingDelete.value = true
+    return
+  }
+  confirmingDelete.value = false
+  try {
+    await fileops.delete(selectedPaths.value)
+    selectedPaths.value = []
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
+function cancelDelete() {
+  confirmingDelete.value = false
+}
+
+// Clear delete confirmation if selection changes
+watch(selectedPaths, () => { confirmingDelete.value = false })
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+const uploadInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+
+function openFilePicker() {
+  uploadInput.value?.click()
+}
+
+async function handleFileInput(e: Event) {
+  const files = Array.from((e.target as HTMLInputElement).files ?? [])
+  if (!files.length) return
+  await uploadFiles(files)
+  if (uploadInput.value) uploadInput.value.value = ''
+}
+
+async function uploadFiles(files: File[]) {
+  uploading.value = true
+  try {
+    const res = await fileops.upload(filesStore.currentPath, files)
+    showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  } finally {
+    uploading.value = false
+  }
+}
+
+// ── Drag & Drop ────────────────────────────────────────────────────────────
+const dragCounter = ref(0)
+const isDragging = computed(() => dragCounter.value > 0)
+
+function onDragEnter(e: DragEvent) {
+  if (e.dataTransfer?.types.includes('Files')) dragCounter.value++
+}
+function onDragLeave() {
+  dragCounter.value = Math.max(0, dragCounter.value - 1)
+}
+function onDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes('Files')) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+}
+async function onDrop(e: DragEvent) {
+  e.preventDefault()
+  dragCounter.value = 0
+  const files = Array.from(e.dataTransfer?.files ?? [])
+  if (files.length) await uploadFiles(files)
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+type ToastKind = 'success' | 'error'
+const toast = ref<{ message: string; kind: ToastKind } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, kind: ToastKind) {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = { message, kind }
+  toastTimer = setTimeout(() => { toast.value = null }, 3000)
+}
+
+// ── Computed helpers ──────────────────────────────────────────────────────
+const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard.value !== null)
 
 onMounted(() => {
   const initialPath = (route.query.path as string) || ''
@@ -221,81 +333,194 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
-    <!-- Toolbar -->
-    <div class="px-4 py-2 border-b border-zinc-800 bg-zinc-900 shrink-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-      <!-- Row 1: breadcrumbs -->
-      <div class="flex-1 min-w-0">
+  <div
+    class="h-full flex flex-col"
+    @dragenter="onDragEnter"
+    @dragleave="onDragLeave"
+    @dragover="onDragOver"
+    @drop="onDrop"
+  >
+    <!-- Toolbar: fixed 2-row height — no layout shift when fileops appear -->
+    <div class="border-b border-zinc-800 bg-zinc-900 shrink-0">
+
+      <!-- Row 1: Breadcrumbs -->
+      <div class="px-3 h-9 flex items-center border-b border-zinc-800/50">
         <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
       </div>
 
-      <!-- Row 2 on mobile / inline on desktop: action buttons -->
-      <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
-        <!-- View toggle -->
-        <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5">
-          <button
-            :class="[
-              'p-1.5 rounded-md transition-colors',
-              viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
-            ]"
-            title="Grid view"
-            @click="setView('grid')"
-          >
-            <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M4 4h6v6H4V4zm0 10h6v6H4v-6zm10-10h6v6h-6V4zm0 10h6v6h-6v-6z" />
+      <!-- Row 2: Search/FileOps (left, flex-1) + Action buttons (right, fixed) -->
+      <div class="px-3 h-11 flex items-center gap-2">
+
+        <!-- Left: swaps between search and fileops — same height, no layout shift -->
+        <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+
+          <!-- ── FileOps mode ── -->
+          <template v-if="fileopsActive">
+            <!-- Selection actions -->
+            <template v-if="selectedPaths.length > 0">
+              <!-- Deselect + count -->
+              <button
+                class="flex items-center gap-1.5 text-sm text-zinc-200 hover:text-white shrink-0 pl-0.5 pr-2 py-1 rounded hover:bg-zinc-800 transition-colors"
+                title="Clear selection"
+                @click="deselectAll"
+              >
+                <svg class="size-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                {{ selectedPaths.length }} selected
+              </button>
+
+              <div class="w-px h-4 bg-zinc-700 mx-0.5 shrink-0" />
+
+              <button
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                @click="onCopy"
+              >Copy</button>
+
+              <button
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                @click="onMove"
+              >Move</button>
+
+              <!-- Delete with inline confirmation -->
+              <template v-if="confirmingDelete">
+                <span class="text-xs text-red-400 shrink-0">Delete {{ selectedPaths.length }} item{{ selectedPaths.length !== 1 ? 's' : '' }}?</span>
+                <button
+                  class="px-2.5 py-1 rounded text-sm bg-red-700 hover:bg-red-600 text-white transition-colors shrink-0"
+                  @click="onDelete"
+                >Confirm</button>
+                <button
+                  class="px-2 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                  @click="cancelDelete"
+                >Cancel</button>
+              </template>
+              <button
+                v-else
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
+                @click="onDelete"
+              >Delete</button>
+            </template>
+
+            <!-- Separator between selection actions and clipboard -->
+            <div
+              v-if="selectedPaths.length > 0 && clipboard"
+              class="w-px h-4 bg-zinc-700 mx-0.5 shrink-0"
+            />
+
+            <!-- Clipboard -->
+            <template v-if="clipboard">
+              <span class="text-xs text-zinc-400 italic shrink-0 truncate">
+                {{ clipboard.mode === 'copy' ? 'Copying' : 'Moving' }}
+                {{ clipboard.paths.length }} item{{ clipboard.paths.length !== 1 ? 's' : '' }}
+              </span>
+              <button
+                class="px-2.5 py-1 rounded text-sm bg-blue-700 hover:bg-blue-600 text-white transition-colors shrink-0"
+                @click="onPaste"
+              >Paste here</button>
+              <button
+                class="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
+                title="Clear clipboard"
+                @click="clipboard = null"
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </template>
+          </template>
+
+          <!-- ── Search mode ── -->
+          <div v-else class="relative w-full">
+            <svg
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
             </svg>
-          </button>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search files…"
+              class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg pl-8 pr-7 py-1.5 border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+              @keydown.escape="clearSearch"
+            />
+            <button
+              v-if="searchQuery"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+              @click="clearSearch"
+            >
+              <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Right: action buttons (always visible) -->
+        <div class="flex items-center gap-0.5 shrink-0">
+          <!-- Upload -->
           <button
-            :class="[
-              'p-1.5 rounded-md transition-colors',
-              viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white',
-            ]"
-            title="List view"
-            @click="setView('list')"
+            :class="['p-1.5 rounded transition-colors', uploading ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']"
+            title="Upload files"
+            @click="openFilePicker"
           >
             <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 6h16M4 10h16M4 14h16M4 18h16"
-              />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </button>
+          <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
+
+          <!-- View toggle -->
+          <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5 ml-0.5">
+            <button
+              :class="['p-1.5 rounded-md transition-colors', viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']"
+              title="Grid view"
+              @click="setView('grid')"
+            >
+              <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M4 4h6v6H4V4zm0 10h6v6H4v-6zm10-10h6v6h-6V4zm0 10h6v6h-6v-6z" />
+              </svg>
+            </button>
+            <button
+              :class="['p-1.5 rounded-md transition-colors', viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']"
+              title="List view"
+              @click="setView('list')"
+            >
+              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Show/hide hidden files -->
+          <button
+            :class="['p-1.5 rounded transition-colors hover:bg-zinc-800', showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white']"
+            :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
+            @click="toggleHidden"
+          >
+            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </button>
+
+          <!-- Refresh -->
+          <button
+            class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
+            title="Refresh"
+            @click="filesStore.refresh()"
+          >
+            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
         </div>
-
-        <!-- Show/hide hidden files -->
-        <button
-          :class="[
-            'transition-colors p-1.5 rounded hover:bg-zinc-800',
-            showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white',
-          ]"
-          :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
-          @click="toggleHidden"
-        >
-          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-        </button>
-
-        <!-- Refresh -->
-        <button
-          class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded hover:bg-zinc-800"
-          title="Refresh"
-          @click="filesStore.refresh()"
-        >
-          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-        </button>
       </div>
     </div>
 
@@ -308,8 +533,21 @@ onMounted(() => {
     </div>
 
     <!-- Content -->
-    <div class="flex-1 overflow-hidden">
-      <!-- Search results (overrides grid/list when query is active) -->
+    <div class="flex-1 overflow-hidden relative">
+      <!-- Drag & drop overlay -->
+      <Transition name="fade">
+        <div
+          v-if="isDragging"
+          class="absolute inset-0 z-20 bg-blue-950/60 border-2 border-dashed border-blue-400 flex flex-col items-center justify-center gap-3 pointer-events-none"
+        >
+          <svg class="size-12 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span class="text-blue-200 text-lg font-medium">Drop files to upload</span>
+        </div>
+      </Transition>
+
       <FileSearch
         v-if="searchQuery"
         :entries="searchResults"
@@ -319,14 +557,15 @@ onMounted(() => {
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
       />
-
       <FileGrid
         v-else-if="viewMode === 'grid'"
         :entries="visibleEntries"
         :loading="filesStore.loading || prefLoading"
+        :selected="selectedPaths"
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
+        @toggle-select="toggleSelect"
       />
       <FileList
         v-else
@@ -335,14 +574,17 @@ onMounted(() => {
         :current-path="filesStore.currentPath"
         :sort-key="sortKey"
         :sort-desc="sortDesc"
+        :selected="selectedPaths"
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
         @toggle-sort="toggleSort"
+        @toggle-select="toggleSelect"
+        @select-all="selectAll"
+        @deselect-all="deselectAll"
       />
     </div>
 
-    <!-- Preview lightbox -->
     <FilePreview
       :entry="previewEntry"
       :has-prev="previewIndex > 0"
@@ -354,12 +596,45 @@ onMounted(() => {
       @next="nextPreview"
     />
 
-    <!-- Archive modal -->
     <ArchiveContents
       v-if="archiveEntry"
       :entry="archiveEntry"
       @close="archiveEntry = null"
       @extracted="onExtracted"
     />
+
+    <!-- Toast -->
+    <Transition name="toast">
+      <div
+        v-if="toast"
+        :class="[
+          'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium pointer-events-none',
+          toast.kind === 'success' ? 'bg-green-800 text-green-100' : 'bg-red-800 text-red-100',
+        ]"
+      >
+        {{ toast.message }}
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+}
+</style>

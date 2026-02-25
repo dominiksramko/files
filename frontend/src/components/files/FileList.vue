@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
@@ -11,6 +12,7 @@ const props = defineProps<{
   currentPath: string
   sortKey: string
   sortDesc: boolean
+  selected: string[]
 }>()
 
 const emit = defineEmits<{
@@ -18,9 +20,33 @@ const emit = defineEmits<{
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
   toggleSort: [key: string]
+  toggleSelect: [path: string]
+  selectAll: []
+  deselectAll: []
 }>()
 
+const allSelected = computed(
+  () => props.entries.length > 0 && props.entries.every((e) => props.selected.includes(e.path)),
+)
+
+const someSelected = computed(
+  () => props.selected.length > 0 && !allSelected.value,
+)
+
+function onHeaderCheckbox() {
+  if (allSelected.value) {
+    emit('deselectAll')
+  } else {
+    emit('selectAll')
+  }
+}
+
 function handleClick(entry: FileEntry) {
+  // If any selection is active, clicks toggle selection instead of navigating
+  if (props.selected.length > 0) {
+    emit('toggleSelect', entry.path)
+    return
+  }
   if (entry.is_dir) {
     emit('navigate', entry.path)
   } else if (fileCategory(entry.mime, entry.name) === 'archive') {
@@ -64,8 +90,20 @@ function download(entry: FileEntry, e: Event) {
       <table class="w-full text-sm">
         <thead class="sticky top-0 bg-zinc-900 border-b border-zinc-800 z-10">
           <tr>
+            <!-- Select-all checkbox -->
+            <th class="w-10">
+              <label class="flex items-center justify-center size-10 cursor-pointer">
+                <input
+                  type="checkbox"
+                  :checked="allSelected"
+                  :indeterminate="someSelected"
+                  class="size-5 rounded accent-blue-500 cursor-pointer"
+                  @change="onHeaderCheckbox"
+                />
+              </label>
+            </th>
             <th
-              class="text-left px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none"
+              class="text-left px-2 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none"
               @click="emit('toggleSort', 'name')"
             >
               Name
@@ -94,10 +132,27 @@ function download(entry: FileEntry, e: Event) {
           <tr
             v-for="entry in entries"
             :key="entry.path"
-            class="border-b border-zinc-800/50 hover:bg-zinc-800/50 cursor-pointer group transition-colors"
+            :class="[
+              'border-b border-zinc-800/50 cursor-pointer group transition-colors',
+              selected.includes(entry.path)
+                ? 'bg-blue-950/40 hover:bg-blue-950/60'
+                : 'hover:bg-zinc-800/50',
+            ]"
             @click="handleClick(entry)"
           >
-            <td class="px-4 py-2.5">
+            <!-- Row checkbox: @click.stop on td blocks row click; label gives large touch target;
+                 only @change emits so there is no double-emit when clicking the input itself -->
+            <td class="w-10" @click.stop>
+              <label class="flex items-center justify-center size-10 cursor-pointer">
+                <input
+                  type="checkbox"
+                  :checked="selected.includes(entry.path)"
+                  class="size-5 rounded accent-blue-500 cursor-pointer"
+                  @change="emit('toggleSelect', entry.path)"
+                />
+              </label>
+            </td>
+            <td class="px-2 py-2.5">
               <div class="flex items-center gap-2.5 min-w-0">
                 <FileIcon :mime="entry.mime" :name="entry.name" :is-dir="entry.is_dir" />
                 <span class="truncate text-zinc-100">{{ entry.name }}</span>

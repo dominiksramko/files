@@ -76,6 +76,33 @@ export const files = {
     request<{ message: string }>('POST', '/files/extract', { path, dest, password }),
 }
 
+// --- File operations ---
+export const fileops = {
+  delete: (paths: string[]) => request<{ message: string }>('DELETE', '/files', { paths }),
+
+  copy: (paths: string[], dest: string) =>
+    request<{ message: string }>('POST', '/files/copy', { paths, dest }),
+
+  move: (paths: string[], dest: string) =>
+    request<{ message: string }>('POST', '/files/move', { paths, dest }),
+
+  upload: (path: string, files: File[]) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return fetch(`/api/v1/files/upload?path=${encodeURIComponent(path)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      body: form,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error ?? res.statusText)
+      }
+      return res.json() as Promise<{ message: string; count: number }>
+    })
+  },
+}
+
 // --- Folders ---
 export const folders = {
   getPref: (path: string) =>
