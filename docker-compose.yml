@@ -1,6 +1,8 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     environment:
       PORT: "8080"
@@ -14,20 +16,11 @@ services:
       # - /host/path/alice:/data/users/alice
       # - /host/path/bob:/data/users/bob
     networks:
-      - internal
-
-  frontend:
-    build: ./frontend
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-    networks:
-      - internal
+      - caddy
 
 volumes:
   db_data:
 
 networks:
-  internal:
+  caddy:
+    external: true

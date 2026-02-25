@@ -3,6 +3,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"files/internal/config"
 	"files/internal/database"
@@ -87,6 +90,35 @@ func main() {
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	publicDir := "./public"
+	indexPath := filepath.Join(publicDir, "index.html")
+	r.GET("/*path", func(c *gin.Context) {
+		path := c.Param("path")
+		if path == "" {
+			path = "/"
+		}
+
+		cleanPath := filepath.Clean(path)
+		if strings.HasPrefix(cleanPath, "..") {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		cleanPath = strings.TrimPrefix(cleanPath, "/")
+
+		requested := filepath.Join(publicDir, cleanPath)
+		if fi, err := os.Stat(requested); err == nil && !fi.IsDir() {
+			c.File(requested)
+			return
+		}
+
+		if strings.Contains(c.GetHeader("Accept"), "text/html") {
+			c.File(indexPath)
+			return
+		}
+
+		c.Status(http.StatusNotFound)
 	})
 
 	log.Printf("starting on :%s", cfg.Port)
