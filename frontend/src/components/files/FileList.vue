@@ -90,17 +90,29 @@ function download(entry: FileEntry, e: Event) {
       <table class="w-full text-sm">
         <thead class="sticky top-0 bg-zinc-900 border-b border-zinc-800 z-10">
           <tr>
-            <!-- Select-all checkbox -->
+            <!-- Select-all custom checkbox -->
             <th class="w-10">
-              <label class="flex items-center justify-center size-10 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate="someSelected"
-                  class="size-5 rounded accent-blue-500 cursor-pointer"
-                  @change="onHeaderCheckbox"
-                />
-              </label>
+              <button
+                type="button"
+                class="flex items-center justify-center size-10 transition-colors hover:bg-zinc-800 rounded"
+                @click.stop="onHeaderCheckbox"
+              >
+                <span
+                  class="size-[18px] rounded border-2 flex items-center justify-center transition-colors"
+                  :class="allSelected
+                    ? 'bg-blue-500 border-blue-500'
+                    : someSelected
+                      ? 'bg-zinc-700 border-zinc-500'
+                      : 'border-zinc-600'"
+                >
+                  <!-- All selected: checkmark -->
+                  <svg v-if="allSelected" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <!-- Some selected: dash -->
+                  <span v-else-if="someSelected" class="w-2.5 h-[2px] bg-zinc-300 rounded-full" />
+                </span>
+              </button>
             </th>
             <th
               class="text-left px-2 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none"
@@ -140,17 +152,20 @@ function download(entry: FileEntry, e: Event) {
             ]"
             @click="handleClick(entry)"
           >
-            <!-- Row checkbox: @click.stop on td blocks row click; label gives large touch target;
-                 only @change emits so there is no double-emit when clicking the input itself -->
-            <td class="w-10" @click.stop>
-              <label class="flex items-center justify-center size-10 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="selected.includes(entry.path)"
-                  class="size-5 rounded accent-blue-500 cursor-pointer"
-                  @change="emit('toggleSelect', entry.path)"
-                />
-              </label>
+            <!-- Row custom checkbox: entire td is the hit target -->
+            <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">
+              <div class="flex items-center justify-center h-10">
+                <span
+                  class="size-[18px] rounded border-2 flex items-center justify-center transition-colors"
+                  :class="selected.includes(entry.path)
+                    ? 'bg-blue-500 border-blue-500'
+                    : 'border-zinc-600'"
+                >
+                  <svg v-if="selected.includes(entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                    <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              </div>
             </td>
             <td class="px-2 py-2.5">
               <div class="flex items-center gap-2.5 min-w-0">

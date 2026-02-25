@@ -284,16 +284,11 @@ const catIcon: Record<string, string> = {
               class="size-5 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
               :class="selected.includes(item.entry.path) ? 'bg-blue-500' : 'bg-black/60'"
             >
-              <svg
-                class="size-3.5 text-white"
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path
-                  v-if="selected.includes(item.entry.path)"
-                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-                  d="M5 13l4 4L19 7"
-                />
-                <circle v-else cx="12" cy="12" r="9" stroke-width="1.5" />
+              <svg v-if="selected.includes(item.entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <svg v-else class="size-3 text-white/70" viewBox="0 0 10 10" fill="none">
+                <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.5" />
               </svg>
             </span>
           </button>
