@@ -94,8 +94,13 @@ func main() {
 
 	publicDir := "./public"
 	indexPath := filepath.Join(publicDir, "index.html")
-	r.GET("/*path", func(c *gin.Context) {
-		path := c.Param("path")
+	r.NoRoute(func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		path := c.Request.URL.Path
 		if path == "" {
 			path = "/"
 		}
