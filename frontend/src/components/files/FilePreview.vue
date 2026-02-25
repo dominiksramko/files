@@ -281,7 +281,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               <!-- Code / plain text with syntax highlighting -->
               <pre
                 v-else-if="textContent !== null"
-                class="text-sm leading-relaxed p-6 min-h-full"
+                class="text-sm leading-relaxed p-6"
               ><code class="hljs block rounded-lg" v-html="highlightCode(entry, textContent)" /></pre>
             </div>
 
