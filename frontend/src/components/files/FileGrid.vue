@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
@@ -21,8 +21,8 @@ const OVERSCAN = 2   // extra rows rendered above and below the viewport
 // ── Measurements ────────────────────────────────────────────────────────────
 const containerRef = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
-const vpW = ref(800)
-const vpH = ref(600)
+const vpW = ref(window.innerWidth)
+const vpH = ref(window.innerHeight)
 
 // Match Tailwind breakpoints used in the old grid
 function calcCols(w: number): number {
@@ -81,18 +81,22 @@ function onScroll() {
   scrollTop.value = containerRef.value?.scrollTop ?? 0
 }
 
-let ro: ResizeObserver | null = null
-onMounted(() => {
-  if (!containerRef.value) return
-  vpW.value = containerRef.value.clientWidth
-  vpH.value = containerRef.value.clientHeight
-  ro = new ResizeObserver(() => {
-    vpW.value = containerRef.value!.clientWidth
-    vpH.value = containerRef.value!.clientHeight
+watch(containerRef, (el, _prev, onCleanup) => {
+  if (!el) return
+  vpW.value = el.clientWidth
+  vpH.value = el.clientHeight
+  const ro = new ResizeObserver(() => {
+    vpW.value = el.clientWidth
+    vpH.value = el.clientHeight
   })
-  ro.observe(containerRef.value)
+  ro.observe(el)
+  onCleanup(() => ro.disconnect())
 })
-onUnmounted(() => ro?.disconnect())
+
+watch(() => props.entries, () => {
+  scrollTop.value = 0
+  if (containerRef.value) containerRef.value.scrollTop = 0
+})
 
 // ── Click handlers ───────────────────────────────────────────────────────────
 function handleClick(entry: FileEntry) {
