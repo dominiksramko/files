@@ -195,6 +195,7 @@ const catIcon: Record<string, string> = {
             : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
         ]"
         @click="handleClick(item.entry)"
+        @dragstart.prevent
       >
         <!-- Thumbnail area (square) -->
         <div
@@ -206,6 +207,7 @@ const catIcon: Record<string, string> = {
             v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
             :src="filesApi.streamUrl(item.entry.path)"
             :alt="item.entry.name"
+            draggable="false"
             class="w-full h-full object-cover"
           />
 
