@@ -5,12 +5,17 @@ import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
-const props = defineProps<{ entries: FileEntry[]; loading: boolean; selected: string[] }>()
+const props = defineProps<{
+  entries: FileEntry[]
+  loading: boolean
+  selected: string[]
+}>()
 const emit = defineEmits<{
   navigate: [path: string]
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
   toggleSelect: [path: string]
+  renameStart: [entry: FileEntry]
 }>()
 
 // ── Virtual scroll constants ────────────────────────────────────────────────
@@ -101,7 +106,6 @@ watch(() => props.entries, () => {
 
 // ── Click handlers ───────────────────────────────────────────────────────────
 function handleClick(entry: FileEntry) {
-  // If anything is selected, clicks toggle selection
   if (props.selected.length > 0) {
     emit('toggleSelect', entry.path)
     return
@@ -273,6 +277,18 @@ const catIcon: Record<string, string> = {
             </svg>
           </div>
 
+          <!-- Rename button (top-right of thumbnail, hover only) -->
+          <button
+            class="absolute top-1 right-1 z-10 size-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm"
+            title="Rename"
+            @click.stop="emit('renameStart', item.entry)"
+          >
+            <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+
           <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
           <button
             class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
@@ -308,7 +324,7 @@ const catIcon: Record<string, string> = {
         </div>
 
         <!-- Name + meta (fixed META_H height) -->
-        <div class="px-2.5 py-2 overflow-hidden">
+        <div class="px-2 py-2 overflow-hidden">
           <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
           <p class="text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
             {{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}

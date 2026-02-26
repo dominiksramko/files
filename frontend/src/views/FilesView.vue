@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
@@ -310,6 +310,63 @@ async function onDrop(e: DragEvent) {
   if (files.length) await uploadFiles(files)
 }
 
+// ── New folder ────────────────────────────────────────────────────────────
+const newFolderDialog = ref(false)
+const newFolderName = ref('')
+const newFolderInput = ref<HTMLInputElement | null>(null)
+
+async function openNewFolder() {
+  newFolderName.value = ''
+  newFolderDialog.value = true
+  await nextTick()
+  newFolderInput.value?.focus()
+}
+
+async function confirmNewFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) return
+  newFolderDialog.value = false
+  try {
+    const path = filesStore.currentPath ? `${filesStore.currentPath}/${name}` : name
+    await fileops.mkdir(path)
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
+// ── Rename ────────────────────────────────────────────────────────────────
+const renameDialog = ref(false)
+const renameDialogEntry = ref<{ path: string; name: string } | null>(null)
+const renameDialogName = ref('')
+const renameDialogInput = ref<HTMLInputElement | null>(null)
+
+async function startRename(entry: { path: string; name: string }) {
+  renameDialogEntry.value = entry
+  renameDialogName.value = entry.name
+  renameDialog.value = true
+  await nextTick()
+  renameDialogInput.value?.select()
+}
+
+async function confirmRename() {
+  const entry = renameDialogEntry.value
+  if (!entry) return
+  const trimmed = renameDialogName.value.trim()
+  renameDialog.value = false
+  if (!trimmed || trimmed === (entry.path.split('/').pop() ?? '')) return
+  try {
+    await fileops.rename(entry.path, trimmed)
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
+function cancelRename() {
+  renameDialog.value = false
+}
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 type ToastKind = 'success' | 'error'
 const toast = ref<{ message: string; kind: ToastKind } | null>(null)
@@ -459,6 +516,18 @@ onMounted(() => {
 
         <!-- Right: action buttons (always visible) -->
         <div class="flex items-center gap-0.5 shrink-0">
+          <!-- New folder -->
+          <button
+            class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
+            title="New folder"
+            @click="openNewFolder"
+          >
+            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2z" />
+            </svg>
+          </button>
+
           <!-- Upload -->
           <button
             :class="['p-1.5 rounded transition-colors', uploading ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']"
@@ -566,6 +635,7 @@ onMounted(() => {
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
         @toggle-select="toggleSelect"
+        @rename-start="startRename"
       />
       <FileList
         v-else
@@ -582,6 +652,7 @@ onMounted(() => {
         @toggle-select="toggleSelect"
         @select-all="selectAll"
         @deselect-all="deselectAll"
+        @rename-start="startRename"
       />
     </div>
 
@@ -602,6 +673,70 @@ onMounted(() => {
       @close="archiveEntry = null"
       @extracted="onExtracted"
     />
+
+    <!-- New folder dialog -->
+    <Transition name="fade">
+      <div
+        v-if="newFolderDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="newFolderDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">New folder</h3>
+          <input
+            ref="newFolderInput"
+            v-model="newFolderName"
+            type="text"
+            placeholder="Folder name"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+            @keydown.enter="confirmNewFolder"
+            @keydown.escape="newFolderDialog = false"
+          />
+          <div class="flex gap-2 mt-3 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="newFolderDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="confirmNewFolder"
+            >Create</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Rename dialog -->
+    <Transition name="fade">
+      <div
+        v-if="renameDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="cancelRename"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Rename</h3>
+          <input
+            ref="renameDialogInput"
+            v-model="renameDialogName"
+            type="text"
+            placeholder="New name"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+            @keydown.enter="confirmRename"
+            @keydown.escape="cancelRename"
+          />
+          <div class="flex gap-2 mt-3 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="cancelRename"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="confirmRename"
+            >Rename</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Toast -->
     <Transition name="toast">

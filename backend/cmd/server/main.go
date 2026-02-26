@@ -71,6 +71,8 @@ func main() {
 			authed.POST("/files/copy", opsH.Copy)
 			authed.POST("/files/move", opsH.Move)
 			authed.POST("/files/upload", opsH.Upload)
+			authed.POST("/files/mkdir", opsH.Mkdir)
+			authed.POST("/files/rename", opsH.Rename)
 
 			// Folder preferences
 			authed.GET("/folders/pref", foldersH.GetPref)

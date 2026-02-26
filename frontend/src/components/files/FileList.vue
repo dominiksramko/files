@@ -7,7 +7,7 @@ import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
 const props = defineProps<{
-  entries: FileEntry[] // pre-sorted from parent
+  entries: FileEntry[]
   loading: boolean
   currentPath: string
   sortKey: string
@@ -23,6 +23,7 @@ const emit = defineEmits<{
   toggleSelect: [path: string]
   selectAll: []
   deselectAll: []
+  renameStart: [entry: FileEntry]
 }>()
 
 const allSelected = computed(
@@ -34,58 +35,44 @@ const someSelected = computed(
 )
 
 function onHeaderCheckbox() {
-  if (allSelected.value) {
-    emit('deselectAll')
-  } else {
-    emit('selectAll')
-  }
+  if (allSelected.value) emit('deselectAll')
+  else emit('selectAll')
 }
 
 function handleClick(entry: FileEntry) {
-  // If any selection is active, clicks toggle selection instead of navigating
   if (props.selected.length > 0) {
     emit('toggleSelect', entry.path)
     return
   }
-  if (entry.is_dir) {
-    emit('navigate', entry.path)
-  } else if (fileCategory(entry.mime, entry.name) === 'archive') {
-    emit('archivePreview', entry)
-  } else {
-    emit('preview', entry)
-  }
+  if (entry.is_dir) emit('navigate', entry.path)
+  else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
+  else emit('preview', entry)
 }
 
 function download(entry: FileEntry, e: Event) {
   e.stopPropagation()
   window.open(filesApi.downloadUrl(entry.path), '_blank')
 }
+
 </script>
 
 <template>
   <div class="h-full flex flex-col">
-    <!-- Loading overlay -->
     <div v-if="loading" class="flex-1 flex items-center justify-center">
       <AppSpinner size="lg" class="text-blue-500" />
     </div>
 
-    <!-- Empty state -->
     <div
       v-else-if="entries.length === 0"
       class="flex-1 flex flex-col items-center justify-center gap-2 text-zinc-500"
     >
       <svg class="size-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1"
-          d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-        />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+          d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
       </svg>
       <span class="text-sm">This folder is empty</span>
     </div>
 
-    <!-- Table -->
     <div v-else class="flex-1 overflow-auto">
       <table class="w-full text-sm">
         <thead class="sticky top-0 bg-zinc-900 border-b border-zinc-800 z-10">
@@ -105,11 +92,9 @@ function download(entry: FileEntry, e: Event) {
                       ? 'bg-zinc-700 border-zinc-500'
                       : 'border-zinc-600'"
                 >
-                  <!-- All selected: checkmark -->
                   <svg v-if="allSelected" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
                     <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
-                  <!-- Some selected: dash -->
                   <span v-else-if="someSelected" class="w-2.5 h-[2px] bg-zinc-300 rounded-full" />
                 </span>
               </button>
@@ -133,11 +118,9 @@ function download(entry: FileEntry, e: Event) {
               @click="emit('toggleSort', 'mod_time')"
             >
               Modified
-              <span v-if="sortKey === 'mod_time'" class="ml-1 text-xs">{{
-                sortDesc ? '↓' : '↑'
-              }}</span>
+              <span v-if="sortKey === 'mod_time'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
             </th>
-            <th class="w-10 px-2" />
+            <th class="w-16 px-2" />
           </tr>
         </thead>
         <tbody>
@@ -152,14 +135,12 @@ function download(entry: FileEntry, e: Event) {
             ]"
             @click="handleClick(entry)"
           >
-            <!-- Row custom checkbox: entire td is the hit target -->
+            <!-- Custom checkbox -->
             <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">
               <div class="flex items-center justify-center h-10">
                 <span
                   class="size-[18px] rounded border-2 flex items-center justify-center transition-colors"
-                  :class="selected.includes(entry.path)
-                    ? 'bg-blue-500 border-blue-500'
-                    : 'border-zinc-600'"
+                  :class="selected.includes(entry.path) ? 'bg-blue-500 border-blue-500' : 'border-zinc-600'"
                 >
                   <svg v-if="selected.includes(entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
                     <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
@@ -167,41 +148,53 @@ function download(entry: FileEntry, e: Event) {
                 </span>
               </div>
             </td>
-            <td class="px-2 py-2.5">
+
+            <!-- Name cell -->
+            <td class="px-2 py-2">
               <div class="flex items-center gap-2.5 min-w-0">
                 <FileIcon :mime="entry.mime" :name="entry.name" :is-dir="entry.is_dir" />
                 <span class="truncate text-zinc-100">{{ entry.name }}</span>
-                <!-- Archive badge -->
                 <span
                   v-if="!entry.is_dir && fileCategory(entry.mime, entry.name) === 'archive'"
                   class="shrink-0 text-xs bg-orange-950 text-orange-300 border border-orange-900 rounded px-1.5 py-0.5"
-                >
-                  archive
-                </span>
+                >archive</span>
               </div>
             </td>
+
             <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">
               {{ entry.is_dir ? '—' : formatSize(entry.size) }}
             </td>
             <td class="px-4 py-2.5 text-right text-zinc-500 text-xs hidden sm:table-cell">
               {{ formatDate(entry.mod_time) }}
             </td>
+
+            <!-- Actions: rename + download -->
             <td class="px-2 py-2.5">
-              <button
-                v-if="!entry.is_dir"
-                class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
-                title="Download"
-                @click="download(entry, $event)"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-              </button>
+              <div class="flex items-center justify-end gap-0.5">
+                <!-- Rename button -->
+                <button
+                  class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
+                  title="Rename"
+                  @click.stop="emit('renameStart', entry)"
+                >
+                  <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <!-- Download button -->
+                <button
+                  v-if="!entry.is_dir"
+                  class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
+                  title="Download"
+                  @click="download(entry, $event)"
+                >
+                  <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>

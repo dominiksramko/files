@@ -86,6 +86,12 @@ export const fileops = {
   move: (paths: string[], dest: string) =>
     request<{ message: string }>('POST', '/files/move', { paths, dest }),
 
+  mkdir: (path: string) =>
+    request<{ message: string }>('POST', '/files/mkdir', { path }),
+
+  rename: (path: string, name: string) =>
+    request<{ message: string }>('POST', '/files/rename', { path, name }),
+
   upload: (path: string, files: File[]) => {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))

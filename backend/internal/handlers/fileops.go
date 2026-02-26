@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -156,6 +157,71 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "uploaded", "count": len(uploadedFiles)})
+}
+
+// POST /api/v1/files/mkdir   body: { "path": "rel/path/new_folder" }
+func (h *FileOpsHandler) Mkdir(c *gin.Context) {
+	root := userRoot(c)
+
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path required"})
+		return
+	}
+
+	abs, err := safePath(root, body.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "created"})
+}
+
+// POST /api/v1/files/rename   body: { "path": "rel/old_path", "name": "new_name" }
+func (h *FileOpsHandler) Rename(c *gin.Context) {
+	root := userRoot(c)
+
+	var body struct {
+		Path string `json:"path"`
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Path == "" || body.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path and name required"})
+		return
+	}
+
+	// Reject names with path separators to prevent traversal
+	if strings.ContainsAny(body.Name, "/\\") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not contain path separators"})
+		return
+	}
+
+	srcAbs, err := safePath(root, body.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dstAbs := filepath.Join(filepath.Dir(srcAbs), body.Name)
+	if !strings.HasPrefix(dstAbs, filepath.Clean(root)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path traversal detected"})
+		return
+	}
+
+	if err := os.Rename(srcAbs, dstAbs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "renamed"})
 }
 
 // copyEntry copies a file or directory recursively from src to dst.
