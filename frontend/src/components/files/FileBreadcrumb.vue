@@ -13,6 +13,30 @@ const dropdownLeft = ref(0)
 let recalcRunning = false
 let recalcQueued = false
 
+// ── Dolphin-style path editing ────────────────────────────────────────────────
+const editing   = ref(false)
+const editValue = ref('')
+const editInput = ref<HTMLInputElement | null>(null)
+
+async function enterEdit() {
+  if (editing.value) return
+  closeDropdown()
+  editValue.value = props.path
+  editing.value = true
+  await nextTick()
+  editInput.value?.select()
+}
+
+function confirmEdit() {
+  const path = editValue.value.trim().replace(/^\/+/, '').replace(/\/+$/, '').replace(/\/+/g, '/')
+  editing.value = false
+  emit('navigate', path)
+}
+
+function cancelEdit() {
+  editing.value = false
+}
+
 const allCrumbs = computed(() => {
   const crumbs: { label: string; path: string; isHome: boolean }[] = [
     { label: 'Home', path: '', isHome: true },
@@ -69,6 +93,7 @@ watch(
 )
 
 watch(() => props.path, () => {
+  editing.value = false
   hiddenCount.value = 0
   nextTick(recalculate)
 })
@@ -96,7 +121,7 @@ function handleOutside(e: MouseEvent) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeDropdown()
+  if (e.key === 'Escape') { closeDropdown(); cancelEdit() }
 }
 
 // Reposition/close dropdown on scroll or resize
@@ -120,7 +145,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <nav ref="navRef" class="flex items-center gap-1 text-sm min-w-0 overflow-hidden">
+  <!-- Outer wrapper fills the breadcrumb row; clicking empty space enters edit mode -->
+  <div class="flex-1 min-w-0 h-full flex items-center" @click.self="enterEdit">
+
+    <!-- Edit mode: inline path input -->
+    <input
+      v-if="editing"
+      ref="editInput"
+      v-model="editValue"
+      type="text"
+      class="flex-1 min-w-0 bg-transparent text-zinc-100 text-sm focus:outline-none font-mono py-1"
+      spellcheck="false"
+      @keydown.enter.prevent="confirmEdit"
+      @keydown.escape.prevent="cancelEdit"
+      @blur="cancelEdit"
+    />
+
+    <!-- Normal mode: breadcrumbs -->
+    <nav v-else ref="navRef" class="flex items-center gap-1 text-sm min-w-0 overflow-hidden">
     <!-- "•••" trigger — Teleport escapes overflow:hidden so dropdown is never clipped -->
     <template v-if="hiddenCrumbs.length > 0">
       <button
@@ -185,5 +227,10 @@ onUnmounted(() => {
         {{ crumb.label }}
       </button>
     </template>
-  </nav>
+
+    <!-- Fills remaining row width so clicking empty space triggers enterEdit -->
+    <div class="flex-1 min-w-2 self-stretch" @click="enterEdit" />
+    </nav>
+
+  </div>
 </template>
