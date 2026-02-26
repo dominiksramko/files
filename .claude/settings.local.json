@@ -7,7 +7,8 @@
       "Bash(npm install marked highlight.js)",
       "Bash(npx vite build)",
       "Bash(npx vue-tsc --noEmit)",
-      "Bash(echo \"exit:$?\")"
+      "Bash(echo \"exit:$?\")",
+      "Bash(go run:*)"
     ]
   }
 }
