@@ -108,7 +108,10 @@ export const fileops = {
 
   upload: (path: string, files: File[]) => {
     const form = new FormData()
-    files.forEach((f) => form.append('files', f))
+    files.forEach((f, i) => {
+      form.append('files', f)
+      form.append(`mtime_${i}`, Math.floor(f.lastModified / 1000).toString())
+    })
     return fetch(`/api/v1/files/upload?path=${encodeURIComponent(path)}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },

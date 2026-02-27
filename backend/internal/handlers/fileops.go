@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -148,11 +150,20 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	for _, fh := range uploadedFiles {
+	for i, fh := range uploadedFiles {
 		dst := filepath.Join(destAbs, filepath.Base(fh.Filename))
 		if err := c.SaveUploadedFile(fh, dst); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Restore mtime if provided
+		mtimeKey := "mtime_" + strconv.Itoa(i)
+		if mtimeStr := form.Value[mtimeKey]; len(mtimeStr) > 0 {
+			if mtimeUnix, err := strconv.ParseInt(mtimeStr[0], 10, 64); err == nil {
+				mtime := time.Unix(mtimeUnix, 0)
+				_ = os.Chtimes(dst, mtime, mtime)
+			}
 		}
 	}
 
@@ -249,6 +260,12 @@ func copyDir(src, dst string) error {
 			return err
 		}
 	}
+
+	// Preserve directory mtime
+	info, err := os.Stat(src)
+	if err == nil {
+		_ = os.Chtimes(dst, info.ModTime(), info.ModTime())
+	}
 	return nil
 }
 
@@ -270,6 +287,10 @@ func copyFile(src, dst string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+
+	// Preserve mtime
+	return os.Chtimes(dst, info.ModTime(), info.ModTime())
 }
