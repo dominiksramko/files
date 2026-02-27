@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
@@ -76,6 +78,9 @@ func (h *ThumbnailHandler) Stream(c *gin.Context) {
 	// Flush headers immediately so the browser knows the connection is live.
 	c.Writer.Flush()
 
+	// Enqueue thumbnails for all thumbnailable files in this folder (async).
+	go h.enqueueFolder(root, rel, folderAbs)
+
 	for {
 		select {
 		case relPath, ok := <-ch:
@@ -87,5 +92,32 @@ func (h *ThumbnailHandler) Stream(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		}
+	}
+}
+
+// enqueueFolder scans a folder and enqueues thumbnail generation for all
+// thumbnailable files. This runs asynchronously after the SSE stream starts.
+func (h *ThumbnailHandler) enqueueFolder(root, rel, folderAbs string) {
+	entries, err := os.ReadDir(folderAbs)
+	if err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		mime := mimeByExt(filepath.Ext(e.Name()))
+		if !thumbs.IsThumbnailable(mime) {
+			continue
+		}
+
+		entryAbs := filepath.Join(folderAbs, e.Name())
+		entryRel := filepath.Join(rel, e.Name())
+		h.svc.CheckAndEnqueue(entryAbs, entryRel, folderAbs, mime, info.ModTime().Unix())
 	}
 }

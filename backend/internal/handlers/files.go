@@ -26,7 +26,7 @@ func NewFilesHandler(thumbs *thumbs.Service) *FilesHandler {
 
 type FileEntry struct {
 	Name     string    `json:"name"`
-	Path     string    `json:"path"`     // relative to user root
+	Path     string    `json:"path"` // relative to user root
 	IsDir    bool      `json:"is_dir"`
 	Size     int64     `json:"size"`
 	ModTime  time.Time `json:"mod_time"`
@@ -72,13 +72,6 @@ func (h *FilesHandler) List(c *gin.Context) {
 			Size:    info.Size(),
 			ModTime: info.ModTime(),
 			Mime:    mime,
-		}
-		// Check / enqueue thumbnail for thumbnailable files.
-		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
-			entryAbs := filepath.Join(abs, e.Name())
-			fe.HasThumb = h.thumbs.CheckAndEnqueue(
-				entryAbs, entryRel, abs, mime, info.ModTime().Unix(),
-			)
 		}
 		files = append(files, fe)
 	}
