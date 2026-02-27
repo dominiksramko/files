@@ -73,6 +73,12 @@ func (h *FilesHandler) List(c *gin.Context) {
 			ModTime: info.ModTime(),
 			Mime:    mime,
 		}
+		// Report whether a finished thumbnail is already available.
+		// Enqueueing is handled by the SSE stream (thumbnails/stream) when the
+		// client connects to a folder.
+		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
+			fe.HasThumb = h.thumbs.IsReady(filepath.Join(abs, e.Name()), info.ModTime().Unix())
+		}
 		files = append(files, fe)
 	}
 

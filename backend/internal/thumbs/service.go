@@ -73,6 +73,18 @@ func (s *Service) thumbFilename(absPath string, mtime int64) string {
 	return fmt.Sprintf("%x", h[:12]) + ".jpg"
 }
 
+// IsReady reports whether a finished, up-to-date thumbnail exists for the file.
+// It is a pure read — it never enqueues generation.
+func (s *Service) IsReady(absPath string, mtime int64) bool {
+	var status string
+	var storedMtime int64
+	err := s.db.QueryRow(
+		`SELECT status, file_mtime FROM thumbnails WHERE abs_path = ?`,
+		absPath,
+	).Scan(&status, &storedMtime)
+	return err == nil && status == "done" && storedMtime == mtime
+}
+
 // CheckAndEnqueue checks the thumbnail status for a file.
 // If a thumbnail is missing or stale it is enqueued for background generation.
 // Returns true only when a ready thumbnail already exists.
