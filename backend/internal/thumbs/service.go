@@ -1,13 +1,13 @@
 package thumbs
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const maxConcurrent = 4
@@ -29,20 +29,28 @@ func IsThumbnailable(mime string) bool {
 }
 
 type task struct {
-	absPath   string
-	relPath   string // relative to user root — matches FileEntry.path
-	folderAbs string // for SSE broadcast key
-	mtime     int64
-	thumbFile string // filename only (no dir), stored under cacheDir
-	mime      string // needed to choose the right generator
+	absPath     string
+	relPath     string // relative to user root — matches FileEntry.path
+	folderAbs   string // for SSE broadcast key
+	contentHash string // DB primary key
+	thumbFile   string // contentHash + ".jpg", stored under cacheDir
+	mime        string
+}
+
+// hashCacheEntry caches a content hash alongside the mtime it was computed for.
+// If the file's mtime hasn't changed we can skip re-reading it.
+type hashCacheEntry struct {
+	mtime int64
+	hash  string
 }
 
 // Service manages thumbnail generation, caching, and SSE broadcasting.
 type Service struct {
-	db       *sql.DB
-	cacheDir string
-	hub      *hub
-	sem      chan struct{}
+	db        *sql.DB
+	cacheDir  string
+	hub       *hub
+	sem       chan struct{}
+	hashCache sync.Map // absPath → hashCacheEntry
 }
 
 // New creates a Service, ensures the cache directory exists, and resets any
@@ -67,71 +75,84 @@ func New(db *sql.DB, cacheDir string) (*Service, error) {
 // Hub exposes the internal hub so the HTTP handler can subscribe to events.
 func (s *Service) Hub() *hub { return s.hub }
 
-// thumbFilename produces a deterministic filename from absPath + mtime.
-func (s *Service) thumbFilename(absPath string, mtime int64) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s|%d", absPath, mtime)))
-	return fmt.Sprintf("%x", h[:12]) + ".jpg"
-}
-
-// IsReady reports whether a finished, up-to-date thumbnail exists for the file.
-// It is a pure read — it never enqueues generation.
-func (s *Service) IsReady(absPath string, mtime int64) bool {
-	var status string
-	var storedMtime int64
-	err := s.db.QueryRow(
-		`SELECT status, file_mtime FROM thumbnails WHERE abs_path = ?`,
-		absPath,
-	).Scan(&status, &storedMtime)
-	return err == nil && status == "done" && storedMtime == mtime
-}
-
-// CheckAndEnqueue checks the thumbnail status for a file.
-// If a thumbnail is missing or stale it is enqueued for background generation.
-// Returns true only when a ready thumbnail already exists.
-func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtime int64) bool {
-	var status string
-	var storedMtime int64
-	var thumbFile string
-
-	err := s.db.QueryRow(
-		`SELECT status, file_mtime, thumb_file FROM thumbnails WHERE abs_path = ?`,
-		absPath,
-	).Scan(&status, &storedMtime, &thumbFile)
-
-	if err == sql.ErrNoRows {
-		thumbFile = s.thumbFilename(absPath, mtime)
-		s.db.Exec(
-			`INSERT INTO thumbnails (abs_path, file_mtime, thumb_file, status) VALUES (?, ?, ?, 'pending')`,
-			absPath, mtime, thumbFile,
-		)
-		s.enqueue(task{absPath, relPath, folderAbs, mtime, thumbFile, mime})
-		return false
+// cachedHash returns the content hash for absPath, using a sync.Map cache keyed
+// by (absPath, mtime) to avoid re-reading files that haven't changed.
+func (s *Service) cachedHash(absPath string, mtime int64) (string, error) {
+	if v, ok := s.hashCache.Load(absPath); ok {
+		if e := v.(hashCacheEntry); e.mtime == mtime {
+			return e.hash, nil
+		}
 	}
+	hash, err := fileContentHash(absPath)
+	if err != nil {
+		return "", err
+	}
+	s.hashCache.Store(absPath, hashCacheEntry{mtime: mtime, hash: hash})
+	return hash, nil
+}
+
+// IsReady reports whether a finished thumbnail exists for the file at its
+// current content. It is a pure read — it never enqueues generation.
+// mtime is used only as a hint to skip re-hashing unchanged files.
+func (s *Service) IsReady(absPath string, mtime int64) bool {
+	hash, err := s.cachedHash(absPath, mtime)
 	if err != nil {
 		return false
 	}
+	var status string
+	err = s.db.QueryRow(
+		`SELECT status FROM thumbnails WHERE content_hash = ?`, hash,
+	).Scan(&status)
+	return err == nil && status == "done"
+}
 
-	// File has changed — invalidate and re-generate.
-	if storedMtime != mtime {
-		thumbFile = s.thumbFilename(absPath, mtime)
-		s.db.Exec(
-			`UPDATE thumbnails SET file_mtime = ?, thumb_file = ?, status = 'pending' WHERE abs_path = ?`,
-			mtime, thumbFile, absPath,
-		)
-		s.enqueue(task{absPath, relPath, folderAbs, mtime, thumbFile, mime})
-		return false
+// CheckAndEnqueue ensures a thumbnail is queued for background generation when
+// one is missing or the file's content has changed. Already-done or in-progress
+// thumbnails are left untouched.
+// mtime is used only as a hint to skip re-hashing unchanged files.
+func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtime int64) {
+	hash, err := s.cachedHash(absPath, mtime)
+	if err != nil {
+		return
 	}
+	thumbFile := hash + ".jpg"
 
-	return status == "done"
+	var status string
+	err = s.db.QueryRow(
+		`SELECT status FROM thumbnails WHERE content_hash = ?`, hash,
+	).Scan(&status)
+
+	switch {
+	case err == sql.ErrNoRows:
+		s.db.Exec(
+			`INSERT INTO thumbnails (content_hash, thumb_file, status) VALUES (?, ?, 'pending')`,
+			hash, thumbFile,
+		)
+		s.enqueue(task{absPath, relPath, folderAbs, hash, thumbFile, mime})
+	case err != nil:
+		// DB error — skip silently.
+	case status == "error":
+		// Previous attempt failed; retry.
+		s.db.Exec(`UPDATE thumbnails SET status = 'pending' WHERE content_hash = ?`, hash)
+		s.enqueue(task{absPath, relPath, folderAbs, hash, thumbFile, mime})
+	// status == "done" or "pending": nothing to do.
+	}
 }
 
 // ThumbPath returns the absolute filesystem path to a ready thumbnail.
 // Returns ("", false) if the thumbnail is not ready.
 func (s *Service) ThumbPath(absPath string) (string, bool) {
+	fi, err := os.Stat(absPath)
+	if err != nil {
+		return "", false
+	}
+	hash, err := s.cachedHash(absPath, fi.ModTime().Unix())
+	if err != nil {
+		return "", false
+	}
 	var thumbFile, status string
-	err := s.db.QueryRow(
-		`SELECT thumb_file, status FROM thumbnails WHERE abs_path = ?`,
-		absPath,
+	err = s.db.QueryRow(
+		`SELECT thumb_file, status FROM thumbnails WHERE content_hash = ?`, hash,
 	).Scan(&thumbFile, &status)
 	if err != nil || status != "done" {
 		return "", false
@@ -162,10 +183,9 @@ func (s *Service) process(t task) {
 		log.Printf("thumbs: %s: %v", t.absPath, err)
 	}
 
-	// Use mtime guard so a concurrent file change doesn't clobber a new entry.
 	s.db.Exec(
-		`UPDATE thumbnails SET status = ? WHERE abs_path = ? AND file_mtime = ?`,
-		status, t.absPath, t.mtime,
+		`UPDATE thumbnails SET status = ? WHERE content_hash = ?`,
+		status, t.contentHash,
 	)
 
 	if status == "done" {
@@ -176,7 +196,6 @@ func (s *Service) process(t task) {
 // ClearAll deletes all thumbnail records from the database and removes all
 // physical thumbnail files from the cache directory.
 func (s *Service) ClearAll() error {
-	// Get all thumbnail files from DB before deleting records
 	rows, err := s.db.Query(`SELECT thumb_file FROM thumbnails`)
 	if err != nil {
 		return fmt.Errorf("query thumbnails: %w", err)
@@ -192,12 +211,10 @@ func (s *Service) ClearAll() error {
 		thumbFiles = append(thumbFiles, thumbFile)
 	}
 
-	// Delete all DB records
 	if _, err := s.db.Exec(`DELETE FROM thumbnails`); err != nil {
 		return fmt.Errorf("delete thumbnail records: %w", err)
 	}
 
-	// Delete physical files
 	deleted := 0
 	for _, thumbFile := range thumbFiles {
 		thumbPath := filepath.Join(s.cacheDir, thumbFile)
