@@ -2,7 +2,7 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY frontend/ ./
 RUN npm run build
@@ -14,10 +14,12 @@ RUN apk add --no-cache gcc musl-dev p7zip
 
 WORKDIR /backend
 COPY backend/go.mod backend/go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY backend/ ./
-RUN go build -o server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o server ./cmd/server
 
 # ---- runtime ----
 FROM alpine:3.20
