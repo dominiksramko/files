@@ -1,0 +1,191 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { marked, Renderer, type Tokens } from 'marked'
+import hljs from 'highlight.js/lib/common'
+import type { FileEntry } from '@/types'
+import { files as filesApi } from '@/utils/api'
+import { formatSize, isMarkdownFile } from '@/utils/formatters'
+
+const props = defineProps<{ entry: FileEntry }>()
+
+const TEXT_SIZE_LIMIT = 5 * 1024 * 1024 // 5 MB
+
+const textContent  = ref<string | null>(null)
+const textLoading  = ref(false)
+const textError    = ref(false)
+const textTooLarge = ref(false)
+
+const isMarkdown = computed(() => isMarkdownFile(props.entry.mime, props.entry.name))
+
+// Configure marked with hljs code block highlighting
+const renderer = new Renderer()
+renderer.code = function ({ text, lang }: Tokens.Code) {
+  const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+  const highlighted = hljs.highlight(text, { language }).value
+  return `<pre class="hljs-md-pre"><code class="hljs language-${language}">${highlighted}</code></pre>`
+}
+marked.use({ renderer })
+
+const renderedMarkdown = computed(() => {
+  if (!isMarkdown.value || textContent.value === null) return ''
+  return marked.parse(textContent.value) as string
+})
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function highlightCode(raw: string | null): string {
+  if (!raw) return ''
+  const ext = props.entry.name.split('.').pop()?.toLowerCase() ?? ''
+  try {
+    if (ext && hljs.getLanguage(ext)) {
+      return hljs.highlight(raw, { language: ext }).value
+    }
+    return hljs.highlightAuto(raw).value
+  } catch {
+    return escapeHtml(raw)
+  }
+}
+
+let fetchController: AbortController | null = null
+
+onMounted(async () => {
+  if (props.entry.size > TEXT_SIZE_LIMIT) {
+    textTooLarge.value = true
+    return
+  }
+
+  textLoading.value = true
+  fetchController = new AbortController()
+  try {
+    const res = await fetch(filesApi.streamUrl(props.entry.path), { signal: fetchController.signal })
+    if (!res.ok) throw new Error()
+    textContent.value = await res.text()
+  } catch (e) {
+    if ((e as Error).name !== 'AbortError') textError.value = true
+  } finally {
+    textLoading.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  fetchController?.abort()
+})
+</script>
+
+<template>
+  <div
+    class="flex-1 min-w-0 overflow-y-auto"
+    style="max-height: calc(100vh - 120px)"
+    @click.stop
+  >
+    <div v-if="textLoading" class="flex items-center justify-center h-32 text-zinc-400 text-sm">
+      Loading…
+    </div>
+    <div v-else-if="textError" class="flex items-center justify-center h-32 text-red-400 text-sm">
+      Failed to load file content.
+    </div>
+    <div v-else-if="textTooLarge" class="flex flex-col items-center justify-center h-32 gap-3 text-zinc-400 text-sm">
+      <p>File is too large to preview ({{ formatSize(entry.size) }})</p>
+      <a
+        :href="filesApi.downloadUrl(entry.path)"
+        target="_blank"
+        class="text-blue-400 hover:text-blue-300 underline"
+        @click.stop
+      >Download to view</a>
+    </div>
+    <article
+      v-else-if="isMarkdown && textContent !== null"
+      class="markdown-body px-8 py-6 mx-auto max-w-4xl w-full"
+      v-html="renderedMarkdown"
+    />
+    <pre
+      v-else-if="textContent !== null"
+      class="text-sm leading-relaxed p-6"
+    ><code class="hljs block rounded-lg" v-html="highlightCode(textContent)" /></pre>
+  </div>
+</template>
+
+<!-- Global: targets v-html rendered markdown and hljs blocks -->
+<style>
+.markdown-body {
+  color: #e4e4e7;
+  font-size: 0.9375rem;
+  line-height: 1.75;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: #fff;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+.markdown-body h1 { font-size: 1.875rem; border-bottom: 1px solid #3f3f46; padding-bottom: 0.4em; }
+.markdown-body h2 { font-size: 1.5rem;   border-bottom: 1px solid #3f3f46; padding-bottom: 0.3em; }
+.markdown-body h3 { font-size: 1.25rem; }
+.markdown-body h4 { font-size: 1.0625rem; }
+.markdown-body p  { margin-bottom: 1em; }
+.markdown-body a  { color: #60a5fa; text-decoration: underline; }
+.markdown-body a:hover { color: #93c5fd; }
+.markdown-body strong { color: #fff; font-weight: 600; }
+.markdown-body em     { font-style: italic; }
+.markdown-body ul,
+.markdown-body ol  { margin-bottom: 1em; padding-left: 1.75em; }
+.markdown-body ul  { list-style-type: disc; }
+.markdown-body ol  { list-style-type: decimal; }
+.markdown-body li  { margin-bottom: 0.25em; }
+.markdown-body li > ul,
+.markdown-body li > ol { margin-bottom: 0; }
+.markdown-body blockquote {
+  border-left: 3px solid #52525b;
+  padding: 0.25em 1em;
+  margin: 1em 0;
+  color: #a1a1aa;
+}
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+  background: #27272a;
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  color: #f4f4f5;
+}
+.markdown-body pre,
+.markdown-body .hljs-md-pre {
+  margin: 1em 0;
+  border-radius: 0.5rem;
+  overflow: auto;
+}
+.markdown-body pre code,
+.markdown-body .hljs-md-pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #3f3f46;
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.markdown-body th { background: #27272a; color: #fff; font-weight: 600; }
+.markdown-body tr:nth-child(even) td { background: #18181b; }
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid #3f3f46;
+  margin: 1.5em 0;
+}
+.markdown-body img { max-width: 100%; border-radius: 0.5rem; }
+</style>
