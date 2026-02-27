@@ -88,12 +88,13 @@ onUnmounted(() => {
       :src="streamUrl"
       :alt="entry.name"
       :style="{
+        maxHeight: 'calc(100vh - 120px)',
         transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
         transformOrigin: 'center center',
         transition: isPanning ? 'none' : 'transform 0.1s ease',
         willChange: 'transform',
       }"
-      class="max-w-full max-h-full object-contain rounded-lg select-none"
+      class="max-w-full object-contain rounded-lg select-none"
       draggable="false"
     />
 
