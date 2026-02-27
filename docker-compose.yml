@@ -9,6 +9,7 @@ services:
       JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
       DB_PATH: /data/files.db
       USERS_ROOT: /data/users
+      THUMB_CACHE_DIR: /data/thumbs
       GIN_MODE: release
     volumes:
       - db_data:/data
