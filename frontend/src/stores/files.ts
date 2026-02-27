@@ -10,11 +10,11 @@ export const useFilesStore = defineStore('files', () => {
   const error = ref<string | null>(null)
 
   async function navigate(path: string) {
+    currentPath.value = path // update immediately so watchers see the new path before entries load
     loading.value = true
     error.value = null
     try {
       entries.value = await filesApi.list(path)
-      currentPath.value = path
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'Failed to load directory'
     } finally {

@@ -5,20 +5,22 @@ import (
 )
 
 type Config struct {
-	Port      string
-	JWTSecret string
-	DBPath    string
-	UsersRoot string
-	GinMode   string
+	Port         string
+	JWTSecret    string
+	DBPath       string
+	UsersRoot    string
+	GinMode      string
+	ThumbCacheDir string
 }
 
 func Load() *Config {
 	return &Config{
-		Port:      getEnv("PORT", "8080"),
-		JWTSecret: getEnv("JWT_SECRET", "change-me-in-production"),
-		DBPath:    getEnv("DB_PATH", "./data/files.db"),
-		UsersRoot: getEnv("USERS_ROOT", "./data/users"),
-		GinMode:   getEnv("GIN_MODE", "debug"),
+		Port:          getEnv("PORT", "8080"),
+		JWTSecret:     getEnv("JWT_SECRET", "change-me-in-production"),
+		DBPath:        getEnv("DB_PATH", "./data/files.db"),
+		UsersRoot:     getEnv("USERS_ROOT", "./data/users"),
+		GinMode:       getEnv("GIN_MODE", "debug"),
+		ThumbCacheDir: getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
 	}
 }
 

@@ -9,6 +9,7 @@ const props = defineProps<{
   entries: FileEntry[]
   loading: boolean
   selected: string[]
+  thumbReadyPaths: Set<string>
 }>()
 const emit = defineEmits<{
   navigate: [path: string]
@@ -202,21 +203,37 @@ const catIcon: Record<string, string> = {
           :style="{ height: item.thumbH + 'px' }"
           class="overflow-hidden relative"
         >
-          <!-- Image — only loaded when this item is rendered (i.e. in view) -->
+          <!-- Image: show thumbnail when ready, placeholder icon while generating -->
           <img
-            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
-            :src="filesApi.streamUrl(item.entry.path)"
+            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/') && thumbReadyPaths.has(item.entry.path)"
+            :src="filesApi.thumbUrl(item.entry.path)"
             :alt="item.entry.name"
             draggable="false"
             class="w-full h-full object-cover"
           />
+          <div
+            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
+            class="w-full h-full flex items-center justify-center bg-green-950/60"
+          >
+            <svg class="size-12 text-green-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
 
-          <!-- Video -->
+          <!-- Video: thumbnail when ready, icon placeholder while generating -->
+          <img
+            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/') && thumbReadyPaths.has(item.entry.path)"
+            :src="filesApi.thumbUrl(item.entry.path)"
+            :alt="item.entry.name"
+            draggable="false"
+            class="w-full h-full object-cover"
+          />
           <div
             v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/')"
             class="w-full h-full flex items-center justify-center bg-purple-950/60"
           >
-            <svg class="size-12 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg class="size-12 text-purple-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                 d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
             </svg>

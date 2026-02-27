@@ -66,6 +66,9 @@ export const files = {
   streamUrl: (path: string) =>
     `${BASE}/files/stream?path=${encodeURIComponent(path)}&token=${token()}`,
 
+  thumbUrl: (path: string) =>
+    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&token=${token()}`,
+
   archiveContents: (path: string, password = '') =>
     request<ArchiveEntry[]>(
       'GET',

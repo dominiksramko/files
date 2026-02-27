@@ -11,6 +11,7 @@ import (
 	"files/internal/database"
 	"files/internal/handlers"
 	"files/internal/middleware"
+	"files/internal/thumbs"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -37,13 +38,21 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	// Thumbnail service (non-fatal if it fails — server runs without thumbnails)
+	thumbSvc, err := thumbs.New(db, cfg.ThumbCacheDir)
+	if err != nil {
+		log.Printf("thumbnails: disabled (%v)", err)
+		thumbSvc = nil
+	}
+
 	// Handlers
 	authH := handlers.NewAuthHandler(db, cfg.JWTSecret)
-	filesH := handlers.NewFilesHandler()
+	filesH := handlers.NewFilesHandler(thumbSvc)
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
 	opsH := handlers.NewFileOpsHandler()
 	subsH := handlers.NewSubtitlesHandler()
+	thumbH := handlers.NewThumbnailHandler(thumbSvc)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 
 	// Auth middleware (applied per group)
@@ -76,6 +85,10 @@ func main() {
 			authed.POST("/files/rename", opsH.Rename)
 			authed.GET("/files/subtitles", subsH.List)
 			authed.GET("/files/subtitle", subsH.Stream)
+
+			// Thumbnails
+			authed.GET("/thumbnails/get", thumbH.Get)
+			authed.GET("/thumbnails/stream", thumbH.Stream)
 
 			// Folder preferences
 			authed.GET("/folders/pref", foldersH.GetPref)

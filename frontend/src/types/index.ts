@@ -17,6 +17,7 @@ export interface FileEntry {
   size: number
   mod_time: string
   mime: string
+  has_thumb: boolean
 }
 
 export interface ArchiveEntry {

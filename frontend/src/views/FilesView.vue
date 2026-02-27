@@ -5,6 +5,7 @@ import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory } from '@/utils/formatters'
 import { files as filesApi, folders as foldersApi, fileops } from '@/utils/api'
+import { useThumbnails } from '@/composables/useThumbnails'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
@@ -15,6 +16,15 @@ import ArchiveContents from '@/components/archive/ArchiveContents.vue'
 const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
+
+// ── Thumbnails ───────────────────────────────────────────────────────────────
+const { thumbReadyPaths, connect: thumbConnect, seed: thumbSeed } = useThumbnails()
+
+// Seed thumbReadyPaths from has_thumb=true entries whenever the listing updates.
+watch(() => filesStore.entries, (entries) => {
+  const done = entries.filter((e) => e.has_thumb).map((e) => e.path)
+  thumbSeed(done)
+})
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
 const viewMode = ref<'grid' | 'list'>('list')
@@ -145,6 +155,7 @@ function routeQuery() {
 }
 
 function navigate(path: string) {
+  thumbConnect(path)
   filesStore.navigate(path)
   fetchFolderPref(path)
   selectedPaths.value = []
@@ -162,6 +173,7 @@ watch(
   (q) => {
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) {
+      thumbConnect(p)
       filesStore.navigate(p)
       fetchFolderPref(p)
       selectedPaths.value = []
@@ -383,6 +395,7 @@ const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard
 
 onMounted(() => {
   const initialPath = (route.query.path as string) || ''
+  thumbConnect(initialPath)
   filesStore.navigate(initialPath)
   fetchFolderPref(initialPath)
   if (route.query.q) searchQuery.value = route.query.q as string
@@ -631,6 +644,7 @@ onMounted(() => {
         :entries="visibleEntries"
         :loading="filesStore.loading || prefLoading"
         :selected="selectedPaths"
+        :thumb-ready-paths="thumbReadyPaths"
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"

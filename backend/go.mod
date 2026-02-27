@@ -1,6 +1,6 @@
 module files
 
-go 1.23
+go 1.24.0
 
 require (
 	github.com/gin-contrib/cors v1.7.2
@@ -37,9 +37,10 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect
+	golang.org/x/image v0.36.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect

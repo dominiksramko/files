@@ -11,21 +11,26 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"files/internal/thumbs"
 )
 
-type FilesHandler struct{}
+type FilesHandler struct {
+	thumbs *thumbs.Service // nil when thumbnail support is disabled
+}
 
-func NewFilesHandler() *FilesHandler {
-	return &FilesHandler{}
+func NewFilesHandler(thumbs *thumbs.Service) *FilesHandler {
+	return &FilesHandler{thumbs: thumbs}
 }
 
 type FileEntry struct {
-	Name    string    `json:"name"`
-	Path    string    `json:"path"`    // relative to user root
-	IsDir   bool      `json:"is_dir"`
-	Size    int64     `json:"size"`
-	ModTime time.Time `json:"mod_time"`
-	Mime    string    `json:"mime"`
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`     // relative to user root
+	IsDir    bool      `json:"is_dir"`
+	Size     int64     `json:"size"`
+	ModTime  time.Time `json:"mod_time"`
+	Mime     string    `json:"mime"`
+	HasThumb bool      `json:"has_thumb"` // true when a ready thumbnail exists
 }
 
 // GET /api/v1/files/list?path=
@@ -59,14 +64,22 @@ func (h *FilesHandler) List(c *gin.Context) {
 		if !e.IsDir() {
 			mime = mimeByExt(filepath.Ext(e.Name()))
 		}
-		files = append(files, FileEntry{
+		fe := FileEntry{
 			Name:    e.Name(),
 			Path:    entryRel,
 			IsDir:   e.IsDir(),
 			Size:    info.Size(),
 			ModTime: info.ModTime(),
 			Mime:    mime,
-		})
+		}
+		// Check / enqueue thumbnail for thumbnailable files.
+		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
+			entryAbs := filepath.Join(abs, e.Name())
+			fe.HasThumb = h.thumbs.CheckAndEnqueue(
+				entryAbs, entryRel, abs, mime, info.ModTime().Unix(),
+			)
+		}
+		files = append(files, fe)
 	}
 
 	// Folders first, then alphabetical

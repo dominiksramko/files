@@ -8,8 +8,9 @@ import { files as filesApi } from '@/utils/api'
 const props = defineProps<{ entry: FileEntry }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
-const src  = filesApi.streamUrl(props.entry.path)
-const mime = props.entry.mime
+const src    = filesApi.streamUrl(props.entry.path)
+const mime   = props.entry.mime
+const poster = props.entry.has_thumb ? filesApi.thumbUrl(props.entry.path) : undefined
 
 interface SubtitleTrack {
   src: string
@@ -67,7 +68,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="plyr-wrapper w-full max-w-5xl" @click.stop>
-    <video ref="videoEl" preload="metadata" playsinline>
+    <video ref="videoEl" preload="metadata" playsinline :poster="poster">
       <source :src="src" :type="mime" />
       <track
         v-for="(sub, i) in subtitles"
