@@ -9,8 +9,22 @@ const props = defineProps<{ entry: FileEntry }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
 const src    = filesApi.streamUrl(props.entry.path)
-const mime   = props.entry.mime
 const poster = props.entry.has_thumb ? filesApi.thumbUrl(props.entry.path) : undefined
+
+// Formats that the server remuxes to fragmented MP4 on the fly.
+// The <source type> must reflect what the server actually sends so browsers
+// don't reject the request before it even reaches the network.
+function effectiveMime(mime: string): string {
+  switch (mime) {
+    case 'video/x-matroska':
+    case 'video/x-msvideo':
+    case 'video/quicktime':
+      return 'video/mp4'
+    default:
+      return mime
+  }
+}
+const sourceType = effectiveMime(props.entry.mime)
 
 interface SubtitleTrack {
   src: string
@@ -69,7 +83,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="plyr-wrapper w-full max-w-5xl" @click.stop>
     <video ref="videoEl" preload="metadata" playsinline :poster="poster">
-      <source :src="src" :type="mime" />
+      <source :src="src" :type="sourceType" />
       <track
         v-for="(sub, i) in subtitles"
         :key="sub.src"
