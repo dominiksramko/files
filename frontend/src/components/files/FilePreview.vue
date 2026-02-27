@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked, Renderer, type Tokens } from 'marked'
 import hljs from 'highlight.js/lib/common'
-import Plyr from 'plyr'
-import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
+import VideoPlayer from '@/components/files/VideoPlayer.vue'
 import { fileCategory, formatSize, isMarkdownFile, isTextFile } from '@/utils/formatters'
 
 const props = defineProps<{
@@ -54,6 +53,16 @@ renderer.code = function ({ text, lang }: Tokens.Code) {
   return `<pre class="hljs-md-pre"><code class="hljs language-${language}">${highlighted}</code></pre>`
 }
 marked.use({ renderer })
+
+// ── Image zoom & pan ──────────────────────────────────────────────────────────
+const zoom       = ref(1)
+const panX       = ref(0)
+const panY       = ref(0)
+const isPanning  = ref(false)
+const panOrigin  = ref({ x: 0, y: 0, panX: 0, panY: 0 })
+const imageContainer = ref<HTMLElement | null>(null)
+
+function resetZoom() { zoom.value = 1; panX.value = 0; panY.value = 0 }
 
 // ── Text content fetching ─────────────────────────────────────────────────────
 const TEXT_SIZE_LIMIT = 5 * 1024 * 1024 // 5 MB
@@ -120,15 +129,6 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// ── Image zoom & pan ──────────────────────────────────────────────────────────
-const zoom       = ref(1)
-const panX       = ref(0)
-const panY       = ref(0)
-const isPanning  = ref(false)
-const panOrigin  = ref({ x: 0, y: 0, panX: 0, panY: 0 })
-const imageContainer = ref<HTMLElement | null>(null)
-
-function resetZoom() { zoom.value = 1; panX.value = 0; panY.value = 0 }
 function zoomIn()  { zoom.value = Math.min(8, zoom.value * 1.25) }
 function zoomOut() { zoom.value = Math.max(1, zoom.value / 1.25); if (zoom.value === 1) { panX.value = 0; panY.value = 0 } }
 
@@ -168,150 +168,6 @@ function onPanEnd() {
   window.removeEventListener('mouseup',   onPanEnd)
 }
 
-// ── Plyr video player + MPV-style subtitle discovery ─────────────────────────
-
-interface SubtitleTrack {
-  src: string     // blob URL (always VTT)
-  label: string   // display name, e.g. "English"
-  srclang: string // ISO 639-1 code or empty
-}
-
-const SUBTITLE_EXTS = new Set(['.srt', '.vtt'])
-
-// Common ISO 639-1/-2 codes → display name
-const LANG_NAMES: Record<string, string> = {
-  en: 'English',  eng: 'English',
-  fr: 'French',   fra: 'French',   fre: 'French',
-  de: 'German',   deu: 'German',   ger: 'German',
-  es: 'Spanish',  spa: 'Spanish',
-  it: 'Italian',  ita: 'Italian',
-  pt: 'Portuguese', por: 'Portuguese',
-  ru: 'Russian',  rus: 'Russian',
-  ja: 'Japanese', jpn: 'Japanese',
-  ko: 'Korean',   kor: 'Korean',
-  zh: 'Chinese',  zho: 'Chinese',  chi: 'Chinese',
-  ar: 'Arabic',   ara: 'Arabic',
-  nl: 'Dutch',    nld: 'Dutch',
-  pl: 'Polish',   pol: 'Polish',
-  sv: 'Swedish',  swe: 'Swedish',
-  no: 'Norwegian',nor: 'Norwegian',
-  da: 'Danish',   dan: 'Danish',
-  fi: 'Finnish',  fin: 'Finnish',
-  tr: 'Turkish',  tur: 'Turkish',
-  cs: 'Czech',    cze: 'Czech',
-  hu: 'Hungarian',hun: 'Hungarian',
-  hi: 'Hindi',    hin: 'Hindi',
-}
-
-function langInfo(tag: string): { label: string; srclang: string } {
-  if (!tag) return { label: 'Default', srclang: '' }
-  const key = tag.toLowerCase()
-  const name = LANG_NAMES[key]
-  if (name) return { label: name, srclang: key.slice(0, 2) }
-  return { label: tag, srclang: key.slice(0, 2) }
-}
-
-function srtToVtt(srt: string): string {
-  return (
-    'WEBVTT\n\n' +
-    srt
-      .trim()
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      // SRT uses comma for milliseconds; VTT uses period
-      .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-  )
-}
-
-async function discoverSubtitles(entry: FileEntry): Promise<SubtitleTrack[]> {
-  const parts  = entry.path.split('/')
-  const dir    = parts.slice(0, -1).join('/')
-  // Base name without extension: "movie" from "movie.mkv"
-  const base   = entry.name.replace(/\.[^.]+$/, '').toLowerCase()
-
-  let dirEntries: FileEntry[]
-  try {
-    dirEntries = await filesApi.list(dir)
-  } catch {
-    return []
-  }
-
-  const tracks: SubtitleTrack[] = []
-
-  for (const e of dirEntries) {
-    if (e.is_dir) continue
-    const nameLower = e.name.toLowerCase()
-    // Must start with "<base>." (e.g. "movie.en.srt", "movie.srt")
-    if (!nameLower.startsWith(base + '.')) continue
-    const remainder = nameLower.slice(base.length + 1) // "en.srt" | "srt"
-    const lastDot   = remainder.lastIndexOf('.')
-    const ext       = lastDot >= 0 ? remainder.slice(lastDot) : ''
-    if (!SUBTITLE_EXTS.has(ext)) continue
-    // Language tag is everything before the final extension
-    const tag = lastDot > 0 ? remainder.slice(0, lastDot) : ''
-
-    try {
-      const text = await fetch(filesApi.streamUrl(e.path)).then(r => r.text())
-      const vtt  = ext === '.vtt' ? text : srtToVtt(text)
-      const src  = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }))
-      tracks.push({ src, ...langInfo(tag) })
-    } catch {
-      // unreadable — skip
-    }
-  }
-
-  return tracks
-}
-
-const videoEl        = ref<HTMLVideoElement | null>(null)
-const videoSubtitles = ref<SubtitleTrack[]>([])
-let   plyrInstance:  Plyr | null = null
-let   subtitleLoadId = 0
-
-function revokeTracks() {
-  videoSubtitles.value.forEach(t => URL.revokeObjectURL(t.src))
-  videoSubtitles.value = []
-}
-
-const plyrOptions: Plyr.Options = {
-  controls: [
-    'play-large', 'play', 'rewind', 'fast-forward',
-    'progress', 'current-time', 'duration',
-    'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen',
-  ],
-  settings: ['captions', 'speed'],
-  captions: { active: true, language: 'auto', update: true },
-  speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
-  // Don't let Plyr steal global keyboard shortcuts (we handle those ourselves)
-  keyboard: { focused: true, global: false },
-}
-
-// Runs after DOM updates so videoEl.value is always the current element
-watch(
-  () => props.entry,
-  async (entry) => {
-    const id = ++subtitleLoadId
-
-    plyrInstance?.destroy()
-    plyrInstance = null
-    revokeTracks()
-
-    if (!entry?.mime.startsWith('video/')) return
-
-    const tracks = await discoverSubtitles(entry)
-    if (id !== subtitleLoadId) return
-
-    videoSubtitles.value = tracks
-    await nextTick()
-    if (id !== subtitleLoadId) return
-
-    if (videoEl.value) {
-      plyrInstance = new Plyr(videoEl.value, plyrOptions)
-    }
-  },
-  { flush: 'post' },
-)
-
 // ── Keyboard navigation ───────────────────────────────────────────────────────
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
@@ -330,8 +186,6 @@ onUnmounted(() => {
   window.removeEventListener('keydown',   onKey)
   window.removeEventListener('mousemove', onPanMove)
   window.removeEventListener('mouseup',   onPanEnd)
-  plyrInstance?.destroy()
-  revokeTracks()
 })
 </script>
 
@@ -448,29 +302,13 @@ onUnmounted(() => {
               />
             </div>
 
-            <!-- Video — Plyr enhanced, with MPV-style subtitle discovery -->
-            <div
+            <!-- Video — Plyr enhanced, with server-side subtitle discovery -->
+            <!-- :key forces a full remount on path change (clean Plyr lifecycle) -->
+            <VideoPlayer
               v-else-if="isVideo"
-              class="plyr-wrapper w-full max-w-5xl"
-              @click.stop
-            >
-              <video
-                ref="videoEl"
-                preload="metadata"
-                playsinline
-              >
-                <source :src="streamUrl" :type="mime" />
-                <track
-                  v-for="(sub, i) in videoSubtitles"
-                  :key="sub.src"
-                  kind="subtitles"
-                  :label="sub.label"
-                  :srclang="sub.srclang || undefined"
-                  :src="sub.src"
-                  :default="i === 0"
-                />
-              </video>
-            </div>
+              :key="entry.path"
+              :entry="entry"
+            />
 
             <!-- Audio -->
             <div v-else-if="isAudio" class="w-full max-w-md px-6" @click.stop>
@@ -611,20 +449,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* ── Plyr theme ── */
-.plyr-wrapper :deep(.plyr) {
-  --plyr-color-main: #3b82f6;
-  --plyr-video-controls-background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.65));
-  --plyr-font-family: inherit;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  max-height: calc(100vh - 120px);
-  width: 100%;
-}
-.plyr-wrapper :deep(.plyr video) {
-  max-height: calc(100vh - 120px);
-  object-fit: contain;
-}
 </style>
 
 <!-- Global: targets v-html rendered markdown and hljs blocks -->

@@ -74,6 +74,17 @@ export const files = {
 
   extract: (path: string, dest?: string, password?: string) =>
     request<{ message: string }>('POST', '/files/extract', { path, dest, password }),
+
+  // All subtitle tracks (file-based + embedded) for a video file.
+  // The server does all discovery; each track has a ready-made url (without token).
+  subtitles: (path: string) =>
+    request<{ label: string; srclang: string; url: string }[]>(
+      'GET',
+      `/files/subtitles${qs({ path })}`,
+    ),
+
+  // Append the auth token to a subtitle url returned by the server.
+  subtitleUrl: (url: string) => `${url}&token=${token()}`,
 }
 
 // --- File operations ---

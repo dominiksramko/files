@@ -43,6 +43,7 @@ func main() {
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
 	opsH := handlers.NewFileOpsHandler()
+	subsH := handlers.NewSubtitlesHandler()
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 
 	// Auth middleware (applied per group)
@@ -73,6 +74,8 @@ func main() {
 			authed.POST("/files/upload", opsH.Upload)
 			authed.POST("/files/mkdir", opsH.Mkdir)
 			authed.POST("/files/rename", opsH.Rename)
+			authed.GET("/files/subtitles", subsH.List)
+			authed.GET("/files/subtitle", subsH.Stream)
 
 			// Folder preferences
 			authed.GET("/folders/pref", foldersH.GetPref)
