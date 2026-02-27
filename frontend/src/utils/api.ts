@@ -135,6 +135,11 @@ export const folders = {
     request<{ view_mode: 'grid' | 'list' }>('PUT', '/folders/pref', { path, view_mode }),
 }
 
+// --- Thumbnails ---
+export const thumbnails = {
+  clearAll: () => request<{ message: string }>('DELETE', '/thumbnails/clear'),
+}
+
 // --- Users ---
 export const users = {
   list: () => request<User[]>('GET', '/users'),

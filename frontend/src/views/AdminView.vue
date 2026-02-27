@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import type { User } from '@/types'
-import { users as usersApi } from '@/utils/api'
+import { users as usersApi, thumbnails } from '@/utils/api'
 import UserFormModal from '@/components/admin/UserFormModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -13,6 +13,7 @@ const error = ref('')
 
 const formUser = ref<User | null>(null)  // null = create mode, User = edit mode
 const showForm = ref(false)
+const clearingThumbs = ref(false)
 
 async function fetchUsers() {
   loading.value = true
@@ -51,6 +52,20 @@ function onSaved() {
   fetchUsers()
 }
 
+async function clearThumbnails() {
+  if (!confirm('Clear all thumbnail cache? This will delete all generated thumbnails.')) return
+  clearingThumbs.value = true
+  error.value = ''
+  try {
+    await thumbnails.clearAll()
+    alert('Thumbnail cache cleared successfully')
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to clear thumbnails'
+  } finally {
+    clearingThumbs.value = false
+  }
+}
+
 onMounted(fetchUsers)
 </script>
 
@@ -59,15 +74,27 @@ onMounted(fetchUsers)
     <!-- Header -->
     <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between shrink-0">
       <h1 class="text-lg font-semibold text-white">User Management</h1>
-      <button
-        class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-        @click="openCreate"
-      >
-        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        New user
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          :disabled="clearingThumbs"
+          class="flex items-center gap-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          @click="clearThumbnails"
+        >
+          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          {{ clearingThumbs ? 'Clearing...' : 'Clear thumbnails' }}
+        </button>
+        <button
+          class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          @click="openCreate"
+        >
+          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          New user
+        </button>
+      </div>
     </div>
 
     <!-- Error -->

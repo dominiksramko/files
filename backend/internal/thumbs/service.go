@@ -160,3 +160,44 @@ func (s *Service) process(t task) {
 		s.hub.Broadcast(t.folderAbs, t.relPath)
 	}
 }
+
+// ClearAll deletes all thumbnail records from the database and removes all
+// physical thumbnail files from the cache directory.
+func (s *Service) ClearAll() error {
+	// Get all thumbnail files from DB before deleting records
+	rows, err := s.db.Query(`SELECT thumb_file FROM thumbnails`)
+	if err != nil {
+		return fmt.Errorf("query thumbnails: %w", err)
+	}
+	defer rows.Close()
+
+	var thumbFiles []string
+	for rows.Next() {
+		var thumbFile string
+		if err := rows.Scan(&thumbFile); err != nil {
+			continue
+		}
+		thumbFiles = append(thumbFiles, thumbFile)
+	}
+
+	// Delete all DB records
+	if _, err := s.db.Exec(`DELETE FROM thumbnails`); err != nil {
+		return fmt.Errorf("delete thumbnail records: %w", err)
+	}
+
+	// Delete physical files
+	deleted := 0
+	for _, thumbFile := range thumbFiles {
+		thumbPath := filepath.Join(s.cacheDir, thumbFile)
+		if err := os.Remove(thumbPath); err != nil {
+			if !os.IsNotExist(err) {
+				log.Printf("thumbs: failed to delete %s: %v", thumbPath, err)
+			}
+		} else {
+			deleted++
+		}
+	}
+
+	log.Printf("thumbs: cleared %d records, deleted %d files", len(thumbFiles), deleted)
+	return nil
+}

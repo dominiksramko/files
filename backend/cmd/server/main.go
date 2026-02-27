@@ -101,6 +101,7 @@ func main() {
 				admin.POST("/users", usersH.Create)
 				admin.PUT("/users/:id", usersH.Update)
 				admin.DELETE("/users/:id", usersH.Delete)
+				admin.DELETE("/thumbnails/clear", thumbH.Clear)
 			}
 		}
 	}
