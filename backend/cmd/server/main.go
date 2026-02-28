@@ -54,6 +54,7 @@ func main() {
 	subsH := handlers.NewSubtitlesHandler()
 	thumbH := handlers.NewThumbnailHandler(thumbSvc)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
+	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 
 	// Auth middleware (applied per group)
 	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
@@ -75,6 +76,8 @@ func main() {
 			authed.GET("/files/search", filesH.Search)
 			authed.GET("/files/download", filesH.Download)
 			authed.GET("/files/stream", filesH.Stream)
+			authed.GET("/files/hls/playlist", hlsH.Playlist)
+			authed.GET("/files/hls/segment", hlsH.Segment)
 			authed.GET("/files/archive", archiveH.Contents)
 			authed.POST("/files/extract", archiveH.Extract)
 			authed.DELETE("/files", opsH.Delete)

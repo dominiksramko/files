@@ -17,6 +17,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
     "highlight.js": "^11.11.1",
+    "hls.js": "^1.6.15",
     "marked": "^17.0.3",
     "pinia": "^3.0.4",
     "plyr": "^3.8.4",

@@ -5,12 +5,13 @@ import (
 )
 
 type Config struct {
-	Port         string
-	JWTSecret    string
-	DBPath       string
-	UsersRoot    string
-	GinMode      string
+	Port          string
+	JWTSecret     string
+	DBPath        string
+	UsersRoot     string
+	GinMode       string
 	ThumbCacheDir string
+	HLSCacheDir   string
 }
 
 func Load() *Config {
@@ -21,6 +22,7 @@ func Load() *Config {
 		UsersRoot:     getEnv("USERS_ROOT", "./data/users"),
 		GinMode:       getEnv("GIN_MODE", "debug"),
 		ThumbCacheDir: getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
+		HLSCacheDir:   getEnv("HLS_CACHE_DIR", "./data/hls"),
 	}
 }
 

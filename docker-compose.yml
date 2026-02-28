@@ -10,6 +10,7 @@ services:
       DB_PATH: /data/files.db
       USERS_ROOT: /data/users
       THUMB_CACHE_DIR: /data/thumbs
+      HLS_CACHE_DIR: /data/hls
       GIN_MODE: release
     volumes:
       - db_data:/data

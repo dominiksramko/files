@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -128,16 +127,10 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	mime := mimeByExt(filepath.Ext(abs))
-	if needsRemux(mime) {
-		streamRemuxed(c, abs)
-		return
-	}
-
 	c.File(abs) // Gin handles Range headers automatically
 }
 
-// needsRemux reports whether a video format needs to be transcoded to MP4
+// needsRemux reports whether a video format needs to be transcoded to HLS/MP4
 // because browsers cannot play the raw container or its typical audio codecs.
 func needsRemux(mime string) bool {
 	switch mime {
@@ -145,24 +138,6 @@ func needsRemux(mime string) bool {
 		return true
 	}
 	return false
-}
-
-// streamRemuxed pipes the file through FFmpeg as a fragmented MP4 stream.
-// Video is copied as-is; audio is re-encoded to AAC for broad browser support.
-func streamRemuxed(c *gin.Context, absPath string) {
-	cmd := exec.CommandContext(c.Request.Context(), "ffmpeg",
-		"-i", absPath,
-		"-c:v", "copy",
-		"-c:a", "aac",
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-		"-f", "mp4",
-		"pipe:1",
-	)
-	c.Header("Content-Type", "video/mp4")
-	c.Header("Cache-Control", "no-store")
-	c.Status(http.StatusOK)
-	cmd.Stdout = c.Writer
-	cmd.Run() //nolint:errcheck — client disconnect is the normal termination path
 }
 
 // GET /api/v1/files/search?q=query&path=optional_subfolder

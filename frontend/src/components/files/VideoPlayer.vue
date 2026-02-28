@@ -8,23 +8,10 @@ import { files as filesApi } from '@/utils/api'
 const props = defineProps<{ entry: FileEntry }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
-const src    = filesApi.streamUrl(props.entry.path)
+const needsRemux = ['video/x-matroska', 'video/x-msvideo', 'video/quicktime'].includes(props.entry.mime)
+const src    = needsRemux ? undefined : filesApi.streamUrl(props.entry.path)
+const sourceType = needsRemux ? undefined : props.entry.mime
 const poster = props.entry.has_thumb ? filesApi.thumbUrl(props.entry.path) : undefined
-
-// Formats that the server remuxes to fragmented MP4 on the fly.
-// The <source type> must reflect what the server actually sends so browsers
-// don't reject the request before it even reaches the network.
-function effectiveMime(mime: string): string {
-  switch (mime) {
-    case 'video/x-matroska':
-    case 'video/x-msvideo':
-    case 'video/quicktime':
-      return 'video/mp4'
-    default:
-      return mime
-  }
-}
-const sourceType = effectiveMime(props.entry.mime)
 
 interface SubtitleTrack {
   src: string
@@ -35,6 +22,7 @@ interface SubtitleTrack {
 const videoEl   = ref<HTMLVideoElement | null>(null)
 const subtitles = ref<SubtitleTrack[]>([])
 let plyrInstance: Plyr | null = null
+let hlsInstance: any = null
 let alive = true
 
 const plyrOptions: Plyr.Options = {
@@ -68,13 +56,35 @@ onMounted(async () => {
   await nextTick()
   if (!alive || !videoEl.value) return
 
-  plyrInstance = new Plyr(videoEl.value, plyrOptions)
+  if (needsRemux) {
+    const Hls = (await import('hls.js')).default
+    if (Hls.isSupported()) {
+      hlsInstance = new Hls()
+      hlsInstance.loadSource(filesApi.hlsPlaylistUrl(props.entry.path))
+      hlsInstance.attachMedia(videoEl.value)
+      
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+         if (alive && videoEl.value && !plyrInstance) {
+           plyrInstance = new Plyr(videoEl.value!, plyrOptions)
+         }
+      })
+    } else if (videoEl.value.canPlayType('application/vnd.apple.mpegurl')) {
+      videoEl.value.src = filesApi.hlsPlaylistUrl(props.entry.path)
+      plyrInstance = new Plyr(videoEl.value, plyrOptions)
+    }
+  } else {
+    plyrInstance = new Plyr(videoEl.value, plyrOptions)
+  }
 })
 
 // Destroy Plyr before the DOM element is removed, so Plyr can clean up its
 // own DOM manipulation before Vue unmounts the component.
 onBeforeUnmount(() => {
   alive = false
+  if (hlsInstance) {
+    hlsInstance.destroy()
+    hlsInstance = null
+  }
   plyrInstance?.destroy()
   plyrInstance = null
 })
@@ -83,7 +93,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="plyr-wrapper w-full max-w-5xl" @click.stop>
     <video ref="videoEl" preload="metadata" playsinline :poster="poster">
-      <source :src="src" :type="sourceType" />
+      <source v-if="src" :src="src" :type="sourceType" />
       <track
         v-for="(sub, i) in subtitles"
         :key="sub.src"
