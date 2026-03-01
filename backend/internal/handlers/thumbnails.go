@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -19,14 +20,23 @@ func NewThumbnailHandler(svc *thumbs.Service) *ThumbnailHandler {
 	return &ThumbnailHandler{svc: svc}
 }
 
-// GET /api/v1/thumbnails/get?path=<rel>
+// GET /api/v1/thumbnails/get?path=<rel>&hash=<content-hash>
 // Serves the generated thumbnail JPEG for the given file.
+// Both path and hash are required: path resolves the file within the user's
+// root (authorization), hash verifies the file hasn't changed since the
+// client received the listing (cache correctness). Mismatches return 404.
 func (h *ThumbnailHandler) Get(c *gin.Context) {
 	if h.svc == nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 	root, rel := userRoot(c), c.Query("path")
+	claimedHash := c.Query("hash")
+
+	if claimedHash == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hash is required"})
+		return
+	}
 
 	absPath, err := safePath(root, rel)
 	if err != nil {
@@ -34,23 +44,36 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 		return
 	}
 
-	thumbPath, ok := h.svc.ThumbPath(absPath)
+	fi, err := os.Stat(absPath)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// Verify the file at this path currently has the claimed hash and a ready thumbnail.
+	actualHash, ok := h.svc.HashIfReady(absPath, fi.ModTime().Unix())
+	if !ok || actualHash != claimedHash {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	thumbPath, ok := h.svc.ThumbPathByHash(claimedHash)
 	if !ok {
 		c.Status(http.StatusNotFound)
 		return
 	}
 
-	// Thumbnails are content-addressed (filename includes mtime hash), so they
-	// can be cached indefinitely.
+	// The URL encodes the content hash so it changes whenever the file changes —
+	// safe to cache indefinitely.
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	c.File(thumbPath)
 }
 
 // GET /api/v1/thumbnails/stream?path=<folder-rel>
-// SSE endpoint: streams "data: <rel-path>\n\n" events as thumbnails become
-// ready for files inside the given folder. The client should connect here
-// immediately after loading a folder listing and stay connected until
-// navigating away.
+// SSE endpoint: streams JSON events as thumbnails become ready for files inside
+// the given folder. Each event is: data: {"path":"<rel>","hash":"<hash>"}\n\n
+// The client should connect here immediately after loading a folder listing and
+// stay connected until navigating away.
 func (h *ThumbnailHandler) Stream(c *gin.Context) {
 	if h.svc == nil {
 		// Send an empty SSE stream that immediately closes.
@@ -81,13 +104,19 @@ func (h *ThumbnailHandler) Stream(c *gin.Context) {
 	// Enqueue thumbnails for all thumbnailable files in this folder (async).
 	go h.enqueueFolder(root, rel, folderAbs)
 
+	type eventMsg struct {
+		Path string `json:"path"`
+		Hash string `json:"hash"`
+	}
+
 	for {
 		select {
-		case relPath, ok := <-ch:
+		case event, ok := <-ch:
 			if !ok {
 				return
 			}
-			fmt.Fprintf(c.Writer, "data: %s\n\n", relPath)
+			data, _ := json.Marshal(eventMsg{Path: event.RelPath, Hash: event.Hash})
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			c.Writer.Flush()
 		case <-c.Request.Context().Done():
 			return

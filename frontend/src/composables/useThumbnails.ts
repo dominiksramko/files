@@ -3,29 +3,34 @@ import { reactive, onUnmounted } from 'vue'
 /**
  * Manages thumbnail readiness state for the current folder.
  *
- * - `thumbReadyPaths` — reactive Set of file paths whose thumbnails are ready.
- *   Add paths here either via `seed()` (from the initial list response) or via
- *   the SSE stream (as thumbnails are generated in the background).
+ * - `thumbHashes` — reactive Map of file path → content hash for files whose
+ *   thumbnails are ready. Populated via `seed()` (from the initial listing) or
+ *   via the SSE stream (as thumbnails are generated in the background).
  *
  * - `connect(folderPath)` — clears state and opens an SSE connection that adds
- *   to `thumbReadyPaths` as the server finishes generating thumbnails.
+ *   to `thumbHashes` as the server finishes generating thumbnails.
  *
- * - `seed(paths)` — pre-populate from `has_thumb: true` entries in the listing.
+ * - `seed(entries)` — pre-populate from `has_thumb: true` entries in the listing.
  */
 export function useThumbnails() {
-  const thumbReadyPaths = reactive(new Set<string>())
+  const thumbHashes = reactive(new Map<string, string>())
   let eventSource: EventSource | null = null
 
   function connect(folderPath: string) {
     eventSource?.close()
-    thumbReadyPaths.clear()
+    thumbHashes.clear()
 
     const token = localStorage.getItem('token') ?? ''
     const url = `/api/v1/thumbnails/stream?path=${encodeURIComponent(folderPath)}&token=${encodeURIComponent(token)}`
     eventSource = new EventSource(url)
 
     eventSource.onmessage = (e: MessageEvent) => {
-      thumbReadyPaths.add(e.data as string)
+      try {
+        const { path, hash } = JSON.parse(e.data as string) as { path: string; hash: string }
+        thumbHashes.set(path, hash)
+      } catch {
+        // ignore malformed events
+      }
     }
 
     // On error, stop reconnecting — the server isn't sending more events.
@@ -35,8 +40,8 @@ export function useThumbnails() {
     }
   }
 
-  function seed(paths: string[]) {
-    paths.forEach((p) => thumbReadyPaths.add(p))
+  function seed(entries: Array<{ path: string; hash: string }>) {
+    entries.forEach(({ path, hash }) => thumbHashes.set(path, hash))
   }
 
   function disconnect() {
@@ -46,5 +51,5 @@ export function useThumbnails() {
 
   onUnmounted(disconnect)
 
-  return { thumbReadyPaths, connect, seed }
+  return { thumbHashes, connect, seed }
 }

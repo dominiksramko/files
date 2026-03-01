@@ -11,7 +11,9 @@ const props = defineProps<{ entry: FileEntry }>()
 const needsRemux = ['video/x-matroska', 'video/x-msvideo', 'video/quicktime'].includes(props.entry.mime)
 const src    = needsRemux ? undefined : filesApi.streamUrl(props.entry.path)
 const sourceType = needsRemux ? undefined : props.entry.mime
-const poster = props.entry.has_thumb ? filesApi.thumbUrl(props.entry.path) : undefined
+const poster = props.entry.has_thumb && props.entry.thumb_hash
+  ? filesApi.thumbUrl(props.entry.path, props.entry.thumb_hash)
+  : undefined
 
 interface SubtitleTrack {
   src: string

@@ -24,13 +24,14 @@ func NewFilesHandler(thumbs *thumbs.Service) *FilesHandler {
 }
 
 type FileEntry struct {
-	Name     string    `json:"name"`
-	Path     string    `json:"path"` // relative to user root
-	IsDir    bool      `json:"is_dir"`
-	Size     int64     `json:"size"`
-	ModTime  time.Time `json:"mod_time"`
-	Mime     string    `json:"mime"`
-	HasThumb bool      `json:"has_thumb"` // true when a ready thumbnail exists
+	Name      string    `json:"name"`
+	Path      string    `json:"path"` // relative to user root
+	IsDir     bool      `json:"is_dir"`
+	Size      int64     `json:"size"`
+	ModTime   time.Time `json:"mod_time"`
+	Mime      string    `json:"mime"`
+	HasThumb  bool      `json:"has_thumb"`            // true when a ready thumbnail exists
+	ThumbHash string    `json:"thumb_hash,omitempty"` // content hash, present when has_thumb is true
 }
 
 // GET /api/v1/files/list?path=
@@ -76,7 +77,10 @@ func (h *FilesHandler) List(c *gin.Context) {
 		// Enqueueing is handled by the SSE stream (thumbnails/stream) when the
 		// client connects to a folder.
 		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
-			fe.HasThumb = h.thumbs.IsReady(filepath.Join(abs, e.Name()), info.ModTime().Unix())
+			if hash, ok := h.thumbs.HashIfReady(filepath.Join(abs, e.Name()), info.ModTime().Unix()); ok {
+				fe.HasThumb = true
+				fe.ThumbHash = hash
+			}
 		}
 		files = append(files, fe)
 	}

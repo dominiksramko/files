@@ -9,7 +9,7 @@ const props = defineProps<{
   entries: FileEntry[]
   loading: boolean
   selected: string[]
-  thumbReadyPaths: Set<string>
+  thumbHashes: Map<string, string>
 }>()
 const emit = defineEmits<{
   navigate: [path: string]
@@ -205,8 +205,8 @@ const catIcon: Record<string, string> = {
         >
           <!-- Image: show thumbnail when ready, placeholder icon while generating -->
           <img
-            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/') && thumbReadyPaths.has(item.entry.path)"
-            :src="filesApi.thumbUrl(item.entry.path)"
+            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/') && thumbHashes.has(item.entry.path)"
+            :src="filesApi.thumbUrl(item.entry.path, thumbHashes.get(item.entry.path)!)"
             :alt="item.entry.name"
             draggable="false"
             class="w-full h-full object-cover"
@@ -223,8 +223,8 @@ const catIcon: Record<string, string> = {
 
           <!-- Video: thumbnail when ready, icon placeholder while generating -->
           <img
-            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/') && thumbReadyPaths.has(item.entry.path)"
-            :src="filesApi.thumbUrl(item.entry.path)"
+            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/') && thumbHashes.has(item.entry.path)"
+            :src="filesApi.thumbUrl(item.entry.path, thumbHashes.get(item.entry.path)!)"
             :alt="item.entry.name"
             draggable="false"
             class="w-full h-full object-cover"

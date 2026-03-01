@@ -18,11 +18,13 @@ const route = useRoute()
 const router = useRouter()
 
 // ── Thumbnails ───────────────────────────────────────────────────────────────
-const { thumbReadyPaths, connect: thumbConnect, seed: thumbSeed } = useThumbnails()
+const { thumbHashes, connect: thumbConnect, seed: thumbSeed } = useThumbnails()
 
-// Seed thumbReadyPaths from has_thumb=true entries whenever the listing updates.
+// Seed thumbHashes from has_thumb=true entries whenever the listing updates.
 watch(() => filesStore.entries, (entries) => {
-  const done = entries.filter((e) => e.has_thumb).map((e) => e.path)
+  const done = entries
+    .filter((e) => e.has_thumb && e.thumb_hash)
+    .map((e) => ({ path: e.path, hash: e.thumb_hash! }))
   thumbSeed(done)
 })
 
@@ -644,7 +646,7 @@ onMounted(() => {
         :entries="visibleEntries"
         :loading="filesStore.loading || prefLoading"
         :selected="selectedPaths"
-        :thumb-ready-paths="thumbReadyPaths"
+        :thumb-hashes="thumbHashes"
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"

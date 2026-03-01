@@ -18,6 +18,7 @@ export interface FileEntry {
   mod_time: string
   mime: string
   has_thumb: boolean
+  thumb_hash?: string
 }
 
 export interface ArchiveEntry {

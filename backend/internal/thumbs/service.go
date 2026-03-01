@@ -91,19 +91,23 @@ func (s *Service) cachedHash(absPath string, mtime int64) (string, error) {
 	return hash, nil
 }
 
-// IsReady reports whether a finished thumbnail exists for the file at its
-// current content. It is a pure read — it never enqueues generation.
-// mtime is used only as a hint to skip re-hashing unchanged files.
-func (s *Service) IsReady(absPath string, mtime int64) bool {
+// HashIfReady returns the content hash for the file at absPath if a finished
+// thumbnail exists for it, otherwise returns ("", false). It is a pure read —
+// it never enqueues generation. mtime is used only as a hint to skip
+// re-hashing unchanged files.
+func (s *Service) HashIfReady(absPath string, mtime int64) (string, bool) {
 	hash, err := s.cachedHash(absPath, mtime)
 	if err != nil {
-		return false
+		return "", false
 	}
 	var status string
 	err = s.db.QueryRow(
 		`SELECT status FROM thumbnails WHERE content_hash = ?`, hash,
 	).Scan(&status)
-	return err == nil && status == "done"
+	if err != nil || status != "done" {
+		return "", false
+	}
+	return hash, true
 }
 
 // CheckAndEnqueue ensures a thumbnail is queued for background generation when
@@ -139,19 +143,11 @@ func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtim
 	}
 }
 
-// ThumbPath returns the absolute filesystem path to a ready thumbnail.
-// Returns ("", false) if the thumbnail is not ready.
-func (s *Service) ThumbPath(absPath string) (string, bool) {
-	fi, err := os.Stat(absPath)
-	if err != nil {
-		return "", false
-	}
-	hash, err := s.cachedHash(absPath, fi.ModTime().Unix())
-	if err != nil {
-		return "", false
-	}
+// ThumbPathByHash returns the absolute filesystem path to a ready thumbnail
+// looked up directly by its content hash. Returns ("", false) if not ready.
+func (s *Service) ThumbPathByHash(hash string) (string, bool) {
 	var thumbFile, status string
-	err = s.db.QueryRow(
+	err := s.db.QueryRow(
 		`SELECT thumb_file, status FROM thumbnails WHERE content_hash = ?`, hash,
 	).Scan(&thumbFile, &status)
 	if err != nil || status != "done" {
@@ -189,7 +185,7 @@ func (s *Service) process(t task) {
 	)
 
 	if status == "done" {
-		s.hub.Broadcast(t.folderAbs, t.relPath)
+		s.hub.Broadcast(t.folderAbs, t.relPath, t.contentHash)
 	}
 }
 

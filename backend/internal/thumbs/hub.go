@@ -2,20 +2,26 @@ package thumbs
 
 import "sync"
 
+// ThumbEvent carries the relative path and content hash of a newly-ready thumbnail.
+type ThumbEvent struct {
+	RelPath string
+	Hash    string
+}
+
 // hub broadcasts thumbnail-ready events to SSE subscribers, keyed by folder abs path.
 type hub struct {
 	mu   sync.Mutex
-	subs map[string][]chan string
+	subs map[string][]chan ThumbEvent
 }
 
 func newHub() *hub {
-	return &hub{subs: make(map[string][]chan string)}
+	return &hub{subs: make(map[string][]chan ThumbEvent)}
 }
 
-// Subscribe returns a channel that receives relative file paths when their
-// thumbnails are ready, plus an unsubscribe function the caller must defer.
-func (h *hub) Subscribe(folderAbs string) (<-chan string, func()) {
-	ch := make(chan string, 64)
+// Subscribe returns a channel that receives ThumbEvents when thumbnails are
+// ready, plus an unsubscribe function the caller must defer.
+func (h *hub) Subscribe(folderAbs string) (<-chan ThumbEvent, func()) {
+	ch := make(chan ThumbEvent, 64)
 	h.mu.Lock()
 	h.subs[folderAbs] = append(h.subs[folderAbs], ch)
 	h.mu.Unlock()
@@ -37,14 +43,14 @@ func (h *hub) Subscribe(folderAbs string) (<-chan string, func()) {
 	}
 }
 
-// Broadcast sends relPath to all subscribers watching folderAbs.
+// Broadcast sends a ThumbEvent to all subscribers watching folderAbs.
 // Non-blocking: slow subscribers are skipped (channel is buffered).
-func (h *hub) Broadcast(folderAbs, relPath string) {
+func (h *hub) Broadcast(folderAbs, relPath, hash string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, ch := range h.subs[folderAbs] {
 		select {
-		case ch <- relPath:
+		case ch <- ThumbEvent{RelPath: relPath, Hash: hash}:
 		default:
 		}
 	}

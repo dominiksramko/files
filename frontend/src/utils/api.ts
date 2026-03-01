@@ -69,8 +69,8 @@ export const files = {
   hlsPlaylistUrl: (path: string) =>
     `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}&token=${token()}`,
 
-  thumbUrl: (path: string) =>
-    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&token=${token()}`,
+  thumbUrl: (path: string, hash: string) =>
+    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}&token=${token()}`,
 
   archiveContents: (path: string, password = '') =>
     request<ArchiveEntry[]>(
