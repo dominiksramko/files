@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"io/fs"

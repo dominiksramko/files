@@ -240,6 +240,39 @@ async function onPaste() {
   }
 }
 
+// ── Download selection ─────────────────────────────────────────────────────
+const downloading = ref(false)
+
+async function onDownload() {
+  if (selectedPaths.value.length === 1) {
+    const entry = visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
+    if (entry && !entry.is_dir) {
+      const a = document.createElement('a')
+      a.href = filesApi.downloadUrl(entry.path, entry.mod_time)
+      a.click()
+      return
+    }
+  }
+  downloading.value = true
+  try {
+    const blob = await fileops.downloadZip([...selectedPaths.value])
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const single = selectedPaths.value.length === 1
+      ? visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
+      : null
+    const folderName = filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'download'
+    a.download = single ? `${single.name}.zip` : `${folderName}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  } finally {
+    downloading.value = false
+  }
+}
+
 // ── Delete modal (unified for toolbar selection + preview) ─────────────────
 const deleteDialog = ref(false)
 const deletePending = ref<{ paths: string[]; name?: string } | null>(null)
@@ -517,6 +550,12 @@ onMounted(() => {
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
                 @click="onMove"
               >Move</button>
+
+              <button
+                :disabled="downloading"
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-50 transition-colors shrink-0"
+                @click="onDownload"
+              >{{ downloading ? 'Zipping…' : 'Download' }}</button>
 
               <button
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
