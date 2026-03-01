@@ -7,18 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
-)
 
-// thumbnailMimes is the set of MIME types that can display a thumbnail.
-// Extend this set when thumbnail generation is added for new file types (e.g. video).
-var thumbnailMimes = map[string]bool{
-	"image/jpeg":    true,
-	"image/png":     true,
-	"image/gif":     true,
-	"image/webp":    true,
-	"image/bmp":     true,
-	"image/svg+xml": true,
-}
+	"files/internal/thumbs"
+)
 
 // thumbnailThreshold is the minimum fraction of files that must be thumbnail-capable
 // for a folder to default to grid view.
@@ -108,7 +99,7 @@ func (h *FoldersHandler) SetPref(c *gin.Context) {
 }
 
 // autoDetectViewMode returns "grid" if ≥20% of files in the directory are
-// thumbnail-capable, otherwise "list".
+// thumbnail-capable (images or videos), otherwise "list".
 func autoDetectViewMode(dir string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -121,7 +112,7 @@ func autoDetectViewMode(dir string) string {
 			continue
 		}
 		totalFiles++
-		if thumbnailMimes[mimeByExt(filepath.Ext(e.Name()))] {
+		if thumbs.IsThumbnailable(mimeByExt(filepath.Ext(e.Name()))) {
 			thumbFiles++
 		}
 	}
