@@ -1,4 +1,5 @@
 import { reactive, onUnmounted } from 'vue'
+import { useFilesStore } from '@/stores/files'
 
 /**
  * Manages thumbnail readiness state for the current folder.
@@ -14,6 +15,7 @@ import { reactive, onUnmounted } from 'vue'
  */
 export function useThumbnails() {
   const thumbHashes = reactive(new Map<string, string>())
+  const filesStore = useFilesStore()
   let eventSource: EventSource | null = null
 
   function connect(folderPath: string) {
@@ -28,6 +30,13 @@ export function useThumbnails() {
       try {
         const { path, hash } = JSON.parse(e.data as string) as { path: string; hash: string }
         thumbHashes.set(path, hash)
+        // Keep the store entry in sync so components reading props.entry.thumb_hash
+        // (e.g. VideoPlayer poster) see the live value without a page refresh.
+        const entry = filesStore.entries.find((en) => en.path === path)
+        if (entry) {
+          entry.has_thumb = true
+          entry.thumb_hash = hash
+        }
       } catch {
         // ignore malformed events
       }
