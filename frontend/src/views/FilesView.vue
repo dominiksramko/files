@@ -277,6 +277,48 @@ watch(selectedPaths, () => { confirmingDelete.value = false })
 const uploadInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 
+// ── Upload conflict modal ──────────────────────────────────────────────────
+const uploadConflictDialog = ref(false)
+const pendingUploadFiles = ref<File[]>([])
+const conflictingNames = ref<string[]>([])
+
+function detectConflicts(files: File[]): string[] {
+  const existing = new Set(filesStore.entries.map((e) => e.name))
+  return files.map((f) => f.name).filter((name) => existing.has(name))
+}
+
+function findFreeName(filename: string, taken: Set<string>): string {
+  if (!taken.has(filename)) return filename
+  const lastDot = filename.lastIndexOf('.')
+  const base = lastDot >= 0 ? filename.slice(0, lastDot) : filename
+  const ext = lastDot >= 0 ? filename.slice(lastDot) : ''
+  let n = 1
+  while (taken.has(`${base} (${n})${ext}`)) n++
+  return `${base} (${n})${ext}`
+}
+
+function resolveKeepAll(files: File[]): File[] {
+  const taken = new Set(filesStore.entries.map((e) => e.name))
+  return files.map((file) => {
+    const newName = findFreeName(file.name, taken)
+    taken.add(newName)
+    if (newName === file.name) return file
+    return new File([file], newName, { type: file.type, lastModified: file.lastModified })
+  })
+}
+
+function onUploadReplace() {
+  uploadConflictDialog.value = false
+  performUpload(pendingUploadFiles.value)
+  pendingUploadFiles.value = []
+}
+
+function onUploadKeepAll() {
+  uploadConflictDialog.value = false
+  performUpload(resolveKeepAll(pendingUploadFiles.value))
+  pendingUploadFiles.value = []
+}
+
 function openFilePicker() {
   uploadInput.value?.click()
 }
@@ -289,6 +331,17 @@ async function handleFileInput(e: Event) {
 }
 
 async function uploadFiles(files: File[]) {
+  const conflicts = detectConflicts(files)
+  if (conflicts.length > 0) {
+    pendingUploadFiles.value = files
+    conflictingNames.value = conflicts
+    uploadConflictDialog.value = true
+    return
+  }
+  await performUpload(files)
+}
+
+async function performUpload(files: File[]) {
   uploading.value = true
   try {
     const res = await fileops.upload(filesStore.currentPath, files)
@@ -749,6 +802,43 @@ onMounted(() => {
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="confirmRename"
             >Rename</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Upload conflict dialog -->
+    <Transition name="fade">
+      <div
+        v-if="uploadConflictDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="uploadConflictDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Upload conflicts</h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            {{ conflictingNames.length }} file{{ conflictingNames.length !== 1 ? 's' : '' }} already exist in this folder.
+          </p>
+          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
+            <li
+              v-for="name in conflictingNames"
+              :key="name"
+              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
+            >{{ name }}</li>
+          </ul>
+          <div class="flex gap-2 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="uploadConflictDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+              @click="onUploadReplace"
+            >Replace</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="onUploadKeepAll"
+            >Keep all</button>
           </div>
         </div>
       </div>
