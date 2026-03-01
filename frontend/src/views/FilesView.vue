@@ -18,15 +18,7 @@ const route = useRoute()
 const router = useRouter()
 
 // ── Thumbnails ───────────────────────────────────────────────────────────────
-const { thumbHashes, connect: thumbConnect, seed: thumbSeed } = useThumbnails()
-
-// Seed thumbHashes from has_thumb=true entries whenever the listing updates.
-watch(() => filesStore.entries, (entries) => {
-  const done = entries
-    .filter((e) => e.has_thumb && e.thumb_hash)
-    .map((e) => ({ path: e.path, hash: e.thumb_hash! }))
-  thumbSeed(done)
-})
+const { connect: thumbConnect } = useThumbnails()
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
 const viewMode = ref<'grid' | 'list'>('list')
@@ -346,7 +338,10 @@ async function performUpload(files: File[]) {
   try {
     const res = await fileops.upload(filesStore.currentPath, files)
     showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
-    filesStore.refresh()
+    await filesStore.refresh()
+    // Reconnect the SSE stream so enqueueFolder rescans and picks up newly
+    // uploaded files that weren't present when the stream first connected.
+    thumbConnect(filesStore.currentPath)
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
@@ -699,7 +694,7 @@ onMounted(() => {
         :entries="visibleEntries"
         :loading="filesStore.loading || prefLoading"
         :selected="selectedPaths"
-        :thumb-hashes="thumbHashes"
+
         @navigate="navigate"
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"

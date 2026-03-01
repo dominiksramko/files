@@ -1,26 +1,21 @@
-import { reactive, onUnmounted } from 'vue'
+import { onUnmounted } from 'vue'
 import { useFilesStore } from '@/stores/files'
 
 /**
- * Manages thumbnail readiness state for the current folder.
+ * Manages the SSE connection for background thumbnail generation.
  *
- * - `thumbHashes` — reactive Map of file path → content hash for files whose
- *   thumbnails are ready. Populated via `seed()` (from the initial listing) or
- *   via the SSE stream (as thumbnails are generated in the background).
- *
- * - `connect(folderPath)` — clears state and opens an SSE connection that adds
- *   to `thumbHashes` as the server finishes generating thumbnails.
- *
- * - `seed(entries)` — pre-populate from `has_thumb: true` entries in the listing.
+ * - `connect(folderPath)` — opens an SSE connection for the given folder.
+ *   As thumbnails are generated, the server emits events and this composable
+ *   updates the matching entry in filesStore directly (has_thumb + thumb_hash).
+ *   Components read thumbnail state straight from FileEntry props — no separate
+ *   map or seeding needed.
  */
 export function useThumbnails() {
-  const thumbHashes = reactive(new Map<string, string>())
   const filesStore = useFilesStore()
   let eventSource: EventSource | null = null
 
   function connect(folderPath: string) {
     eventSource?.close()
-    thumbHashes.clear()
 
     const token = localStorage.getItem('token') ?? ''
     const url = `/api/v1/thumbnails/stream?path=${encodeURIComponent(folderPath)}&token=${encodeURIComponent(token)}`
@@ -29,9 +24,6 @@ export function useThumbnails() {
     eventSource.onmessage = (e: MessageEvent) => {
       try {
         const { path, hash } = JSON.parse(e.data as string) as { path: string; hash: string }
-        thumbHashes.set(path, hash)
-        // Keep the store entry in sync so components reading props.entry.thumb_hash
-        // (e.g. VideoPlayer poster) see the live value without a page refresh.
         const entry = filesStore.entries.find((en) => en.path === path)
         if (entry) {
           entry.has_thumb = true
@@ -42,23 +34,16 @@ export function useThumbnails() {
       }
     }
 
-    // On error, stop reconnecting — the server isn't sending more events.
     eventSource.onerror = () => {
       eventSource?.close()
       eventSource = null
     }
   }
 
-  function seed(entries: Array<{ path: string; hash: string }>) {
-    entries.forEach(({ path, hash }) => thumbHashes.set(path, hash))
-  }
-
-  function disconnect() {
+  onUnmounted(() => {
     eventSource?.close()
     eventSource = null
-  }
+  })
 
-  onUnmounted(disconnect)
-
-  return { thumbHashes, connect, seed }
+  return { connect }
 }
