@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { FileEntry, ArchiveEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { formatSize } from '@/utils/formatters'
@@ -14,6 +14,13 @@ const loading = ref(true)
 const error = ref('')
 const password = ref('')
 const passwordRequired = ref(false)
+const search = ref('')
+
+const filtered = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return contents.value
+  return contents.value.filter((item) => item.name.toLowerCase().includes(q))
+})
 
 const extracting = ref(false)
 const extractError = ref('')
@@ -95,13 +102,39 @@ onMounted(() => load())
 
     <!-- Contents -->
     <div v-else>
-      <p class="text-xs text-zinc-500 mb-2">{{ contents.length }} items</p>
+      <!-- Search -->
+      <div class="relative mb-2">
+        <svg
+          class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+        </svg>
+        <input
+          v-model="search"
+          type="text"
+          placeholder="Filter files…"
+          class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg pl-8 pr-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+          @keydown.escape="search = ''"
+        />
+      </div>
+      <p class="text-xs text-zinc-500 mb-2">
+        <template v-if="search.trim()">{{ filtered.length }} of {{ contents.length }} items</template>
+        <template v-else>{{ contents.length }} items</template>
+      </p>
       <div class="border border-zinc-800 rounded-lg overflow-hidden">
         <div class="max-h-80 overflow-y-auto">
           <table class="w-full text-sm">
             <tbody>
               <tr
-                v-for="item in contents"
+                v-if="filtered.length === 0"
+                class="border-b border-zinc-800/50 last:border-0"
+              >
+                <td colspan="2" class="px-3 py-4 text-center text-xs text-zinc-500">No matches</td>
+              </tr>
+              <tr
+                v-for="item in filtered"
                 :key="item.name"
                 class="border-b border-zinc-800/50 last:border-0"
               >
