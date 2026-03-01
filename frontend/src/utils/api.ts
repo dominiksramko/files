@@ -113,6 +113,22 @@ export const files = {
 export const fileops = {
   delete: (paths: string[]) => request<{ message: string }>('DELETE', '/files', { paths }),
 
+  downloadZip: async (paths: string[]): Promise<Blob> => {
+    const res = await fetch(`${BASE}/files/download-zip`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
+      },
+      body: JSON.stringify({ paths }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error ?? res.statusText)
+    }
+    return res.blob()
+  },
+
   copy: (paths: string[], dest: string) =>
     request<{ message: string }>('POST', '/files/copy', { paths, dest }),
 

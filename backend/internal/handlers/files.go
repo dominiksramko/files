@@ -171,6 +171,90 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "saved"})
 }
 
+// POST /api/v1/files/download-zip   body: { "paths": ["rel/path1", ...] }
+// Zips the requested paths into a temp file, serves it, then deletes it.
+func (h *FilesHandler) DownloadZip(c *gin.Context) {
+	root := userRoot(c)
+
+	var body struct {
+		Paths []string `json:"paths"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "paths required"})
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "files-zip-*.zip")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	zw := zip.NewWriter(tmp)
+	for _, rel := range body.Paths {
+		abs, err := safePath(root, rel)
+		if err != nil {
+			tmp.Close()
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if err := addToZip(zw, abs, filepath.Base(abs)); err != nil {
+			tmp.Close()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	if err := zw.Close(); err != nil {
+		tmp.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	tmp.Close()
+
+	c.FileAttachment(tmpName, "download.zip")
+}
+
+func addToZip(zw *zip.Writer, abs, name string) error {
+	info, err := os.Stat(abs)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(abs)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if err := addToZip(zw, filepath.Join(abs, e.Name()), name+"/"+e.Name()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	f, err := os.Open(abs)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	hdr, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	hdr.Name = name
+	hdr.Method = zip.Deflate
+
+	w, err := zw.CreateHeader(hdr)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(w, f)
+	return err
+}
+
 // needsRemux reports whether a video format needs to be transcoded to HLS/MP4
 // because browsers cannot play the raw container or its typical audio codecs.
 func needsRemux(mime string) bool {
