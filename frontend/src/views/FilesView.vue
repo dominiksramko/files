@@ -240,18 +240,28 @@ async function onPaste() {
   }
 }
 
-// ── Delete with inline confirmation ────────────────────────────────────────
-const confirmingDelete = ref(false)
+// ── Delete modal (unified for toolbar selection + preview) ─────────────────
+const deleteDialog = ref(false)
+const deletePending = ref<{ paths: string[]; name?: string } | null>(null)
 
-async function onDelete() {
-  if (!confirmingDelete.value) {
-    confirmingDelete.value = true
-    return
-  }
-  confirmingDelete.value = false
+function openDeleteDialog(paths: string[], name?: string) {
+  const resolvedName = name ?? (paths.length === 1
+    ? (filesStore.entries.find(e => e.path === paths[0])?.name
+      ?? searchResults.value.find(e => e.path === paths[0])?.name)
+    : undefined)
+  deletePending.value = { paths: [...paths], name: resolvedName }
+  deleteDialog.value = true
+}
+
+async function confirmDelete() {
+  if (!deletePending.value) return
+  const { paths } = deletePending.value
+  deleteDialog.value = false
+  deletePending.value = null
   try {
-    await fileops.delete(selectedPaths.value)
-    selectedPaths.value = []
+    await fileops.delete(paths)
+    if (paths.some(p => previewEntry.value?.path === p)) closePreview()
+    selectedPaths.value = selectedPaths.value.filter(p => !paths.includes(p))
     filesStore.refresh()
   } catch (err) {
     showToast((err as Error).message, 'error')
@@ -259,11 +269,9 @@ async function onDelete() {
 }
 
 function cancelDelete() {
-  confirmingDelete.value = false
+  deleteDialog.value = false
+  deletePending.value = null
 }
-
-// Clear delete confirmation if selection changes
-watch(selectedPaths, () => { confirmingDelete.value = false })
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 const uploadInput = ref<HTMLInputElement | null>(null)
@@ -417,9 +425,16 @@ async function confirmRename() {
   const trimmed = renameDialogName.value.trim()
   renameDialog.value = false
   if (!trimmed || trimmed === (entry.path.split('/').pop() ?? '')) return
+  const wasPreviewingThis = previewIndex.value >= 0 && previewEntry.value?.path === entry.path
   try {
     await fileops.rename(entry.path, trimmed)
-    filesStore.refresh()
+    await filesStore.refresh()
+    if (wasPreviewingThis) {
+      const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
+      const newPath = parent ? `${parent}/${trimmed}` : trimmed
+      const newIdx = previewableEntries.value.findIndex((e) => e.path === newPath)
+      previewIndex.value = newIdx >= 0 ? newIdx : -1
+    }
   } catch (err) {
     showToast((err as Error).message, 'error')
   }
@@ -428,6 +443,7 @@ async function confirmRename() {
 function cancelRename() {
   renameDialog.value = false
 }
+
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 type ToastKind = 'success' | 'error'
@@ -502,22 +518,9 @@ onMounted(() => {
                 @click="onMove"
               >Move</button>
 
-              <!-- Delete with inline confirmation -->
-              <template v-if="confirmingDelete">
-                <span class="text-xs text-red-400 shrink-0">Delete {{ selectedPaths.length }} item{{ selectedPaths.length !== 1 ? 's' : '' }}?</span>
-                <button
-                  class="px-2.5 py-1 rounded text-sm bg-red-700 hover:bg-red-600 text-white transition-colors shrink-0"
-                  @click="onDelete"
-                >Confirm</button>
-                <button
-                  class="px-2 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
-                  @click="cancelDelete"
-                >Cancel</button>
-              </template>
               <button
-                v-else
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
-                @click="onDelete"
+                @click="openDeleteDialog([...selectedPaths])"
               >Delete</button>
             </template>
 
@@ -729,6 +732,8 @@ onMounted(() => {
       @close="closePreview"
       @prev="prevPreview"
       @next="nextPreview"
+      @rename="startRename"
+      @delete="(e) => openDeleteDialog([e.path], e.name)"
     />
 
     <ArchiveContents
@@ -774,7 +779,7 @@ onMounted(() => {
     <Transition name="fade">
       <div
         v-if="renameDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
         @click.self="cancelRename"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
@@ -797,6 +802,39 @@ onMounted(() => {
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="confirmRename"
             >Rename</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Delete confirmation dialog -->
+    <Transition name="fade">
+      <div
+        v-if="deleteDialog"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        @click.self="cancelDelete"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">
+            {{ deletePending && deletePending.paths.length === 1 ? 'Delete file?' : `Delete ${deletePending?.paths.length} files?` }}
+          </h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            <template v-if="deletePending && deletePending.paths.length === 1">
+              This will delete <span class="text-zinc-200">{{ deletePending.name ?? 'this file' }}</span> from your files.
+            </template>
+            <template v-else>
+              This will delete {{ deletePending?.paths.length }} items from your files.
+            </template>
+          </p>
+          <div class="flex gap-2 mt-3 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="cancelDelete"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors"
+              @click="confirmDelete"
+            >Delete</button>
           </div>
         </div>
       </div>

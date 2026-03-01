@@ -22,6 +22,8 @@ const emit = defineEmits<{
   close: []
   prev: []
   next: []
+  rename: [entry: FileEntry]
+  delete: [entry: FileEntry]
 }>()
 
 const viewerComponent = computed(() => {
@@ -38,6 +40,8 @@ const viewerComponent = computed(() => {
 
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
+  const tag = (document.activeElement as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
   if (e.key === 'Escape')                       emit('close')
   if (e.key === 'ArrowLeft'  && props.hasPrev)  emit('prev')
   if (e.key === 'ArrowRight' && props.hasNext)  emit('next')
@@ -72,6 +76,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
             </a>
+            <button
+              class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
+              title="Rename"
+              @click.stop="emit('rename', entry)"
+            >
+              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
+              class="text-zinc-400 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/10"
+              title="Delete"
+              @click.stop="emit('delete', entry)"
+            >
+              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
             <button
               class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
               @click="emit('close')"
