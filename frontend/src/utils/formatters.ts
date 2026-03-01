@@ -81,7 +81,7 @@ export function fileCategory(mime: string, name: string): FileCategory {
     mime === 'application/x-7z-compressed'
   )
     return 'archive'
-  if (mime.startsWith('text/')) return 'text'
+  if (isTextFile(mime, name)) return 'text'
   return 'other'
 }
 
