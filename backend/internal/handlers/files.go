@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -132,6 +133,41 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 	}
 
 	c.File(abs) // Gin handles Range headers automatically
+}
+
+// PUT /api/v1/files/content?path=
+func (h *FilesHandler) WriteContent(c *gin.Context) {
+	root, rel := userRoot(c), c.Query("path")
+
+	abs, err := safePath(root, rel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil || info.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+
+	const maxSize = 10 * 1024 * 1024 // 10 MB
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxSize+1))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if int64(len(body)) > maxSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "content too large"})
+		return
+	}
+
+	if err := os.WriteFile(abs, body, info.Mode()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "saved"})
 }
 
 // needsRemux reports whether a video format needs to be transcoded to HLS/MP4

@@ -4,9 +4,12 @@ import { marked, Renderer, type Tokens } from 'marked'
 import hljs from 'highlight.js/lib/common'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
+import { useFilesStore } from '@/stores/files'
 import { formatSize, isMarkdownFile } from '@/utils/formatters'
 
 const props = defineProps<{ entry: FileEntry }>()
+
+const filesStore = useFilesStore()
 
 const TEXT_SIZE_LIMIT = 5 * 1024 * 1024 // 5 MB
 
@@ -15,9 +18,41 @@ const textLoading  = ref(false)
 const textError    = ref(false)
 const textTooLarge = ref(false)
 
+// ── Edit mode ─────────────────────────────────────────────────────────────
+const editing     = ref(false)
+const editContent = ref('')
+const saving      = ref(false)
+const saveError   = ref('')
+
+function startEdit() {
+  editContent.value = textContent.value ?? ''
+  saveError.value = ''
+  editing.value = true
+}
+
+function cancelEdit() {
+  editing.value = false
+  saveError.value = ''
+}
+
+async function save() {
+  saving.value = true
+  saveError.value = ''
+  try {
+    await filesApi.writeContent(props.entry.path, editContent.value)
+    textContent.value = editContent.value
+    editing.value = false
+    filesStore.refresh()
+  } catch (e) {
+    saveError.value = (e as Error).message
+  } finally {
+    saving.value = false
+  }
+}
+
+// ── Markdown + syntax highlighting ────────────────────────────────────────
 const isMarkdown = computed(() => isMarkdownFile(props.entry.mime, props.entry.name))
 
-// Configure marked with hljs code block highlighting
 const renderer = new Renderer()
 renderer.code = function ({ text, lang }: Tokens.Code) {
   const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
@@ -48,6 +83,7 @@ function highlightCode(raw: string | null): string {
   }
 }
 
+// ── Fetch ─────────────────────────────────────────────────────────────────
 let fetchController: AbortController | null = null
 
 onMounted(async () => {
@@ -76,34 +112,68 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="flex-1 min-w-0 overflow-y-auto"
+    class="flex-1 min-w-0 flex flex-col"
     style="max-height: calc(100vh - 120px)"
     @click.stop
   >
-    <div v-if="textLoading" class="flex items-center justify-center h-32 text-zinc-400 text-sm">
-      Loading…
+    <!-- Toolbar: only shown when content is ready -->
+    <div
+      v-if="textContent !== null && !textTooLarge"
+      class="shrink-0 flex items-center justify-end gap-2 px-4 py-1.5 border-b border-zinc-800/60"
+      @click.stop
+    >
+      <span v-if="saveError" class="text-xs text-red-400 mr-auto">{{ saveError }}</span>
+      <template v-if="editing">
+        <button
+          class="px-3 py-1 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+          @click="cancelEdit"
+        >Cancel</button>
+        <button
+          :disabled="saving"
+          class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+          @click="save"
+        >{{ saving ? 'Saving…' : 'Save' }}</button>
+      </template>
+      <button
+        v-else
+        class="px-3 py-1 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+        @click="startEdit"
+      >Edit</button>
     </div>
-    <div v-else-if="textError" class="flex items-center justify-center h-32 text-red-400 text-sm">
-      Failed to load file content.
+
+    <!-- Content area -->
+    <div class="flex-1 overflow-y-auto min-h-0">
+      <div v-if="textLoading" class="flex items-center justify-center h-32 text-zinc-400 text-sm">
+        Loading…
+      </div>
+      <div v-else-if="textError" class="flex items-center justify-center h-32 text-red-400 text-sm">
+        Failed to load file content.
+      </div>
+      <div v-else-if="textTooLarge" class="flex flex-col items-center justify-center h-32 gap-3 text-zinc-400 text-sm">
+        <p>File is too large to preview ({{ formatSize(entry.size) }})</p>
+        <a
+          :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
+          target="_blank"
+          class="text-blue-400 hover:text-blue-300 underline"
+          @click.stop
+        >Download to view</a>
+      </div>
+      <textarea
+        v-else-if="editing"
+        v-model="editContent"
+        class="w-full h-full min-h-[400px] bg-transparent text-zinc-100 font-mono text-sm leading-relaxed p-6 resize-none focus:outline-none"
+        spellcheck="false"
+      />
+      <article
+        v-else-if="isMarkdown && textContent !== null"
+        class="markdown-body px-8 py-6 mx-auto max-w-4xl w-full"
+        v-html="renderedMarkdown"
+      />
+      <pre
+        v-else-if="textContent !== null"
+        class="text-sm leading-relaxed p-6"
+      ><code class="hljs block rounded-lg" v-html="highlightCode(textContent)" /></pre>
     </div>
-    <div v-else-if="textTooLarge" class="flex flex-col items-center justify-center h-32 gap-3 text-zinc-400 text-sm">
-      <p>File is too large to preview ({{ formatSize(entry.size) }})</p>
-      <a
-        :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
-        target="_blank"
-        class="text-blue-400 hover:text-blue-300 underline"
-        @click.stop
-      >Download to view</a>
-    </div>
-    <article
-      v-else-if="isMarkdown && textContent !== null"
-      class="markdown-body px-8 py-6 mx-auto max-w-4xl w-full"
-      v-html="renderedMarkdown"
-    />
-    <pre
-      v-else-if="textContent !== null"
-      class="text-sm leading-relaxed p-6"
-    ><code class="hljs block rounded-lg" v-html="highlightCode(textContent)" /></pre>
   </div>
 </template>
 

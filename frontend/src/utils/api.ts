@@ -81,6 +81,22 @@ export const files = {
   extract: (path: string, dest?: string, password?: string) =>
     request<{ message: string }>('POST', '/files/extract', { path, dest, password }),
 
+  writeContent: (path: string, content: string) =>
+    fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        Authorization: `Bearer ${token()}`,
+      },
+      body: content,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error ?? res.statusText)
+      }
+      return res.json() as Promise<{ message: string }>
+    }),
+
   // All subtitle tracks (file-based + embedded) for a video file.
   // The server does all discovery; each track has a ready-made url (without token).
   subtitles: (path: string) =>
