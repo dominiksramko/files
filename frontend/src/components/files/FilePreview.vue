@@ -61,7 +61,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <div class="flex items-center gap-3 shrink-0 ml-4">
             <span class="text-xs text-zinc-400 tabular-nums">{{ index + 1 }} / {{ total }}</span>
             <a
-              :href="filesApi.downloadUrl(entry.path)"
+              :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
               target="_blank"
               class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
               title="Download"

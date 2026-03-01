@@ -59,7 +59,7 @@ onMounted(async () => {
   textLoading.value = true
   fetchController = new AbortController()
   try {
-    const res = await fetch(filesApi.streamUrl(props.entry.path), { signal: fetchController.signal })
+    const res = await fetch(filesApi.streamUrl(props.entry.path, props.entry.mod_time), { signal: fetchController.signal })
     if (!res.ok) throw new Error()
     textContent.value = await res.text()
   } catch (e) {
@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
     <div v-else-if="textTooLarge" class="flex flex-col items-center justify-center h-32 gap-3 text-zinc-400 text-sm">
       <p>File is too large to preview ({{ formatSize(entry.size) }})</p>
       <a
-        :href="filesApi.downloadUrl(entry.path)"
+        :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
         target="_blank"
         class="text-blue-400 hover:text-blue-300 underline"
         @click.stop

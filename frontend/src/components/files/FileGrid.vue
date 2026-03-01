@@ -118,7 +118,7 @@ function handleClick(entry: FileEntry) {
 
 function download(entry: FileEntry, e: Event) {
   e.stopPropagation()
-  window.open(filesApi.downloadUrl(entry.path), '_blank')
+  window.open(filesApi.downloadUrl(entry.path, entry.mod_time), '_blank')
 }
 
 // ── Category helpers (icon colours) ─────────────────────────────────────────

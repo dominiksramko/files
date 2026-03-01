@@ -60,11 +60,11 @@ export const files = {
   search: (q: string, path = '') =>
     request<FileEntry[]>('GET', `/files/search${qs({ q, ...(path ? { path } : {}) })}`),
 
-  downloadUrl: (path: string) =>
-    `${BASE}/files/download?path=${encodeURIComponent(path)}&token=${token()}`,
+  downloadUrl: (path: string, modTime: string) =>
+    `${BASE}/files/download?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
 
-  streamUrl: (path: string) =>
-    `${BASE}/files/stream?path=${encodeURIComponent(path)}&token=${token()}`,
+  streamUrl: (path: string, modTime: string) =>
+    `${BASE}/files/stream?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
 
   hlsPlaylistUrl: (path: string) =>
     `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}&token=${token()}`,

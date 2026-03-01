@@ -9,7 +9,7 @@ const props = defineProps<{ entry: FileEntry }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
 const needsRemux = ['video/x-matroska', 'video/x-msvideo', 'video/quicktime'].includes(props.entry.mime)
-const src        = needsRemux ? undefined : filesApi.streamUrl(props.entry.path)
+const src        = needsRemux ? undefined : filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 const sourceType = needsRemux ? undefined : props.entry.mime
 // Computed so it reacts if the store entry gets its thumb_hash populated by the
 // SSE stream after the initial listing (thumbnail generated while folder is open).

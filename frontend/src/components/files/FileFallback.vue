@@ -35,7 +35,7 @@ const catStyle = computed(() => {
       <p class="text-zinc-600 text-xs font-mono">{{ entry.mime || 'Unknown type' }}</p>
     </div>
     <a
-      :href="filesApi.downloadUrl(entry.path)"
+      :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
       target="_blank"
       class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-6 py-2.5 rounded-xl transition-colors"
       @click.stop

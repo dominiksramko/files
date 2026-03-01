@@ -4,7 +4,7 @@ import { files as filesApi } from '@/utils/api'
 
 const props = defineProps<{ entry: FileEntry }>()
 
-const streamUrl = filesApi.streamUrl(props.entry.path)
+const streamUrl = filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 </script>
 
 <template>
