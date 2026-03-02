@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
-import { fileCategory } from '@/utils/formatters'
+import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi, folders as foldersApi, fileops } from '@/utils/api'
 import { useThumbnails } from '@/composables/useThumbnails'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
@@ -12,6 +12,8 @@ import FileGrid from '@/components/files/FileGrid.vue'
 import FileSearch from '@/components/files/FileSearch.vue'
 import FilePreview from '@/components/files/FilePreview.vue'
 import ArchiveContents from '@/components/archive/ArchiveContents.vue'
+import ContextMenu from '@/components/ui/ContextMenu.vue'
+import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 
 const filesStore = useFilesStore()
 const route = useRoute()
@@ -243,9 +245,10 @@ async function onPaste() {
 // ── Download selection ─────────────────────────────────────────────────────
 const downloading = ref(false)
 
-async function onDownload() {
-  if (selectedPaths.value.length === 1) {
-    const entry = visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
+async function downloadPaths(paths: string[]) {
+  if (paths.length === 1) {
+    const pool = [...visibleEntries.value, ...searchResults.value]
+    const entry = pool.find((e) => e.path === paths[0])
     if (entry && !entry.is_dir) {
       const a = document.createElement('a')
       a.href = filesApi.downloadUrl(entry.path, entry.mod_time)
@@ -255,13 +258,12 @@ async function onDownload() {
   }
   downloading.value = true
   try {
-    const blob = await fileops.downloadZip([...selectedPaths.value])
+    const blob = await fileops.downloadZip(paths)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const single = selectedPaths.value.length === 1
-      ? visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
-      : null
+    const pool = [...visibleEntries.value, ...searchResults.value]
+    const single = paths.length === 1 ? pool.find((e) => e.path === paths[0]) : null
     const folderName = filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'download'
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
@@ -271,6 +273,10 @@ async function onDownload() {
   } finally {
     downloading.value = false
   }
+}
+
+function onDownload() {
+  downloadPaths([...selectedPaths.value])
 }
 
 // ── Delete modal (unified for toolbar selection + preview) ─────────────────
@@ -477,6 +483,55 @@ function cancelRename() {
   renameDialog.value = false
 }
 
+// ── Context menu ──────────────────────────────────────────────────────────
+const contextMenuState = ref<{ x: number; y: number; entry: FileEntry; paths: string[] } | null>(null)
+const detailsEntry = ref<FileEntry | null>(null)
+
+function onContextMenu(entry: FileEntry, x: number, y: number) {
+  const paths = selectedPaths.value.includes(entry.path)
+    ? [...selectedPaths.value]
+    : [entry.path]
+  contextMenuState.value = { x, y, entry, paths }
+}
+
+const contextMenuItems = computed((): ContextMenuItem[] => {
+  if (!contextMenuState.value) return []
+  const { entry, paths } = contextMenuState.value
+  const single = paths.length === 1
+  const close = () => { contextMenuState.value = null }
+  const items: ContextMenuItem[] = [
+    {
+      label: 'Copy',
+      action: () => { clipboard.value = { mode: 'copy', paths }; close() },
+    },
+    {
+      label: 'Move',
+      action: () => {
+        clipboard.value = { mode: 'move', paths }
+        selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
+        close()
+      },
+    },
+    {
+      label: downloading.value ? 'Downloading…' : 'Download',
+      action: () => { close(); downloadPaths(paths) },
+    },
+    { separator: true },
+  ]
+  if (single) {
+    items.push({ label: 'Rename', action: () => { close(); startRename(entry) } })
+  }
+  items.push({
+    label: 'Delete',
+    danger: true,
+    action: () => { close(); openDeleteDialog(paths, single ? entry.name : undefined) },
+  })
+  if (single) {
+    items.push({ separator: true })
+    items.push({ label: 'Details', action: () => { close(); detailsEntry.value = entry } })
+  }
+  return items
+})
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 type ToastKind = 'success' | 'error'
@@ -556,6 +611,12 @@ onMounted(() => {
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-50 transition-colors shrink-0"
                 @click="onDownload"
               >{{ downloading ? 'Zipping…' : 'Download' }}</button>
+
+              <button
+                v-if="selectedPaths.length === 1"
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                @click="startRename([...visibleEntries, ...searchResults].find(e => e.path === selectedPaths[0])!)"
+              >Rename</button>
 
               <button
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
@@ -741,7 +802,7 @@ onMounted(() => {
         @preview="openPreview"
         @archive-preview="archiveEntry = $event"
         @toggle-select="toggleSelect"
-        @rename-start="startRename"
+        @context-menu="onContextMenu"
       />
       <FileList
         v-else
@@ -758,7 +819,7 @@ onMounted(() => {
         @toggle-select="toggleSelect"
         @select-all="selectAll"
         @deselect-all="deselectAll"
-        @rename-start="startRename"
+        @context-menu="onContextMenu"
       />
     </div>
 
@@ -911,6 +972,56 @@ onMounted(() => {
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="onUploadKeepAll"
             >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Context menu -->
+    <ContextMenu
+      v-if="contextMenuState"
+      :x="contextMenuState.x"
+      :y="contextMenuState.y"
+      :items="contextMenuItems"
+      @close="contextMenuState = null"
+    />
+
+    <!-- Details modal -->
+    <Transition name="fade">
+      <div
+        v-if="detailsEntry"
+        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
+        @click.self="detailsEntry = null"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Details</h3>
+          <dl class="space-y-2">
+            <div class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Name</dt>
+              <dd class="text-xs text-zinc-200 break-all">{{ detailsEntry.name }}</dd>
+            </div>
+            <div class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Type</dt>
+              <dd class="text-xs text-zinc-200">{{ detailsEntry.is_dir ? 'Folder' : (detailsEntry.mime || 'Unknown') }}</dd>
+            </div>
+            <div class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Size</dt>
+              <dd class="text-xs text-zinc-200">{{ detailsEntry.is_dir ? '—' : formatSize(detailsEntry.size) }}</dd>
+            </div>
+            <div class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Modified</dt>
+              <dd class="text-xs text-zinc-200">{{ formatDate(detailsEntry.mod_time) }}</dd>
+            </div>
+            <div class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Path</dt>
+              <dd class="text-xs text-zinc-400 break-all font-mono">/{{ detailsEntry.path }}</dd>
+            </div>
+          </dl>
+          <div class="flex justify-end mt-4">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="detailsEntry = null"
+            >Close</button>
           </div>
         </div>
       </div>

@@ -15,7 +15,7 @@ const emit = defineEmits<{
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
   toggleSelect: [path: string]
-  renameStart: [entry: FileEntry]
+  contextMenu: [entry: FileEntry, x: number, y: number]
 }>()
 
 // ── Virtual scroll constants ────────────────────────────────────────────────
@@ -115,11 +115,6 @@ function handleClick(entry: FileEntry) {
   else emit('preview', entry)
 }
 
-function download(entry: FileEntry, e: Event) {
-  e.stopPropagation()
-  window.open(filesApi.downloadUrl(entry.path, entry.mod_time), '_blank')
-}
-
 // ── Category helpers (icon colours) ─────────────────────────────────────────
 const catBg: Record<string, string> = {
   folder: 'bg-yellow-950/60',
@@ -195,6 +190,7 @@ const catIcon: Record<string, string> = {
             : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
         ]"
         @click="handleClick(item.entry)"
+        @contextmenu.prevent="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
         @dragstart.prevent
       >
         <!-- Thumbnail area (square) -->
@@ -295,18 +291,6 @@ const catIcon: Record<string, string> = {
             </svg>
           </div>
 
-          <!-- Rename button (top-right of thumbnail, hover only) -->
-          <button
-            class="absolute top-1 right-1 z-10 size-7 flex items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm"
-            title="Rename"
-            @click.stop="emit('renameStart', item.entry)"
-          >
-            <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </button>
-
           <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
           <button
             class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
@@ -327,18 +311,6 @@ const catIcon: Record<string, string> = {
             </span>
           </button>
 
-          <!-- Download button (hover, files only) -->
-          <button
-            v-if="!item.entry.is_dir"
-            class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-black/80 text-white rounded-lg p-1.5 backdrop-blur-sm"
-            title="Download"
-            @click="download(item.entry, $event)"
-          >
-            <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-          </button>
         </div>
 
         <!-- Name + meta (fixed META_H height) -->

@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
-import { files as filesApi } from '@/utils/api'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
@@ -23,7 +22,7 @@ const emit = defineEmits<{
   toggleSelect: [path: string]
   selectAll: []
   deselectAll: []
-  renameStart: [entry: FileEntry]
+  contextMenu: [entry: FileEntry, x: number, y: number]
 }>()
 
 const allSelected = computed(
@@ -49,10 +48,6 @@ function handleClick(entry: FileEntry) {
   else emit('preview', entry)
 }
 
-function download(entry: FileEntry, e: Event) {
-  e.stopPropagation()
-  window.open(filesApi.downloadUrl(entry.path, entry.mod_time), '_blank')
-}
 
 </script>
 
@@ -120,7 +115,6 @@ function download(entry: FileEntry, e: Event) {
               Modified
               <span v-if="sortKey === 'mod_time'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
             </th>
-            <th class="w-16 px-2" />
           </tr>
         </thead>
         <tbody>
@@ -134,6 +128,7 @@ function download(entry: FileEntry, e: Event) {
                 : 'hover:bg-zinc-800/50',
             ]"
             @click="handleClick(entry)"
+            @contextmenu.prevent="emit('contextMenu', entry, $event.clientX, $event.clientY)"
           >
             <!-- Custom checkbox -->
             <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">
@@ -168,34 +163,6 @@ function download(entry: FileEntry, e: Event) {
               {{ formatDate(entry.mod_time) }}
             </td>
 
-            <!-- Actions: rename + download -->
-            <td class="px-2 py-2.5">
-              <div class="flex items-center justify-end gap-0.5">
-                <!-- Rename button -->
-                <button
-                  class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
-                  title="Rename"
-                  @click.stop="emit('renameStart', entry)"
-                >
-                  <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <!-- Download button -->
-                <button
-                  v-if="!entry.is_dir"
-                  class="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white"
-                  title="Download"
-                  @click="download(entry, $event)"
-                >
-                  <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                </button>
-              </div>
-            </td>
           </tr>
         </tbody>
       </table>
