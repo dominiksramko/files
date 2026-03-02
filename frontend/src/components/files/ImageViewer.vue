@@ -7,6 +7,9 @@ const props = defineProps<{ entry: FileEntry }>()
 
 const streamUrl = filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 
+const transparentMimes = new Set(['image/png', 'image/svg+xml', 'image/webp', 'image/gif', 'image/avif'])
+const hasAlpha = transparentMimes.has(props.entry.mime)
+
 const zoom           = ref(1)
 const panX           = ref(0)
 const panY           = ref(0)
@@ -94,7 +97,7 @@ onUnmounted(() => {
         transition: isPanning ? 'none' : 'transform 0.1s ease',
         willChange: 'transform',
       }"
-      class="max-w-full object-contain rounded-lg select-none"
+      :class="['max-w-full object-contain rounded-lg select-none', hasAlpha && 'checkerboard']"
       draggable="false"
     />
 
@@ -126,3 +129,16 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.checkerboard {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+</style>
