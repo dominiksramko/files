@@ -43,7 +43,6 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 
 	ext := strings.ToLower(filepath.Ext(abs))
 
-	// Try pure-Go for ZIP without password
 	if ext == ".zip" && password == "" {
 		entries, err := listZip(abs)
 		if err == nil {
@@ -52,7 +51,6 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 		}
 	}
 
-	// Try TAR variants
 	if isTar(abs) && password == "" {
 		entries, err := listTar(abs)
 		if err == nil {
@@ -61,7 +59,6 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 		}
 	}
 
-	// Fall back to 7z
 	entries, err := list7z(abs, password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot read archive: %s", err)})
@@ -72,6 +69,11 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 
 // POST /api/v1/files/extract
 // Body: { path, dest?, password? }
+//
+// Always extracts into a folder named after the archive (minus extension),
+// preserving all internal paths. If after extraction that folder contains
+// exactly one item (file or directory), it is moved to the parent folder
+// and the now-empty named folder is removed.
 func (h *ArchiveHandler) Extract(c *gin.Context) {
 	root := userRoot(c)
 
@@ -91,43 +93,75 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		return
 	}
 
-	// Determine destination
-	destRel := req.Dest
-	if destRel == "" {
-		destRel = filepath.Dir(req.Path)
-	}
-	destAbs, err := safePath(root, destRel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// For pure-Go zip (no password)
-	ext := strings.ToLower(filepath.Ext(abs))
-	if ext == ".zip" && req.Password == "" {
-		if err := extractZip(abs, destAbs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// Destination: explicit override or a folder named after the archive.
+	var destAbs string
+	if req.Dest != "" {
+		destAbs, err = safePath(root, req.Dest)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "extracted"})
-		return
+	} else {
+		destAbs = filepath.Join(filepath.Dir(abs), archiveBaseName(abs))
 	}
 
-	if isTar(abs) && req.Password == "" {
-		if err := extractTar(abs, destAbs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "extracted"})
-		return
-	}
-
-	// Fall back to 7z
-	if err := extract7z(abs, destAbs, req.Password); err != nil {
+	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	ext := strings.ToLower(filepath.Ext(abs))
+	switch {
+	case ext == ".zip" && req.Password == "":
+		err = extractZip(abs, destAbs)
+	case isTar(abs) && req.Password == "":
+		err = extractTar(abs, destAbs)
+	default:
+		err = extract7z(abs, destAbs, req.Password)
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// If the destination contains exactly one item (file or folder), move it
+	// to the parent folder and remove the now-empty destination folder.
+	if err := unwrapSingleItem(destAbs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "extracted"})
+}
+
+// archiveBaseName strips all archive-related extensions from the filename.
+func archiveBaseName(path string) string {
+	base := filepath.Base(path)
+	lower := strings.ToLower(base)
+	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"} {
+		if strings.HasSuffix(lower, ext) {
+			return base[:len(base)-len(ext)]
+		}
+	}
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// unwrapSingleItem checks if dir contains exactly one entry (file or directory).
+// If so, it moves that entry to the parent of dir and removes the now-empty dir.
+func unwrapSingleItem(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(entries) != 1 {
+		return nil
+	}
+	src := filepath.Join(dir, entries[0].Name())
+	dst := filepath.Join(filepath.Dir(dir), entries[0].Name())
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	return os.Remove(dir)
 }
 
 // --- ZIP ---
@@ -157,27 +191,10 @@ func extractZip(src, dest string) error {
 	}
 	defer r.Close()
 
-	// Detect single root folder
-	rootDir := singleRoot(func(yield func(string) bool) {
-		for _, f := range r.File {
-			if !yield(f.Name) {
-				return
-			}
-		}
-	})
-
 	for _, f := range r.File {
-		name := f.Name
-		if rootDir != "" {
-			name = strings.TrimPrefix(name, rootDir)
-			if name == "" {
-				continue
-			}
-		}
-
-		target := filepath.Join(dest, filepath.Clean(name))
+		target := filepath.Join(dest, filepath.Clean(f.Name))
 		if !strings.HasPrefix(target, filepath.Clean(dest)+string(os.PathSeparator)) && target != filepath.Clean(dest) {
-			continue // skip path traversal
+			continue // path traversal
 		}
 
 		if f.FileInfo().IsDir() {
@@ -193,13 +210,11 @@ func extractZip(src, dest string) error {
 		if err != nil {
 			return err
 		}
-
 		out, err := os.Create(target)
 		if err != nil {
 			rc.Close()
 			return err
 		}
-
 		_, err = io.Copy(out, rc)
 		rc.Close()
 		out.Close()
@@ -301,7 +316,7 @@ func extractTar(src, dest string) error {
 
 		target := filepath.Join(dest, filepath.Clean(hdr.Name))
 		if !strings.HasPrefix(target, filepath.Clean(dest)) {
-			continue
+			continue // path traversal
 		}
 
 		if hdr.Typeflag == tar.TypeDir {
@@ -392,30 +407,4 @@ func extract7z(src, dest, password string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Run()
-}
-
-// --- helpers ---
-
-// singleRoot returns the common root folder prefix if all entries share one,
-// so we can strip it during extraction.
-func singleRoot(iter func(yield func(string) bool)) string {
-	var root string
-	first := true
-	iter(func(name string) bool {
-		parts := strings.SplitN(name, "/", 2)
-		if len(parts) < 2 || parts[0] == "" {
-			root = ""
-			return false
-		}
-		candidate := parts[0] + "/"
-		if first {
-			root = candidate
-			first = false
-		} else if root != candidate {
-			root = ""
-			return false
-		}
-		return true
-	})
-	return root
 }
