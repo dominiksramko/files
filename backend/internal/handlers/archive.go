@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bufio"
+	"bytes"
 	"compress/bzip2"
 	"compress/gzip"
 	"fmt"
@@ -120,6 +121,7 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		err = extract7z(abs, destAbs, req.Password)
 	}
 	if err != nil {
+		os.RemoveAll(destAbs)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -127,6 +129,7 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 	// If the destination contains exactly one item (file or folder), move it
 	// to the parent folder and remove the now-empty destination folder.
 	if err := unwrapSingleItem(destAbs); err != nil {
+		os.RemoveAll(destAbs)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -208,6 +211,9 @@ func extractZip(src, dest string) error {
 
 		rc, err := f.Open()
 		if err != nil {
+			if err == zip.ErrAlgorithm {
+				return fmt.Errorf("archive is password protected")
+			}
 			return err
 		}
 		out, err := os.Create(target)
@@ -343,14 +349,18 @@ func extractTar(src, dest string) error {
 // --- 7z ---
 
 func list7z(path, password string) ([]ArchiveEntry, error) {
-	args := []string{"l", "-slt"}
-	if password != "" {
-		args = append(args, "-p"+password)
-	}
-	args = append(args, path)
+	// Always pass -p (even empty) so 7z doesn't prompt for a password on stdin,
+	// which causes it to exit 255 in non-interactive environments.
+	args := []string{"l", "-slt", "-p" + password, path}
 
 	out, err := exec.Command("7z", args...).Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := strings.ToLower(string(exitErr.Stderr))
+			if strings.Contains(stderr, "password") || strings.Contains(stderr, "wrong password") || strings.Contains(stderr, "encrypted") {
+				return nil, fmt.Errorf("archive is password protected")
+			}
+		}
 		return nil, fmt.Errorf("7z not available or failed: %w", err)
 	}
 
@@ -397,14 +407,19 @@ func parse7zList(output string) []ArchiveEntry {
 }
 
 func extract7z(src, dest, password string) error {
-	args := []string{"x", "-y", "-o" + dest}
-	if password != "" {
-		args = append(args, "-p"+password)
-	}
-	args = append(args, src)
+	// Always pass -p so 7z doesn't prompt for a password on stdin.
+	args := []string{"x", "-y", "-o" + dest, "-p" + password, src}
 
+	var stderr bytes.Buffer
 	cmd := exec.Command("7z", args...)
 	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	return cmd.Run()
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.ToLower(stderr.String())
+		if strings.Contains(msg, "password") || strings.Contains(msg, "wrong password") || strings.Contains(msg, "encrypted") {
+			return fmt.Errorf("wrong password or archive is encrypted")
+		}
+		return err
+	}
+	return nil
 }

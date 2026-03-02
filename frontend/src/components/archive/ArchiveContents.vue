@@ -25,6 +25,8 @@ const filtered = computed(() => {
 const extracting = ref(false)
 const extractError = ref('')
 const extractSuccess = ref(false)
+const extractPasswordRequired = ref(false)
+const extractPassword = ref('')
 
 async function load(pw = '') {
   loading.value = true
@@ -54,12 +56,21 @@ async function extract() {
   extracting.value = true
   extractError.value = ''
   extractSuccess.value = false
+  extractPasswordRequired.value = false
+  // Use viewing password if set, otherwise extraction-specific password
+  const pw = password.value || extractPassword.value || undefined
   try {
-    await filesApi.extract(props.entry.path, undefined, password.value || undefined)
+    await filesApi.extract(props.entry.path, undefined, pw)
     extractSuccess.value = true
     emit('extracted')
   } catch (e: unknown) {
-    extractError.value = e instanceof Error ? e.message : 'Extraction failed'
+    const msg = e instanceof Error ? e.message : 'Extraction failed'
+    if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
+      extractPasswordRequired.value = true
+      extractError.value = ''
+    } else {
+      extractError.value = msg
+    }
   } finally {
     extracting.value = false
   }
@@ -185,21 +196,33 @@ onMounted(() => load())
     </div>
 
     <template #footer>
-      <div class="flex justify-end gap-2">
-        <button
-          class="text-sm text-zinc-400 hover:text-white px-4 py-2 rounded-lg hover:bg-zinc-800 transition-colors"
-          @click="emit('close')"
-        >
-          Close
-        </button>
-        <button
-          :disabled="extracting || loading || !!error"
-          class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
-          @click="extract"
-        >
-          <AppSpinner v-if="extracting" size="sm" />
-          {{ extracting ? 'Extracting…' : 'Extract here' }}
-        </button>
+      <div class="flex flex-col gap-2">
+        <!-- Extraction password prompt -->
+        <div v-if="extractPasswordRequired" class="flex gap-2">
+          <input
+            v-model="extractPassword"
+            type="password"
+            placeholder="Password required to extract"
+            class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+            @keydown.enter="extract"
+          />
+        </div>
+        <div class="flex justify-end gap-2">
+          <button
+            class="text-sm text-zinc-400 hover:text-white px-4 py-2 rounded-lg hover:bg-zinc-800 transition-colors"
+            @click="emit('close')"
+          >
+            Close
+          </button>
+          <button
+            :disabled="extracting || loading || !!error || (extractPasswordRequired && !extractPassword)"
+            class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+            @click="extract"
+          >
+            <AppSpinner v-if="extracting" size="sm" />
+            {{ extracting ? 'Extracting…' : 'Extract here' }}
+          </button>
+        </div>
       </div>
     </template>
   </AppModal>
