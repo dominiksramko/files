@@ -11,7 +11,7 @@ const props = defineProps<{ entry: FileEntry }>()
 
 const filesStore = useFilesStore()
 
-const TEXT_SIZE_LIMIT = 5 * 1024 * 1024 // 5 MB
+const TEXT_SIZE_LIMIT = 2 * 1024 * 1024 // 2 MB
 
 const textContent  = ref<string | null>(null)
 const textLoading  = ref(false)
