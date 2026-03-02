@@ -1,6 +1,7 @@
 export interface User {
   id: number
   username: string
+  display_name?: string
   root_dir: string
   is_admin: boolean
 }

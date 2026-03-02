@@ -4,6 +4,7 @@ import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 
 const props = defineProps<{
   entries: FileEntry[]
@@ -79,19 +80,11 @@ function handleClick(entry: FileEntry) {
                 class="flex items-center justify-center size-10 transition-colors hover:bg-zinc-800 rounded"
                 @click.stop="onHeaderCheckbox"
               >
-                <span
-                  class="size-[18px] rounded border-2 flex items-center justify-center transition-colors"
-                  :class="allSelected
-                    ? 'bg-blue-500 border-blue-500'
-                    : someSelected
-                      ? 'bg-zinc-700 border-zinc-500'
-                      : 'border-zinc-600'"
-                >
-                  <svg v-if="allSelected" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
-                    <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <span v-else-if="someSelected" class="w-2.5 h-[2px] bg-zinc-300 rounded-full" />
-                </span>
+                <AppCheckbox
+                  :model-value="allSelected"
+                  :indeterminate="someSelected && !allSelected"
+                  @update:model-value="onHeaderCheckbox"
+                />
               </button>
             </th>
             <th
@@ -133,14 +126,10 @@ function handleClick(entry: FileEntry) {
             <!-- Custom checkbox -->
             <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">
               <div class="flex items-center justify-center h-10">
-                <span
-                  class="size-[18px] rounded border-2 flex items-center justify-center transition-colors"
-                  :class="selected.includes(entry.path) ? 'bg-blue-500 border-blue-500' : 'border-zinc-600'"
-                >
-                  <svg v-if="selected.includes(entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
-                    <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </span>
+                <AppCheckbox
+                  :model-value="selected.includes(entry.path)"
+                  @update:model-value="emit('toggleSelect', entry.path)"
+                />
               </div>
             </td>
 

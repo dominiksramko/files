@@ -43,11 +43,11 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
         @click="menuOpen = !menuOpen"
       >
         <span
-          class="size-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-semibold text-white uppercase"
+          class="size-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-semibold text-white uppercase shrink-0"
         >
-          {{ auth.user?.username?.[0] }}
+          {{ (auth.user?.display_name || auth.user?.username)?.[0] }}
         </span>
-        <span>{{ auth.user?.username }}</span>
+        <span class="hidden sm:inline">{{ auth.user?.display_name || auth.user?.username }}</span>
         <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>

@@ -127,9 +127,12 @@ onMounted(fetchUsers)
             :key="u.id"
             class="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
           >
-            <td class="py-3 pr-4 font-medium text-white">
-              {{ u.username }}
-              <span v-if="u.id === auth.user?.id" class="ml-1.5 text-xs text-zinc-500">(you)</span>
+            <td class="py-3 pr-4">
+              <p class="font-medium text-white">
+                {{ u.display_name || u.username }}
+                <span v-if="u.id === auth.user?.id" class="ml-1.5 text-xs text-zinc-500">(you)</span>
+              </p>
+              <p v-if="u.display_name" class="text-xs text-zinc-500">{{ u.username }}</p>
             </td>
             <td class="py-3 pr-4 text-zinc-400 font-mono text-xs">
               {{ u.root_dir || '—' }}

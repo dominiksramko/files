@@ -6,6 +6,28 @@ import AppSpinner from '@/components/ui/AppSpinner.vue'
 
 const authStore = useAuthStore()
 
+// --- Display name ---
+const displayName = ref(authStore.user?.display_name ?? '')
+const displayNameLoading = ref(false)
+const displayNameError = ref('')
+const displayNameSuccess = ref(false)
+
+async function saveDisplayName() {
+  displayNameLoading.value = true
+  displayNameError.value = ''
+  displayNameSuccess.value = false
+  try {
+    const updated = await authApi.updateProfile(displayName.value)
+    authStore.user = updated
+    displayNameSuccess.value = true
+  } catch (e: unknown) {
+    displayNameError.value = e instanceof Error ? e.message : 'Failed to save'
+  } finally {
+    displayNameLoading.value = false
+  }
+}
+
+// --- Change password ---
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -50,14 +72,16 @@ async function changePassword() {
         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
           <div class="flex items-center gap-3">
             <span
-              class="size-10 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold text-white uppercase"
+              class="size-10 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold text-white uppercase shrink-0"
             >
-              {{ authStore.user?.username?.[0] }}
+              {{ (authStore.user?.display_name || authStore.user?.username)?.[0] }}
             </span>
             <div>
-              <p class="font-medium text-white">{{ authStore.user?.username }}</p>
+              <p class="font-medium text-white">
+                {{ authStore.user?.display_name || authStore.user?.username }}
+              </p>
               <p class="text-xs text-zinc-500">
-                {{ authStore.user?.is_admin ? 'Administrator' : 'User' }}
+                {{ authStore.user?.display_name ? authStore.user.username + ' · ' : '' }}{{ authStore.user?.is_admin ? 'Administrator' : 'User' }}
               </p>
             </div>
           </div>
@@ -66,6 +90,47 @@ async function changePassword() {
             <p class="text-sm text-zinc-300 font-mono">{{ authStore.user?.root_dir || '—' }}</p>
           </div>
         </div>
+      </div>
+
+      <!-- Display name -->
+      <div>
+        <h2 class="text-sm font-semibold text-zinc-300 mb-3">Display name</h2>
+        <form
+          class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3"
+          @submit.prevent="saveDisplayName"
+        >
+          <div
+            v-if="displayNameSuccess"
+            class="text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
+          >
+            Display name updated.
+          </div>
+          <div
+            v-if="displayNameError"
+            class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
+          >
+            {{ displayNameError }}
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-zinc-400 mb-1.5">Name shown in the header</label>
+            <input
+              v-model="displayName"
+              type="text"
+              placeholder="Your name"
+              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div class="flex justify-end pt-1">
+            <button
+              type="submit"
+              :disabled="displayNameLoading"
+              class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <AppSpinner v-if="displayNameLoading" size="sm" />
+              {{ displayNameLoading ? 'Saving…' : 'Save' }}
+            </button>
+          </div>
+        </form>
       </div>
 
       <!-- Change password -->

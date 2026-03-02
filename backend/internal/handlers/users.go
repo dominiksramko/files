@@ -22,7 +22,7 @@ func NewUsersHandler(db *sql.DB, usersRoot string) *UsersHandler {
 
 // GET /api/v1/users
 func (h *UsersHandler) List(c *gin.Context) {
-	rows, err := h.db.Query(`SELECT id, username, root_dir, is_admin FROM users ORDER BY username`)
+	rows, err := h.db.Query(`SELECT id, username, root_dir, is_admin, display_name FROM users ORDER BY username`)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -32,7 +32,7 @@ func (h *UsersHandler) List(c *gin.Context) {
 	users := []models.UserResponse{}
 	for rows.Next() {
 		var u models.UserResponse
-		if err := rows.Scan(&u.ID, &u.Username, &u.RootDir, &u.IsAdmin); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.RootDir, &u.IsAdmin, &u.DisplayName); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -44,10 +44,11 @@ func (h *UsersHandler) List(c *gin.Context) {
 // POST /api/v1/users
 func (h *UsersHandler) Create(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required,min=4"`
-		RootDir  string `json:"root_dir"`
-		IsAdmin  bool   `json:"is_admin"`
+		Username    string `json:"username" binding:"required"`
+		Password    string `json:"password" binding:"required,min=4"`
+		DisplayName string `json:"display_name"`
+		RootDir     string `json:"root_dir"`
+		IsAdmin     bool   `json:"is_admin"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -66,8 +67,8 @@ func (h *UsersHandler) Create(c *gin.Context) {
 	}
 
 	result, err := h.db.Exec(
-		`INSERT INTO users (username, password, root_dir, is_admin) VALUES (?, ?, ?, ?)`,
-		req.Username, string(hash), rootDir, req.IsAdmin,
+		`INSERT INTO users (username, password, root_dir, is_admin, display_name) VALUES (?, ?, ?, ?, ?)`,
+		req.Username, string(hash), rootDir, req.IsAdmin, req.DisplayName,
 	)
 	if err != nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
@@ -76,10 +77,11 @@ func (h *UsersHandler) Create(c *gin.Context) {
 
 	id, _ := result.LastInsertId()
 	c.JSON(http.StatusCreated, models.UserResponse{
-		ID:       id,
-		Username: req.Username,
-		RootDir:  rootDir,
-		IsAdmin:  req.IsAdmin,
+		ID:          id,
+		Username:    req.Username,
+		DisplayName: req.DisplayName,
+		RootDir:     rootDir,
+		IsAdmin:     req.IsAdmin,
 	})
 }
 
@@ -92,9 +94,10 @@ func (h *UsersHandler) Update(c *gin.Context) {
 	}
 
 	var req struct {
-		Password string `json:"password"`
-		RootDir  string `json:"root_dir"`
-		IsAdmin  *bool  `json:"is_admin"`
+		Password    string  `json:"password"`
+		RootDir     string  `json:"root_dir"`
+		IsAdmin     *bool   `json:"is_admin"`
+		DisplayName *string `json:"display_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -102,9 +105,9 @@ func (h *UsersHandler) Update(c *gin.Context) {
 	}
 
 	// Fetch current record
-	row := h.db.QueryRow(`SELECT id, username, password, root_dir, is_admin FROM users WHERE id = ?`, id)
+	row := h.db.QueryRow(`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE id = ?`, id)
 	var u models.User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
@@ -125,10 +128,13 @@ func (h *UsersHandler) Update(c *gin.Context) {
 	if req.IsAdmin != nil {
 		u.IsAdmin = *req.IsAdmin
 	}
+	if req.DisplayName != nil {
+		u.DisplayName = *req.DisplayName
+	}
 
 	_, err = h.db.Exec(
-		`UPDATE users SET password = ?, root_dir = ?, is_admin = ? WHERE id = ?`,
-		newHash, u.RootDir, u.IsAdmin, id,
+		`UPDATE users SET password = ?, root_dir = ?, is_admin = ?, display_name = ? WHERE id = ?`,
+		newHash, u.RootDir, u.IsAdmin, u.DisplayName, id,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -136,10 +142,11 @@ func (h *UsersHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.UserResponse{
-		ID:       u.ID,
-		Username: u.Username,
-		RootDir:  u.RootDir,
-		IsAdmin:  u.IsAdmin,
+		ID:          u.ID,
+		Username:    u.Username,
+		DisplayName: u.DisplayName,
+		RootDir:     u.RootDir,
+		IsAdmin:     u.IsAdmin,
 	})
 }
 

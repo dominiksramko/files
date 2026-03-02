@@ -4,11 +4,13 @@ import type { User } from '@/types'
 import { users as usersApi } from '@/utils/api'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 
 const props = defineProps<{ user: User | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const username = ref('')
+const displayName = ref('')
 const password = ref('')
 const rootDir = ref('')
 const isAdmin = ref(false)
@@ -23,12 +25,14 @@ watch(
     if (u) {
       isEdit.value = true
       username.value = u.username
+      displayName.value = u.display_name ?? ''
       password.value = ''
       rootDir.value = u.root_dir
       isAdmin.value = u.is_admin
     } else {
       isEdit.value = false
       username.value = ''
+      displayName.value = ''
       password.value = ''
       rootDir.value = ''
       isAdmin.value = false
@@ -45,6 +49,7 @@ async function save() {
     if (isEdit.value && props.user) {
       await usersApi.update(props.user.id, {
         password: password.value || undefined,
+        display_name: displayName.value,
         root_dir: rootDir.value || undefined,
         is_admin: isAdmin.value,
       })
@@ -52,6 +57,7 @@ async function save() {
       await usersApi.create({
         username: username.value,
         password: password.value,
+        display_name: displayName.value || undefined,
         root_dir: rootDir.value || undefined,
         is_admin: isAdmin.value,
       })
@@ -89,6 +95,16 @@ async function save() {
       </div>
 
       <div>
+        <label class="block text-xs font-medium text-zinc-400 mb-1.5">Display name (optional)</label>
+        <input
+          v-model="displayName"
+          type="text"
+          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+          placeholder="Alice Smith"
+        />
+      </div>
+
+      <div>
         <label class="block text-xs font-medium text-zinc-400 mb-1.5">
           Password{{ isEdit ? ' (leave blank to keep current)' : '' }}
         </label>
@@ -114,7 +130,7 @@ async function save() {
       </div>
 
       <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input v-model="isAdmin" type="checkbox" class="rounded border-zinc-600 bg-zinc-800 text-blue-500" />
+        <AppCheckbox v-model="isAdmin" />
         <span class="text-sm text-zinc-300">Admin</span>
       </label>
     </form>

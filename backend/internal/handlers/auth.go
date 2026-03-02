@@ -105,9 +105,34 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "password updated"})
 }
 
+// PUT /api/v1/auth/profile
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	userID := c.GetInt64("userID")
+
+	var req struct {
+		DisplayName string `json:"display_name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := h.db.Exec(`UPDATE users SET display_name = ? WHERE id = ?`, req.DisplayName, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update profile"})
+		return
+	}
+
+	user, err := h.fetchUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not fetch user"})
+		return
+	}
+	c.JSON(http.StatusOK, user.ToResponse())
+}
+
 func (h *AuthHandler) fetchUser(username string) (*models.User, error) {
 	row := h.db.QueryRow(
-		`SELECT id, username, password, root_dir, is_admin FROM users WHERE username = ?`,
+		`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE username = ?`,
 		username,
 	)
 	return scanUser(row)
@@ -115,7 +140,7 @@ func (h *AuthHandler) fetchUser(username string) (*models.User, error) {
 
 func (h *AuthHandler) fetchUserByID(id int64) (*models.User, error) {
 	row := h.db.QueryRow(
-		`SELECT id, username, password, root_dir, is_admin FROM users WHERE id = ?`,
+		`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE id = ?`,
 		id,
 	)
 	return scanUser(row)
@@ -123,7 +148,7 @@ func (h *AuthHandler) fetchUserByID(id int64) (*models.User, error) {
 
 func scanUser(row *sql.Row) (*models.User, error) {
 	u := &models.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin)
+	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName)
 	if err != nil {
 		return nil, err
 	}

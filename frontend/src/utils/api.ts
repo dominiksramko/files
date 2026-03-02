@@ -51,6 +51,9 @@ export const auth = {
       current_password,
       new_password,
     }),
+
+  updateProfile: (display_name: string) =>
+    request<User>('PUT', '/auth/profile', { display_name }),
 }
 
 // --- Files ---
@@ -195,10 +198,10 @@ export const thumbnails = {
 export const users = {
   list: () => request<User[]>('GET', '/users'),
 
-  create: (data: { username: string; password: string; root_dir?: string; is_admin?: boolean }) =>
+  create: (data: { username: string; password: string; display_name?: string; root_dir?: string; is_admin?: boolean }) =>
     request<User>('POST', '/users', data),
 
-  update: (id: number, data: { password?: string; root_dir?: string; is_admin?: boolean }) =>
+  update: (id: number, data: { password?: string; display_name?: string; root_dir?: string; is_admin?: boolean }) =>
     request<User>('PUT', `/users/${id}`, data),
 
   delete: (id: number) => request<{ message: string }>('DELETE', `/users/${id}`),
