@@ -55,6 +55,7 @@ func main() {
 	thumbH := handlers.NewThumbnailHandler(thumbSvc)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
+	infoH := handlers.NewInfoHandler()
 
 	// Auth middleware (applied per group)
 	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
@@ -90,6 +91,8 @@ func main() {
 			authed.POST("/files/rename", opsH.Rename)
 			authed.GET("/files/subtitles", subsH.List)
 			authed.GET("/files/subtitle", subsH.Stream)
+			authed.GET("/files/size", infoH.SizeStream)
+			authed.GET("/files/info", infoH.Meta)
 
 			// Thumbnails
 			authed.GET("/thumbnails/get", thumbH.Get)

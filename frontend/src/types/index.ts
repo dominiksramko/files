@@ -16,6 +16,7 @@ export interface FileEntry {
   is_dir: boolean
   size: number
   mod_time: string
+  created_at?: string
   mime: string
   has_thumb: boolean
   thumb_hash?: string

@@ -107,6 +107,22 @@ export const files = {
 
   // Append the auth token to a subtitle url returned by the server.
   subtitleUrl: (url: string) => `${url}&token=${token()}`,
+
+  // SSE URL for streaming recursive size calculation over one or more paths.
+  // Use with EventSource — auth via ?token= since EventSource has no headers.
+  sizeStreamUrl: (paths: string[]): string => {
+    const params = new URLSearchParams()
+    paths.forEach((p) => params.append('paths[]', p))
+    params.set('token', token())
+    return `${BASE}/files/size?${params}`
+  },
+
+  // Image resolution or video duration/resolution/codec for a single file.
+  fileMeta: (path: string) =>
+    request<{ image?: { width: number; height: number }; video?: { duration: number; width: number; height: number; codec?: string } }>(
+      'GET',
+      `/files/info${qs({ path })}`,
+    ),
 }
 
 // --- File operations ---

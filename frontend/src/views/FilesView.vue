@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
@@ -485,7 +485,6 @@ function cancelRename() {
 
 // ── Context menu ──────────────────────────────────────────────────────────
 const contextMenuState = ref<{ x: number; y: number; entry: FileEntry; paths: string[] } | null>(null)
-const detailsEntry = ref<FileEntry | null>(null)
 
 function onContextMenu(entry: FileEntry, x: number, y: number) {
   const paths = selectedPaths.value.includes(entry.path)
@@ -493,6 +492,103 @@ function onContextMenu(entry: FileEntry, x: number, y: number) {
     : [entry.path]
   contextMenuState.value = { x, y, entry, paths }
 }
+
+// ── Details panel ─────────────────────────────────────────────────────────
+type SizeProgress = { files: number; dirs: number; bytes: number; done: boolean }
+type MediaMeta = {
+  image?: { width: number; height: number }
+  video?: { duration: number; width: number; height: number; codec?: string }
+}
+
+const detailsItems = ref<FileEntry[]>([])
+const sizeProgress = ref<SizeProgress | null>(null)
+const detailsMedia = ref<MediaMeta | null>(null)
+let sizeEventSource: EventSource | null = null
+
+const detailsLocation = computed(() => {
+  if (!detailsItems.value.length) return ''
+  const parents = [...new Set(detailsItems.value.map((e) => {
+    const slash = e.path.lastIndexOf('/')
+    return slash < 0 ? '/' : '/' + e.path.slice(0, slash)
+  }))]
+  return parents.length === 1 ? parents[0] : 'Multiple locations'
+})
+
+const detailsFileCount = computed(() => detailsItems.value.filter((e) => !e.is_dir).length)
+const detailsFolderCount = computed(() => detailsItems.value.filter((e) => e.is_dir).length)
+
+const detailsSizeText = computed(() => {
+  if (!sizeProgress.value) return null
+  const { files, dirs, bytes, done } = sizeProgress.value
+  const sizeStr = bytes > 0 ? formatSize(bytes) : (done ? '0 B' : null)
+  const parts: string[] = []
+  if (files > 0) parts.push(`${files.toLocaleString()} file${files !== 1 ? 's' : ''}`)
+  if (dirs > 0) parts.push(`${dirs.toLocaleString()} folder${dirs !== 1 ? 's' : ''}`)
+  if (done && parts.length === 0) return 'Empty'
+  const countStr = parts.length > 0
+    ? `(${!done ? 'scanning… ' : ''}${parts.join(', ')})`
+    : '(scanning…)'
+  if (sizeStr) return `${sizeStr} ${countStr}`.trim()
+  return countStr
+})
+
+function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = Math.floor(secs % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function entriesForPaths(paths: string[]): FileEntry[] {
+  const pool = [...visibleEntries.value, ...searchResults.value]
+  return paths.map((p) => pool.find((e) => e.path === p)).filter((e): e is FileEntry => !!e)
+}
+
+function openDetails(items: FileEntry[]) {
+  sizeEventSource?.close()
+  sizeEventSource = null
+  detailsItems.value = items
+  sizeProgress.value = null
+  detailsMedia.value = null
+
+  const needsStream = items.length > 1 || (items.length === 1 && items[0].is_dir)
+  if (needsStream) {
+    sizeProgress.value = { files: 0, dirs: 0, bytes: 0, done: false }
+    const url = filesApi.sizeStreamUrl(items.map((e) => e.path))
+    sizeEventSource = new EventSource(url)
+    sizeEventSource.onmessage = (ev) => {
+      sizeProgress.value = JSON.parse(ev.data)
+      if (sizeProgress.value?.done) {
+        sizeEventSource?.close()
+        sizeEventSource = null
+      }
+    }
+    sizeEventSource.onerror = () => {
+      sizeEventSource?.close()
+      sizeEventSource = null
+    }
+  }
+
+  if (items.length === 1 && !items[0].is_dir) {
+    const cat = fileCategory(items[0].mime, items[0].name)
+    if (cat === 'image' || cat === 'video') {
+      filesApi.fileMeta(items[0].path).then((meta) => {
+        detailsMedia.value = meta
+      }).catch(() => {})
+    }
+  }
+}
+
+function closeDetails() {
+  detailsItems.value = []
+  sizeEventSource?.close()
+  sizeEventSource = null
+  sizeProgress.value = null
+  detailsMedia.value = null
+}
+
+onUnmounted(() => { sizeEventSource?.close() })
 
 const contextMenuItems = computed((): ContextMenuItem[] => {
   if (!contextMenuState.value) return []
@@ -513,7 +609,7 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
       },
     },
     {
-      label: downloading.value ? 'Downloading…' : 'Download',
+      label: 'Download',
       action: () => { close(); downloadPaths(paths) },
     },
     { separator: true },
@@ -526,10 +622,11 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
     danger: true,
     action: () => { close(); openDeleteDialog(paths, single ? entry.name : undefined) },
   })
-  if (single) {
-    items.push({ separator: true })
-    items.push({ label: 'Details', action: () => { close(); detailsEntry.value = entry } })
-  }
+  items.push({ separator: true })
+  items.push({
+    label: 'Details',
+    action: () => { close(); openDetails(entriesForPaths(paths)) },
+  })
   return items
 })
 
@@ -622,6 +719,11 @@ onMounted(() => {
                 class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
                 @click="openDeleteDialog([...selectedPaths])"
               >Delete</button>
+
+              <button
+                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                @click="openDetails(entriesForPaths([...selectedPaths]))"
+              >Details</button>
             </template>
 
             <!-- Separator between selection actions and clipboard -->
@@ -989,38 +1091,93 @@ onMounted(() => {
     <!-- Details modal -->
     <Transition name="fade">
       <div
-        v-if="detailsEntry"
+        v-if="detailsItems.length > 0"
         class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
-        @click.self="detailsEntry = null"
+        @click.self="closeDetails"
       >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Details</h3>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-96 shadow-2xl">
+          <!-- Header -->
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">
+            <template v-if="detailsItems.length === 1">Details</template>
+            <template v-else>
+              Details —
+              <span v-if="detailsFolderCount > 0">{{ detailsFolderCount.toLocaleString() }} folder{{ detailsFolderCount !== 1 ? 's' : '' }}</span>
+              <span v-if="detailsFolderCount > 0 && detailsFileCount > 0">, </span>
+              <span v-if="detailsFileCount > 0">{{ detailsFileCount.toLocaleString() }} file{{ detailsFileCount !== 1 ? 's' : '' }}</span>
+            </template>
+          </h3>
+
           <dl class="space-y-2">
-            <div class="flex gap-2">
+            <!-- Name (single only) -->
+            <div v-if="detailsItems.length === 1" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Name</dt>
-              <dd class="text-xs text-zinc-200 break-all">{{ detailsEntry.name }}</dd>
+              <dd class="text-xs text-zinc-200 break-all">{{ detailsItems[0].name }}</dd>
             </div>
+
+            <!-- Location -->
             <div class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Type</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsEntry.is_dir ? 'Folder' : (detailsEntry.mime || 'Unknown') }}</dd>
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Location</dt>
+              <dd class="text-xs text-zinc-400 break-all font-mono">{{ detailsLocation }}</dd>
             </div>
+
+            <!-- Type (single only) -->
+            <div v-if="detailsItems.length === 1" class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Type</dt>
+              <dd class="text-xs text-zinc-200">{{ detailsItems[0].is_dir ? 'Folder' : (detailsItems[0].mime || 'Unknown') }}</dd>
+            </div>
+
+            <!-- Size -->
             <div class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Size</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsEntry.is_dir ? '—' : formatSize(detailsEntry.size) }}</dd>
+              <dd class="text-xs text-zinc-200">
+                <!-- Single file: show directly -->
+                <template v-if="detailsItems.length === 1 && !detailsItems[0].is_dir">
+                  {{ formatSize(detailsItems[0].size) }}
+                </template>
+                <!-- Streaming (folder or multi) -->
+                <template v-else>{{ detailsSizeText }}</template>
+              </dd>
             </div>
-            <div class="flex gap-2">
+
+            <!-- Created (single only, if filesystem provides it) -->
+            <div v-if="detailsItems.length === 1 && detailsItems[0].created_at" class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Created</dt>
+              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0].created_at) }}</dd>
+            </div>
+
+            <!-- Modified (single only) -->
+            <div v-if="detailsItems.length === 1" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Modified</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDate(detailsEntry.mod_time) }}</dd>
+              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0].mod_time) }}</dd>
             </div>
-            <div class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Path</dt>
-              <dd class="text-xs text-zinc-400 break-all font-mono">/{{ detailsEntry.path }}</dd>
+
+            <!-- Image resolution -->
+            <div v-if="detailsMedia?.image" class="flex gap-2">
+              <dt class="text-xs text-zinc-500 w-20 shrink-0">Resolution</dt>
+              <dd class="text-xs text-zinc-200">{{ detailsMedia.image.width }} × {{ detailsMedia.image.height }}</dd>
             </div>
+
+            <!-- Video metadata -->
+            <template v-if="detailsMedia?.video">
+              <div class="flex gap-2">
+                <dt class="text-xs text-zinc-500 w-20 shrink-0">Duration</dt>
+                <dd class="text-xs text-zinc-200">{{ formatDuration(detailsMedia.video.duration) }}</dd>
+              </div>
+              <div class="flex gap-2">
+                <dt class="text-xs text-zinc-500 w-20 shrink-0">Resolution</dt>
+                <dd class="text-xs text-zinc-200">{{ detailsMedia.video.width }} × {{ detailsMedia.video.height }}</dd>
+              </div>
+              <div v-if="detailsMedia.video.codec" class="flex gap-2">
+                <dt class="text-xs text-zinc-500 w-20 shrink-0">Codec</dt>
+                <dd class="text-xs text-zinc-200">{{ detailsMedia.video.codec }}</dd>
+              </div>
+            </template>
           </dl>
+
           <div class="flex justify-end mt-4">
             <button
               class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="detailsEntry = null"
+              @click="closeDetails"
             >Close</button>
           </div>
         </div>

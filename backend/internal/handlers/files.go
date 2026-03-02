@@ -26,14 +26,15 @@ func NewFilesHandler(thumbs *thumbs.Service) *FilesHandler {
 }
 
 type FileEntry struct {
-	Name      string    `json:"name"`
-	Path      string    `json:"path"` // relative to user root
-	IsDir     bool      `json:"is_dir"`
-	Size      int64     `json:"size"`
-	ModTime   time.Time `json:"mod_time"`
-	Mime      string    `json:"mime"`
-	HasThumb  bool      `json:"has_thumb"`            // true when a ready thumbnail exists
-	ThumbHash string    `json:"thumb_hash,omitempty"` // content hash, present when has_thumb is true
+	Name      string     `json:"name"`
+	Path      string     `json:"path"` // relative to user root
+	IsDir     bool       `json:"is_dir"`
+	Size      int64      `json:"size"`
+	ModTime   time.Time  `json:"mod_time"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Mime      string     `json:"mime"`
+	HasThumb  bool       `json:"has_thumb"`            // true when a ready thumbnail exists
+	ThumbHash string     `json:"thumb_hash,omitempty"` // content hash, present when has_thumb is true
 }
 
 // GET /api/v1/files/list?path=
@@ -63,17 +64,19 @@ func (h *FilesHandler) List(c *gin.Context) {
 			continue
 		}
 		entryRel := filepath.Join(rel, e.Name())
+		entryAbs := filepath.Join(abs, e.Name())
 		mime := ""
 		if !e.IsDir() {
 			mime = mimeByExt(filepath.Ext(e.Name()))
 		}
 		fe := FileEntry{
-			Name:    e.Name(),
-			Path:    entryRel,
-			IsDir:   e.IsDir(),
-			Size:    info.Size(),
-			ModTime: info.ModTime(),
-			Mime:    mime,
+			Name:      e.Name(),
+			Path:      entryRel,
+			IsDir:     e.IsDir(),
+			Size:      info.Size(),
+			ModTime:   info.ModTime(),
+			CreatedAt: getBirthTime(entryAbs),
+			Mime:      mime,
 		}
 		// Report whether a finished thumbnail is already available.
 		// Enqueueing is handled by the SSE stream (thumbnails/stream) when the
@@ -303,12 +306,13 @@ func (h *FilesHandler) Search(c *gin.Context) {
 				mime = mimeByExt(filepath.Ext(d.Name()))
 			}
 			results = append(results, FileEntry{
-				Name:    d.Name(),
-				Path:    rel,
-				IsDir:   d.IsDir(),
-				Size:    info.Size(),
-				ModTime: info.ModTime(),
-				Mime:    mime,
+				Name:      d.Name(),
+				Path:      rel,
+				IsDir:     d.IsDir(),
+				Size:      info.Size(),
+				ModTime:   info.ModTime(),
+				CreatedAt: getBirthTime(path),
+				Mime:      mime,
 			})
 		}
 		return nil
