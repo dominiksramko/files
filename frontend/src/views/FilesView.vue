@@ -61,30 +61,56 @@ const searchQuery = ref('')
 const searchResults = ref<FileEntry[]>([])
 const searchLoading = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchSource: EventSource | null = null
+
+function closeSearchSource() {
+  if (searchSource) {
+    searchSource.close()
+    searchSource = null
+  }
+}
 
 watch(searchQuery, (query) => {
   if (((route.query.q as string) ?? '') !== query) {
     router.replace({ query: routeQuery() })
   }
   if (searchTimer) clearTimeout(searchTimer)
+  closeSearchSource()
   if (!query.trim()) {
     searchResults.value = []
     searchLoading.value = false
     return
   }
+  searchResults.value = []
   searchLoading.value = true
-  searchTimer = setTimeout(async () => {
-    try {
-      searchResults.value = await filesApi.search(query.trim())
-    } catch {
-      searchResults.value = []
-    } finally {
+  searchTimer = setTimeout(() => {
+    const url = filesApi.searchStreamUrl(query.trim())
+    const es = new EventSource(url)
+    searchSource = es
+
+    es.onmessage = (e) => {
+      try {
+        const obj = JSON.parse(e.data as string)
+        if (obj.done) {
+          searchLoading.value = false
+          es.close()
+          if (searchSource === es) searchSource = null
+          return
+        }
+        searchResults.value.push(obj as FileEntry)
+      } catch { /* ignore malformed */ }
+    }
+
+    es.onerror = () => {
       searchLoading.value = false
+      es.close()
+      if (searchSource === es) searchSource = null
     }
   }, 300)
 })
 
 function clearSearch() {
+  closeSearchSource()
   searchQuery.value = ''
   searchResults.value = []
 }

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -349,30 +350,48 @@ func needsRemux(mime string) bool {
 }
 
 // GET /api/v1/files/search?q=query&path=optional_subfolder
+// Streams results as SSE: each match is a "data: <json>\n\n" event,
+// followed by "event: done\ndata: {}\n\n" when the walk is complete.
 func (h *FilesHandler) Search(c *gin.Context) {
 	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	basePath := c.Query("path")
 	root := userRoot(c)
 
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	done := func() {
+		fmt.Fprintf(c.Writer, "data: {\"done\":true}\n\n")
+		c.Writer.Flush()
+	}
+
 	if query == "" {
-		c.JSON(http.StatusOK, []FileEntry{})
+		done()
 		return
 	}
 
 	abs, err := safePath(root, basePath)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		done()
 		return
 	}
 
+	ctx := c.Request.Context()
 	const maxResults = 200
-	results := make([]FileEntry, 0, 32)
+	count := 0
 
 	_ = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == abs {
 			return nil
 		}
-		if len(results) >= maxResults {
+		select {
+		case <-ctx.Done():
+			return filepath.SkipAll
+		default:
+		}
+		if count >= maxResults {
 			return filepath.SkipAll
 		}
 		if strings.Contains(strings.ToLower(d.Name()), query) {
@@ -385,7 +404,7 @@ func (h *FilesHandler) Search(c *gin.Context) {
 			if !d.IsDir() {
 				mime = mimeByExt(filepath.Ext(d.Name()))
 			}
-			results = append(results, FileEntry{
+			entry := FileEntry{
 				Name:      d.Name(),
 				Path:      rel,
 				IsDir:     d.IsDir(),
@@ -393,12 +412,16 @@ func (h *FilesHandler) Search(c *gin.Context) {
 				ModTime:   info.ModTime(),
 				CreatedAt: getBirthTime(path),
 				Mime:      mime,
-			})
+			}
+			data, _ := json.Marshal(entry)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			c.Writer.Flush()
+			count++
 		}
 		return nil
 	})
 
-	c.JSON(http.StatusOK, results)
+	done()
 }
 
 // helpers

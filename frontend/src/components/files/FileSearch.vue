@@ -54,15 +54,15 @@ function esc(s: string): string {
 
 <template>
   <div class="h-full flex flex-col">
-    <!-- Loading -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center gap-2 text-zinc-400 text-sm">
+    <!-- Loading with no results yet -->
+    <div v-if="loading && entries.length === 0" class="flex-1 flex items-center justify-center gap-2 text-zinc-400 text-sm">
       <AppSpinner size="sm" class="text-blue-500" />
       Searching…
     </div>
 
     <!-- No results -->
     <div
-      v-else-if="entries.length === 0"
+      v-else-if="!loading && entries.length === 0"
       class="flex-1 flex flex-col items-center justify-center gap-2 text-zinc-500"
     >
       <AppIcon name="search" class="size-10" :stroke-width="1.5" />
@@ -72,7 +72,8 @@ function esc(s: string): string {
     <!-- Results table -->
     <div v-else class="flex-1 overflow-auto">
       <!-- Result count banner -->
-      <div class="sticky top-0 px-4 py-1.5 text-xs text-zinc-500 bg-zinc-900 border-b border-zinc-800 z-10">
+      <div class="sticky top-0 px-4 py-1.5 text-xs text-zinc-500 bg-zinc-900 border-b border-zinc-800 z-10 flex items-center gap-2">
+        <AppSpinner v-if="loading" size="sm" class="text-blue-500 shrink-0" />
         {{ entries.length }}{{ entries.length === 200 ? '+' : '' }}
         result{{ entries.length !== 1 ? 's' : '' }} for
         <span class="text-zinc-300">"{{ query }}"</span>

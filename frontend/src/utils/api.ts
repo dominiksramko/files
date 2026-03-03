@@ -60,8 +60,11 @@ export const auth = {
 export const files = {
   list: (path = '') => request<FileEntry[]>('GET', `/files/list${qs({ path })}`),
 
-  search: (q: string, path = '') =>
-    request<FileEntry[]>('GET', `/files/search${qs({ q, ...(path ? { path } : {}) })}`),
+  searchStreamUrl: (q: string, path = ''): string => {
+    const params = new URLSearchParams({ q, token: token() })
+    if (path) params.set('path', path)
+    return `${BASE}/files/search?${params}`
+  },
 
   downloadUrl: (path: string, modTime: string) =>
     `${BASE}/files/download?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
