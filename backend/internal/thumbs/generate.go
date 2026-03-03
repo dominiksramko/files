@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
+	"image/color"
+	stdraw "image/draw"
 	"image/jpeg"
 	_ "image/gif"
 	_ "image/png"
@@ -98,6 +100,74 @@ func generateThumb(srcPath, dstPath string, size int) error {
 		return fmt.Errorf("encode: %w", err)
 	}
 	return nil
+}
+
+// generateSVGThumb rasterises the SVG at srcPath via resvg, composites the
+// result onto a checkerboard background (so transparent areas are visible in
+// the JPEG thumbnail), then crops and encodes to dstPath.
+func generateSVGThumb(srcPath, dstPath string, size int) error {
+	tmp, err := os.CreateTemp("", "svg-thumb-*.png")
+	if err != nil {
+		return fmt.Errorf("temp file: %w", err)
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	// Rasterise at 2× the target size so the subsequent downscale is high quality.
+	rasterSize := strconv.Itoa(size * 2)
+	if out, err := exec.Command("resvg", "--width", rasterSize, srcPath, tmp.Name()).CombinedOutput(); err != nil {
+		return fmt.Errorf("resvg: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	f, err := os.Open(tmp.Name())
+	if err != nil {
+		return fmt.Errorf("open rasterized png: %w", err)
+	}
+	defer f.Close()
+
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return fmt.Errorf("decode png: %w", err)
+	}
+
+	composited := flattenOnCheckerboard(src)
+	thumb := squareCrop(composited, size)
+
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return fmt.Errorf("create dst: %w", err)
+	}
+	defer out.Close()
+
+	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
+		os.Remove(dstPath)
+		return fmt.Errorf("encode: %w", err)
+	}
+	return nil
+}
+
+// flattenOnCheckerboard composites src over a white/light-grey checkerboard,
+// making transparent areas visible in the opaque JPEG output.
+func flattenOnCheckerboard(src image.Image) image.Image {
+	b := src.Bounds()
+	dst := image.NewNRGBA(b)
+
+	const tile = 16
+	light := color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+	dark := color.NRGBA{R: 204, G: 204, B: 204, A: 255}
+
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if ((x-b.Min.X)/tile+(y-b.Min.Y)/tile)%2 == 0 {
+				dst.SetNRGBA(x, y, light)
+			} else {
+				dst.SetNRGBA(x, y, dark)
+			}
+		}
+	}
+
+	stdraw.Draw(dst, b, src, b.Min, stdraw.Over)
+	return dst
 }
 
 // generateVideoThumb extracts a frame from the middle of the video at srcPath

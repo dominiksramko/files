@@ -22,7 +22,8 @@ func IsThumbnailable(mime string) bool {
 	}
 	switch mime {
 	case "image/jpeg", "image/png", "image/gif",
-		"image/webp", "image/bmp", "image/tiff":
+		"image/webp", "image/bmp", "image/tiff",
+		"image/svg+xml":
 		return true
 	}
 	return false
@@ -167,9 +168,12 @@ func (s *Service) enqueue(t task) {
 func (s *Service) process(t task) {
 	thumbPath := filepath.Join(s.cacheDir, t.thumbFile)
 	var err error
-	if strings.HasPrefix(t.mime, "video/") {
+	switch {
+	case strings.HasPrefix(t.mime, "video/"):
 		err = generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
-	} else {
+	case t.mime == "image/svg+xml":
+		err = generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
+	default:
 		err = generateThumb(t.absPath, thumbPath, ThumbMaxDim)
 	}
 
