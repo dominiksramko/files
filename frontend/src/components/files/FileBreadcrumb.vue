@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ path: string }>()
 const emit = defineEmits<{ navigate: [path: string] }>()
+
+const router = useRouter()
+
+function crumbHref(path: string): string {
+  return router.resolve({ query: path ? { path } : {} }).href
+}
 
 const navRef = ref<HTMLElement | null>(null)
 const dotsBtnRef = ref<HTMLButtonElement | null>(null)
@@ -179,15 +186,16 @@ onUnmounted(() => {
           class="fixed z-[200] min-w-[10rem] max-h-60 overflow-y-auto bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1"
           :style="{ top: dropdownTop + 'px', left: dropdownLeft + 'px' }"
         >
-          <button
+          <a
             v-for="crumb in hiddenCrumbs"
             :key="crumb.path"
+            :href="crumbHref(crumb.path)"
             class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors flex items-center gap-2"
-            @click="emit('navigate', crumb.path); closeDropdown()"
+            @click.prevent="emit('navigate', crumb.path); closeDropdown()"
           >
             <AppIcon v-if="crumb.isHome" name="folder" class="size-3.5 shrink-0 text-zinc-400" />
             <span class="truncate">{{ crumb.label }}</span>
-          </button>
+          </a>
         </div>
       </Teleport>
     </template>
@@ -201,26 +209,28 @@ onUnmounted(() => {
       />
 
       <!-- Home -->
-      <button
+      <a
         v-if="crumb.isHome"
+        :href="crumbHref('')"
         class="shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800/70 transition-colors"
-        @click="emit('navigate', '')"
+        @click.prevent="emit('navigate', '')"
       >
         <AppIcon name="folder" class="size-4 shrink-0" />
         <span>Home</span>
-      </button>
+      </a>
 
       <!-- Segment -->
-      <button
+      <a
         v-else
+        :href="crumbHref(crumb.path)"
         :class="[
           'shrink-0 min-h-[2.5rem] flex items-center px-2 rounded whitespace-nowrap transition-colors hover:bg-zinc-800/70',
           idx === shownCrumbs.length - 1 ? 'text-zinc-100 hover:text-white' : 'text-zinc-400 hover:text-white',
         ]"
-        @click="emit('navigate', crumb.path)"
+        @click.prevent="emit('navigate', crumb.path)"
       >
         {{ crumb.label }}
-      </button>
+      </a>
     </template>
 
     <!-- Fills remaining row width so clicking empty space triggers enterEdit -->
