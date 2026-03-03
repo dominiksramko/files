@@ -60,9 +60,10 @@ export const auth = {
 export const files = {
   list: (path = '') => request<FileEntry[]>('GET', `/files/list${qs({ path })}`),
 
-  searchStreamUrl: (q: string, path = ''): string => {
+  searchStreamUrl: (q: string, path = '', showHidden = false): string => {
     const params = new URLSearchParams({ q, token: token() })
     if (path) params.set('path', path)
+    if (showHidden) params.set('hidden', 'true')
     return `${BASE}/files/search?${params}`
   },
 
