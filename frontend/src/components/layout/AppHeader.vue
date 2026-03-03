@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -28,9 +29,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
   <header class="h-14 bg-zinc-900 border-b border-zinc-800 flex items-center px-4 gap-4 shrink-0">
     <!-- Logo -->
     <RouterLink to="/" class="flex items-center gap-2 font-semibold text-white text-sm shrink-0">
-      <svg class="size-5 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-      </svg>
+      <AppIcon name="folder" class="size-5 text-blue-500" />
       files
     </RouterLink>
 
@@ -48,9 +47,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
           {{ (auth.user?.display_name || auth.user?.username)?.[0] }}
         </span>
         <span class="hidden sm:inline">{{ auth.user?.display_name || auth.user?.username }}</span>
-        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+        <AppIcon name="chevronDown" class="size-4" />
       </button>
 
       <Transition name="dropdown">
@@ -63,12 +60,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
             class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
             @click="menuOpen = false"
           >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            <AppIcon name="cog" class="size-4" />
             Settings
           </RouterLink>
           <hr class="border-zinc-700 my-1" />
@@ -78,10 +70,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
               class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
               @click="menuOpen = false"
             >
-              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
+              <AppIcon name="users" class="size-4" />
               Admin
             </RouterLink>
             <hr class="border-zinc-700 my-1" />
@@ -90,10 +79,7 @@ onUnmounted(() => document.removeEventListener('mousedown', handleClickOutside))
             class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-zinc-800 transition-colors"
             @click="logout"
           >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
+            <AppIcon name="logout" class="size-4" />
             Log out
           </button>
         </div>

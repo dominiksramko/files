@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ path: string }>()
 const emit = defineEmits<{ navigate: [path: string] }>()
@@ -184,9 +185,7 @@ onUnmounted(() => {
             class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors flex items-center gap-2"
             @click="emit('navigate', crumb.path); closeDropdown()"
           >
-            <svg v-if="crumb.isHome" class="size-3.5 shrink-0 text-zinc-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-            </svg>
+            <AppIcon v-if="crumb.isHome" name="folder" class="size-3.5 shrink-0 text-zinc-400" />
             <span class="truncate">{{ crumb.label }}</span>
           </button>
         </div>
@@ -195,13 +194,11 @@ onUnmounted(() => {
 
     <!-- Visible crumbs -->
     <template v-for="(crumb, idx) in shownCrumbs" :key="crumb.path">
-      <svg
+      <AppIcon
         v-if="idx > 0 || hiddenCrumbs.length > 0"
+        name="chevronRight"
         class="size-4 text-zinc-600 shrink-0"
-        fill="none" viewBox="0 0 24 24" stroke="currentColor"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-      </svg>
+      />
 
       <!-- Home -->
       <button
@@ -209,9 +206,7 @@ onUnmounted(() => {
         class="shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800/70 transition-colors"
         @click="emit('navigate', '')"
       >
-        <svg class="size-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-          <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-        </svg>
+        <AppIcon name="folder" class="size-4 shrink-0" />
         <span>Home</span>
       </button>
 

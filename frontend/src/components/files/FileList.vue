@@ -5,6 +5,7 @@ import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
   entries: FileEntry[]
@@ -62,10 +63,7 @@ function handleClick(entry: FileEntry) {
       v-else-if="entries.length === 0"
       class="flex-1 flex flex-col items-center justify-center gap-2 text-zinc-500"
     >
-      <svg class="size-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-          d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-      </svg>
+      <AppIcon name="folderOutline" class="size-12" :stroke-width="1" />
       <span class="text-sm">This folder is empty</span>
     </div>
 

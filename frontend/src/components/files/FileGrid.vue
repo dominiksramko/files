@@ -4,6 +4,7 @@ import type { FileEntry } from '@/types'
 import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
   entries: FileEntry[]
@@ -151,14 +152,7 @@ const catIcon: Record<string, string> = {
     v-else-if="entries.length === 0"
     class="flex flex-col items-center justify-center h-full gap-2 text-zinc-500"
   >
-    <svg class="size-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="1"
-        d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-      />
-    </svg>
+    <AppIcon name="folderOutline" class="size-12" :stroke-width="1" />
     <span class="text-sm">This folder is empty</span>
   </div>
 
@@ -210,10 +204,7 @@ const catIcon: Record<string, string> = {
             v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
             class="w-full h-full flex items-center justify-center bg-green-950/60"
           >
-            <svg class="size-12 text-green-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+            <AppIcon name="image" class="size-12 text-green-900" :stroke-width="1.5" />
           </div>
 
           <!-- Video: thumbnail when ready, icon placeholder while generating -->
@@ -228,10 +219,7 @@ const catIcon: Record<string, string> = {
             v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/')"
             class="w-full h-full flex items-center justify-center bg-purple-950/60"
           >
-            <svg class="size-12 text-purple-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-            </svg>
+            <AppIcon name="video" class="size-12 text-purple-900" :stroke-width="1.5" />
           </div>
 
           <!-- Audio -->
@@ -239,10 +227,7 @@ const catIcon: Record<string, string> = {
             v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('audio/')"
             class="w-full h-full flex items-center justify-center bg-pink-950/60"
           >
-            <svg class="size-12 text-pink-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-            </svg>
+            <AppIcon name="music" class="size-12 text-pink-400" :stroke-width="1.5" />
           </div>
 
           <!-- PDF -->
@@ -250,10 +235,7 @@ const catIcon: Record<string, string> = {
             v-else-if="!item.entry.is_dir && item.entry.mime === 'application/pdf'"
             class="w-full h-full flex items-center justify-center bg-red-950/60"
           >
-            <svg class="size-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
+            <AppIcon name="pdf" class="size-12 text-red-400" :stroke-width="1.5" />
           </div>
 
           <!-- Archive -->
@@ -261,10 +243,7 @@ const catIcon: Record<string, string> = {
             v-else-if="!item.entry.is_dir && fileCategory(item.entry.mime, item.entry.name) === 'archive'"
             class="w-full h-full flex items-center justify-center bg-orange-950/60"
           >
-            <svg class="size-12 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-            </svg>
+            <AppIcon name="archive" class="size-12 text-orange-400" :stroke-width="1.5" />
           </div>
 
           <!-- Folder -->
@@ -272,9 +251,7 @@ const catIcon: Record<string, string> = {
             v-else-if="item.entry.is_dir"
             class="w-full h-full flex items-center justify-center bg-yellow-950/60"
           >
-            <svg class="size-14 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-            </svg>
+            <AppIcon name="folder" class="size-14 text-yellow-400" />
           </div>
 
           <!-- Generic fallback -->
@@ -282,13 +259,11 @@ const catIcon: Record<string, string> = {
             v-else
             :class="['w-full h-full flex items-center justify-center', catBg[fileCategory(item.entry.mime, item.entry.name)] ?? catBg['other']]"
           >
-            <svg
+            <AppIcon
+              name="document"
               :class="['size-12', catIcon[fileCategory(item.entry.mime, item.entry.name)] ?? catIcon['other']]"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+              :stroke-width="1.5"
+            />
           </div>
 
           <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->

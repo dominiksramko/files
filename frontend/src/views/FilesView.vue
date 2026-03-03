@@ -11,9 +11,11 @@ import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
 import FileSearch from '@/components/files/FileSearch.vue'
 import FilePreview from '@/components/files/FilePreview.vue'
+import FileOpsBar from '@/components/files/FileOpsBar.vue'
 import ArchiveContents from '@/components/archive/ArchiveContents.vue'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const filesStore = useFilesStore()
 const route = useRoute()
@@ -277,6 +279,11 @@ async function downloadPaths(paths: string[]) {
 
 function onDownload() {
   downloadPaths([...selectedPaths.value])
+}
+
+function onRename() {
+  const entry = [...visibleEntries.value, ...searchResults.value].find(e => e.path === selectedPaths.value[0])
+  if (entry) startRename(entry)
 }
 
 // ── Delete modal (unified for toolbar selection + preview) ─────────────────
@@ -552,7 +559,8 @@ function openDetails(items: FileEntry[]) {
   sizeProgress.value = null
   detailsMedia.value = null
 
-  const needsStream = items.length > 1 || (items.length === 1 && items[0].is_dir)
+  const first = items[0]
+  const needsStream = items.length > 1 || (items.length === 1 && first?.is_dir)
   if (needsStream) {
     sizeProgress.value = { files: 0, dirs: 0, bytes: 0, done: false }
     const url = filesApi.sizeStreamUrl(items.map((e) => e.path))
@@ -570,10 +578,10 @@ function openDetails(items: FileEntry[]) {
     }
   }
 
-  if (items.length === 1 && !items[0].is_dir) {
-    const cat = fileCategory(items[0].mime, items[0].name)
+  if (first && items.length === 1 && !first.is_dir) {
+    const cat = fileCategory(first.mime, first.name)
     if (cat === 'image' || cat === 'video') {
-      filesApi.fileMeta(items[0].path).then((meta) => {
+      filesApi.fileMeta(first.path).then((meta) => {
         detailsMedia.value = meta
       }).catch(() => {})
     }
@@ -596,46 +604,17 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
   const single = paths.length === 1
   const close = () => { contextMenuState.value = null }
   const items: ContextMenuItem[] = [
-    {
-      label: 'Copy',
-      icon: 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
-      action: () => { clipboard.value = { mode: 'copy', paths }; close() },
-    },
-    {
-      label: 'Move',
-      icon: 'M5 12h14m-7-7l7 7-7 7',
-      action: () => {
-        clipboard.value = { mode: 'move', paths }
-        selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
-        close()
-      },
-    },
-    {
-      label: 'Download',
-      icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
-      action: () => { close(); downloadPaths(paths) },
-    },
+    { label: 'Copy',     icon: 'copy',       action: () => { clipboard.value = { mode: 'copy', paths }; close() } },
+    { label: 'Move',     icon: 'arrowRight', action: () => { clipboard.value = { mode: 'move', paths }; selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p)); close() } },
+    { label: 'Download', icon: 'download',   action: () => { close(); downloadPaths(paths) } },
     { separator: true },
   ]
   if (single) {
-    items.push({
-      label: 'Rename',
-      icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z',
-      action: () => { close(); startRename(entry) },
-    })
+    items.push({ label: 'Rename', icon: 'pencil', action: () => { close(); startRename(entry) } })
   }
-  items.push({
-    label: 'Delete',
-    icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
-    danger: true,
-    action: () => { close(); openDeleteDialog(paths, single ? entry.name : undefined) },
-  })
+  items.push({ label: 'Delete', icon: 'trash', danger: true, action: () => { close(); openDeleteDialog(paths, single ? entry.name : undefined) } })
   items.push({ separator: true })
-  items.push({
-    label: 'Details',
-    icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-    action: () => { close(); openDetails(entriesForPaths(paths)) },
-  })
+  items.push({ label: 'Details', icon: 'info', action: () => { close(); openDetails(entriesForPaths(paths)) } })
   return items
 })
 
@@ -685,128 +664,25 @@ onMounted(() => {
         <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
 
           <!-- ── FileOps mode ── -->
-          <template v-if="fileopsActive">
-            <!-- Selection actions -->
-            <template v-if="selectedPaths.length > 0">
-              <!-- Deselect + count -->
-              <button
-                class="flex items-center gap-1.5 text-sm text-zinc-200 hover:text-white shrink-0 pl-0.5 pr-2 py-1 rounded hover:bg-zinc-800 transition-colors"
-                title="Clear selection"
-                @click="deselectAll"
-              >
-                <svg class="size-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                {{ selectedPaths.length }} selected
-              </button>
-
-              <div class="w-px h-4 bg-zinc-700 mx-0.5 shrink-0" />
-
-              <button
-                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
-                title="Copy"
-                @click="onCopy"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </button>
-
-              <button
-                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
-                title="Move"
-                @click="onMove"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7-7l7 7-7 7" />
-                </svg>
-              </button>
-
-              <button
-                :disabled="downloading"
-                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors shrink-0"
-                :title="downloading ? 'Zipping…' : 'Download'"
-                @click="onDownload"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
-
-              <button
-                v-if="selectedPaths.length === 1"
-                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
-                title="Rename"
-                @click="startRename([...visibleEntries, ...searchResults].find(e => e.path === selectedPaths[0])!)"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
-
-              <button
-                class="p-1.5 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-700 transition-colors shrink-0"
-                title="Delete"
-                @click="openDeleteDialog([...selectedPaths])"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-
-              <button
-                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
-                title="Details"
-                @click="openDetails(entriesForPaths([...selectedPaths]))"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-            </template>
-
-            <!-- Separator between selection actions and clipboard -->
-            <div
-              v-if="selectedPaths.length > 0 && clipboard"
-              class="w-px h-4 bg-zinc-700 mx-0.5 shrink-0"
-            />
-
-            <!-- Clipboard -->
-            <template v-if="clipboard">
-              <span class="text-xs text-zinc-400 italic shrink-0 truncate">
-                {{ clipboard.mode === 'copy' ? 'Copying' : 'Moving' }}
-                {{ clipboard.paths.length }} item{{ clipboard.paths.length !== 1 ? 's' : '' }}
-              </span>
-              <button
-                class="p-1.5 rounded text-blue-400 hover:text-blue-300 hover:bg-zinc-700 transition-colors shrink-0"
-                title="Paste here"
-                @click="onPaste"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
-              </button>
-              <button
-                class="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
-                title="Clear clipboard"
-                @click="clipboard = null"
-              >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </template>
-          </template>
+          <FileOpsBar
+            v-if="fileopsActive"
+            :selected-count="selectedPaths.length"
+            :clipboard="clipboard"
+            :downloading="downloading"
+            @copy="onCopy"
+            @move="onMove"
+            @download="onDownload"
+            @rename="onRename"
+            @delete="openDeleteDialog([...selectedPaths])"
+            @details="openDetails(entriesForPaths([...selectedPaths]))"
+            @paste="onPaste"
+            @clear-clipboard="clipboard = null"
+            @deselect-all="deselectAll"
+          />
 
           <!-- ── Search mode ── -->
           <div v-else class="relative w-full">
-            <svg
-              class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-            </svg>
+            <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
             <input
               v-model="searchQuery"
               type="text"
@@ -819,9 +695,7 @@ onMounted(() => {
               class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
               @click="clearSearch"
             >
-              <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <AppIcon name="x" class="size-3.5" />
             </button>
           </div>
         </div>
@@ -829,77 +703,34 @@ onMounted(() => {
         <!-- Right: action buttons (always visible) -->
         <div class="flex items-center gap-0.5 shrink-0">
           <!-- New folder -->
-          <button
-            class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
-            title="New folder"
-            @click="openNewFolder"
-          >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2z" />
-            </svg>
+          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
+            <AppIcon name="newFolder" class="size-4" />
           </button>
 
           <!-- Upload -->
-          <button
-            :class="['p-1.5 rounded transition-colors', uploading ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']"
-            title="Upload files"
-            @click="openFilePicker"
-          >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
+          <button :class="['p-1.5 rounded transition-colors', uploading ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
+            <AppIcon name="upload" class="size-4" />
           </button>
           <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
 
           <!-- View toggle -->
           <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5 ml-0.5">
-            <button
-              :class="['p-1.5 rounded-md transition-colors', viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']"
-              title="Grid view"
-              @click="setView('grid')"
-            >
-              <svg class="size-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M4 4h6v6H4V4zm0 10h6v6H4v-6zm10-10h6v6h-6V4zm0 10h6v6h-6v-6z" />
-              </svg>
+            <button :class="['p-1.5 rounded-md transition-colors', viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']" title="Grid view" @click="setView('grid')">
+              <AppIcon name="grid" class="size-4" />
             </button>
-            <button
-              :class="['p-1.5 rounded-md transition-colors', viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']"
-              title="List view"
-              @click="setView('list')"
-            >
-              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-              </svg>
+            <button :class="['p-1.5 rounded-md transition-colors', viewMode === 'list' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']" title="List view" @click="setView('list')">
+              <AppIcon name="bars" class="size-4" />
             </button>
           </div>
 
           <!-- Show/hide hidden files -->
-          <button
-            :class="['p-1.5 rounded transition-colors hover:bg-zinc-800', showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white']"
-            :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
-            @click="toggleHidden"
-          >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
+          <button :class="['p-1.5 rounded transition-colors hover:bg-zinc-800', showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white']" :title="showHidden ? 'Hide hidden files' : 'Show hidden files'" @click="toggleHidden">
+            <AppIcon name="eye" class="size-4" />
           </button>
 
           <!-- Refresh -->
-          <button
-            class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
-            title="Refresh"
-            @click="filesStore.refresh()"
-          >
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="Refresh" @click="filesStore.refresh()">
+            <AppIcon name="refresh" class="size-4" />
           </button>
         </div>
       </div>
@@ -921,10 +752,7 @@ onMounted(() => {
           v-if="isDragging"
           class="absolute inset-0 z-20 bg-blue-950/60 border-2 border-dashed border-blue-400 flex flex-col items-center justify-center gap-3 pointer-events-none"
         >
-          <svg class="size-12 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
+          <AppIcon name="upload" class="size-12 text-blue-400" :stroke-width="1.5" />
           <span class="text-blue-200 text-lg font-medium">Drop files to upload</span>
         </div>
       </Transition>
@@ -1155,7 +983,7 @@ onMounted(() => {
             <!-- Name (single only) -->
             <div v-if="detailsItems.length === 1" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Name</dt>
-              <dd class="text-xs text-zinc-200 break-all">{{ detailsItems[0].name }}</dd>
+              <dd class="text-xs text-zinc-200 break-all">{{ detailsItems[0]?.name }}</dd>
             </div>
 
             <!-- Location -->
@@ -1167,7 +995,7 @@ onMounted(() => {
             <!-- Type (single only) -->
             <div v-if="detailsItems.length === 1" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Type</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsItems[0].is_dir ? 'Folder' : (detailsItems[0].mime || 'Unknown') }}</dd>
+              <dd class="text-xs text-zinc-200">{{ detailsItems[0]?.is_dir ? 'Folder' : (detailsItems[0]?.mime || 'Unknown') }}</dd>
             </div>
 
             <!-- Size -->
@@ -1175,8 +1003,8 @@ onMounted(() => {
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Size</dt>
               <dd class="text-xs text-zinc-200">
                 <!-- Single file: show directly -->
-                <template v-if="detailsItems.length === 1 && !detailsItems[0].is_dir">
-                  {{ formatSize(detailsItems[0].size) }}
+                <template v-if="detailsItems.length === 1 && !detailsItems[0]?.is_dir">
+                  {{ formatSize(detailsItems[0]?.size ?? 0) }}
                 </template>
                 <!-- Streaming (folder or multi) -->
                 <template v-else>{{ detailsSizeText }}</template>
@@ -1184,15 +1012,15 @@ onMounted(() => {
             </div>
 
             <!-- Created (single only, if filesystem provides it) -->
-            <div v-if="detailsItems.length === 1 && detailsItems[0].created_at" class="flex gap-2">
+            <div v-if="detailsItems.length === 1 && detailsItems[0]?.created_at" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Created</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0].created_at) }}</dd>
+              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0]?.created_at ?? '') }}</dd>
             </div>
 
             <!-- Modified (single only) -->
             <div v-if="detailsItems.length === 1" class="flex gap-2">
               <dt class="text-xs text-zinc-500 w-20 shrink-0">Modified</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0].mod_time) }}</dd>
+              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0]?.mod_time ?? '') }}</dd>
             </div>
 
             <!-- Image resolution -->

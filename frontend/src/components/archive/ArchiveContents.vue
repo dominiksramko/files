@@ -5,6 +5,7 @@ import { files as filesApi } from '@/utils/api'
 import { formatSize } from '@/utils/formatters'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ entry: FileEntry }>()
 const emit = defineEmits<{ close: []; extracted: [] }>()
@@ -115,13 +116,7 @@ onMounted(() => load())
     <div v-else>
       <!-- Search -->
       <div class="relative mb-2">
-        <svg
-          class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none"
-          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-        </svg>
+        <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
         <input
           v-model="search"
           type="text"
@@ -151,23 +146,11 @@ onMounted(() => load())
               >
                 <td class="px-3 py-2">
                   <div class="flex items-center gap-2 min-w-0">
-                    <svg
+                    <AppIcon
+                      :name="item.is_dir ? 'folder' : 'document'"
                       :class="['size-4 shrink-0', item.is_dir ? 'text-yellow-400' : 'text-zinc-500']"
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        v-if="item.is_dir"
-                        d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"
-                      />
-                      <path
-                        v-else
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        fill="none"
-                      />
-                    </svg>
+                      :stroke-width="1.5"
+                    />
                     <span class="truncate text-zinc-300">{{ item.name }}</span>
                   </div>
                 </td>

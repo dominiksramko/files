@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppIcon from '@/components/ui/AppIcon.vue'
+
 defineProps<{
   title?: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
@@ -34,9 +36,7 @@ const emit = defineEmits<{ close: [] }>()
             @click="emit('close')"
             aria-label="Close"
           >
-            <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <AppIcon name="x" class="size-5" />
           </button>
         </div>
 

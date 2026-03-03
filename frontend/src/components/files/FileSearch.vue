@@ -4,6 +4,7 @@ import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
   entries: FileEntry[]
@@ -64,10 +65,7 @@ function esc(s: string): string {
       v-else-if="entries.length === 0"
       class="flex-1 flex flex-col items-center justify-center gap-2 text-zinc-500"
     >
-      <svg class="size-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-          d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-      </svg>
+      <AppIcon name="search" class="size-10" :stroke-width="1.5" />
       <span class="text-sm">No results for <span class="text-white">"{{ query }}"</span></span>
     </div>
 
@@ -117,10 +115,7 @@ function esc(s: string): string {
                 title="Download"
                 @click="download(entry, $event)"
               >
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
+                <AppIcon name="download" class="size-4" />
               </button>
             </td>
           </tr>

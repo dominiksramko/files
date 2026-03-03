@@ -4,6 +4,7 @@ import type { User } from '@/types'
 import { users as usersApi, thumbnails } from '@/utils/api'
 import UserFormModal from '@/components/admin/UserFormModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -80,18 +81,14 @@ onMounted(fetchUsers)
           class="flex items-center gap-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           @click="clearThumbnails"
         >
-          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+          <AppIcon name="trash" class="size-4" />
           {{ clearingThumbs ? 'Clearing...' : 'Clear thumbnails' }}
         </button>
         <button
           class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
           @click="openCreate"
         >
-          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
+          <AppIcon name="plus" class="size-4" />
           New user
         </button>
       </div>
@@ -156,14 +153,7 @@ onMounted(fetchUsers)
                   title="Edit"
                   @click="openEdit(u)"
                 >
-                  <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                    />
-                  </svg>
+                  <AppIcon name="pencilSquare" class="size-4" />
                 </button>
                 <button
                   :disabled="u.id === auth.user?.id"
@@ -171,14 +161,7 @@ onMounted(fetchUsers)
                   title="Delete"
                   @click="deleteUser(u)"
                 >
-                  <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
+                  <AppIcon name="trash" class="size-4" />
                 </button>
               </div>
             </td>

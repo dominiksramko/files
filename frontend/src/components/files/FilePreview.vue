@@ -9,6 +9,7 @@ import ImageViewer  from '@/components/files/ImageViewer.vue'
 import PdfViewer    from '@/components/files/PdfViewer.vue'
 import TextViewer   from '@/components/files/TextViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
+import AppIcon      from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{
   entry: FileEntry | null
@@ -71,39 +72,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               title="Download"
               @click.stop
             >
-              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <AppIcon name="download" class="size-5" />
             </a>
             <button
               class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
               title="Rename"
               @click.stop="emit('rename', entry)"
             >
-              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
+              <AppIcon name="pencilSquare" class="size-5" />
             </button>
             <button
               class="text-zinc-400 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-white/10"
               title="Delete"
               @click.stop="emit('delete', entry)"
             >
-              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
+              <AppIcon name="trash" class="size-5" />
             </button>
             <button
               class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
               @click="emit('close')"
             >
-              <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <AppIcon name="x" class="size-5" />
             </button>
           </div>
         </div>
@@ -120,9 +109,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             ]"
             @click.stop="emit('prev')"
           >
-            <svg class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-            </svg>
+            <AppIcon name="chevronLeft" class="size-7" />
           </button>
 
           <!-- Dynamic viewer -->
@@ -145,9 +132,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             ]"
             @click.stop="emit('next')"
           >
-            <svg class="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
+            <AppIcon name="chevronRight" class="size-7" />
           </button>
         </div>
 

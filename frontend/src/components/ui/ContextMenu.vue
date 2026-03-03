@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, nextTick } from 'vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import type { IconName } from '@/utils/icons'
 
 export interface ContextMenuItem {
   label?: string
-  icon?: string  // SVG path d= value (stroke, 24px viewBox)
+  icon?: IconName
   danger?: boolean
   separator?: boolean
   action?: () => void
@@ -70,9 +72,7 @@ onUnmounted(() => {
         ]"
         @click="item.action?.()"
       >
-        <svg v-if="item.icon" class="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-        </svg>
+        <AppIcon v-if="item.icon" :name="item.icon" class="size-4 shrink-0" />
         <span>{{ item.label }}</span>
       </button>
     </template>
