@@ -624,6 +624,15 @@ function closeDetails() {
 
 onUnmounted(() => { sizeEventSource?.close() })
 
+watch(
+  () => filesStore.currentPath,
+  (path) => {
+    const folder = path ? path.split('/').pop()! : 'Home'
+    document.title = `${folder} - files`
+  },
+  { immediate: true },
+)
+
 const contextMenuItems = computed((): ContextMenuItem[] => {
   if (!contextMenuState.value) return []
   const { entry, paths } = contextMenuState.value
