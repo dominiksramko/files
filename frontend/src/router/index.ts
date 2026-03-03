@@ -39,6 +39,22 @@ const router = createRouter({
   ],
 })
 
+router.afterEach((to) => {
+  if (to.name === 'files') {
+    const path = to.query.path as string | undefined
+    const folder = path ? path.split('/').pop()! : 'Home'
+    document.title = `${folder} - files`
+  } else {
+    const names: Record<string, string> = {
+      login: 'Login',
+      admin: 'Admin',
+      settings: 'Settings',
+    }
+    const label = names[to.name as string]
+    document.title = label ? `${label} - files` : 'files'
+  }
+})
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
