@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,11 +20,21 @@ import (
 )
 
 type FilesHandler struct {
-	thumbs *thumbs.Service // nil when thumbnail support is disabled
+	thumbs    *thumbs.Service // nil when thumbnail support is disabled
+	convCache *convCache      // nil when conversion cache is disabled
 }
 
-func NewFilesHandler(thumbs *thumbs.Service) *FilesHandler {
-	return &FilesHandler{thumbs: thumbs}
+func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandler {
+	h := &FilesHandler{thumbs: thumbsSvc}
+	if convCacheDir != "" {
+		cache, err := newConvCache(convCacheDir)
+		if err != nil {
+			log.Printf("conv cache: disabled (%v)", err)
+		} else {
+			h.convCache = cache
+		}
+	}
+	return h
 }
 
 type FileEntry struct {
@@ -133,6 +145,12 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 	info, err := os.Stat(abs)
 	if err != nil || info.IsDir() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+
+	mime := mimeByExt(filepath.Ext(abs))
+	if needsImageConversion(mime) && info.Size() <= convertSizeLimit {
+		h.convertAndStream(c, abs)
 		return
 	}
 
@@ -256,6 +274,68 @@ func addToZip(zw *zip.Writer, abs, name string) error {
 	}
 	_, err = io.Copy(w, f)
 	return err
+}
+
+// convertSizeLimit is the maximum file size for on-the-fly image conversion.
+// Files larger than this are served raw; the browser will show its own error.
+const convertSizeLimit = 50 * 1024 * 1024 // 50 MB
+
+// needsImageConversion reports whether a format requires server-side conversion
+// to JPEG before the browser can display it.
+func needsImageConversion(mime string) bool {
+	switch mime {
+	case "image/heic", "image/heif", "image/tiff", "image/jxl",
+		"image/vnd.adobe.photoshop", "image/x-tga", "image/x-xcf",
+		"image/vnd.radiance", "image/x-exr", "image/vnd.ms-dds":
+		return true
+	}
+	return false
+}
+
+// convertAndStream converts srcPath to JPEG via ImageMagick and writes it to
+// the response. Results are cached by content hash for convCacheTTL (7 days).
+// [0] selects the first frame/layer for multi-layer formats (PSD, XCF, ICO).
+func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath string) {
+	// Check cache first.
+	if h.convCache != nil {
+		if data, hash, ok := h.convCache.get(srcPath); ok {
+			_ = hash
+			c.Data(http.StatusOK, "image/jpeg", data)
+			return
+		} else if hash != "" {
+			// Hash computed but cache missed — convert and store.
+			out, err := exec.Command(
+				"convert",
+				"-background", "white",
+				srcPath+"[0]",
+				"-flatten",
+				"-quality", "90",
+				"jpeg:-",
+			).Output()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
+				return
+			}
+			h.convCache.put(hash, out)
+			c.Data(http.StatusOK, "image/jpeg", out)
+			return
+		}
+	}
+
+	// No cache available — convert and serve without caching.
+	out, err := exec.Command(
+		"convert",
+		"-background", "white",
+		srcPath+"[0]",
+		"-flatten",
+		"-quality", "90",
+		"jpeg:-",
+	).Output()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
+		return
+	}
+	c.Data(http.StatusOK, "image/jpeg", out)
 }
 
 // needsRemux reports whether a video format needs to be transcoded to HLS/MP4

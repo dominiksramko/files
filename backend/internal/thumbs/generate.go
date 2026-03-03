@@ -22,14 +22,14 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// fileContentHash returns a fast, stable hash for the file at path.
+// FileContentHash returns a fast, stable hash for the file at path.
 //
 // It hashes: 8-byte little-endian file size, the first 64 KiB, and the last
 // 64 KiB (for files ≤ 128 KiB the entire content is used). This means:
 //   - Moving or renaming a file produces the same hash.
 //   - Identical files at different paths share one thumbnail.
 //   - Large video files are hashed cheaply (128 KiB read at most).
-func fileContentHash(path string) (string, error) {
+func FileContentHash(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)

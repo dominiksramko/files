@@ -93,7 +93,7 @@ func (s *Service) cachedHash(absPath string, mtime int64) (string, error) {
 			return e.hash, nil
 		}
 	}
-	hash, err := fileContentHash(absPath)
+	hash, err := FileContentHash(absPath)
 	if err != nil {
 		return "", err
 	}

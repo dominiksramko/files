@@ -47,7 +47,7 @@ func main() {
 
 	// Handlers
 	authH := handlers.NewAuthHandler(db, cfg.JWTSecret)
-	filesH := handlers.NewFilesHandler(thumbSvc)
+	filesH := handlers.NewFilesHandler(thumbSvc, cfg.ConvCacheDir)
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
 	opsH := handlers.NewFileOpsHandler()

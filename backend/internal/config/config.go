@@ -12,6 +12,7 @@ type Config struct {
 	GinMode       string
 	ThumbCacheDir string
 	HLSCacheDir   string
+	ConvCacheDir  string
 }
 
 func Load() *Config {
@@ -23,6 +24,7 @@ func Load() *Config {
 		GinMode:       getEnv("GIN_MODE", "debug"),
 		ThumbCacheDir: getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
 		HLSCacheDir:   getEnv("HLS_CACHE_DIR", "./data/hls"),
+		ConvCacheDir:  getEnv("CONV_CACHE_DIR", "./data/conv"),
 	}
 }
 
