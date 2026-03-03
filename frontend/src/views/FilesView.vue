@@ -740,7 +740,7 @@ onMounted(() => {
           <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
 
           <!-- View toggle -->
-          <div class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5 ml-0.5">
+          <div v-if="!searchQuery" class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5 ml-0.5">
             <button :class="['p-1.5 rounded-md transition-colors', viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']" title="Grid view" @click="setView('grid')">
               <AppIcon name="grid" class="size-4" />
             </button>
