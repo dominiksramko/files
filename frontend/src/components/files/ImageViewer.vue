@@ -82,7 +82,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="self-stretch flex flex-col min-h-0 min-w-0 overflow-hidden select-none py-4"
+    class="self-stretch flex flex-col min-h-0 min-w-0 select-none py-4"
     :style="{ cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default' }"
     @click.stop
     @dblclick.stop="resetZoom"
@@ -118,7 +118,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Zoom controls — always below the image, never overlapping -->
-    <div v-if="!imageError" class="shrink-0 flex justify-center py-2">
+    <div v-if="!imageError" class="relative z-10 shrink-0 flex justify-center py-2">
       <div class="flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">
         <button
           :class="['p-1 rounded-full transition-colors', zoom <= 1 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
