@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref, nextTick } from 'vue'
 
 export interface ContextMenuItem {
   label?: string
+  icon?: string  // SVG path d= value (stroke, 24px viewBox)
   danger?: boolean
   separator?: boolean
   action?: () => void
@@ -62,14 +63,17 @@ onUnmounted(() => {
       <button
         v-else
         :class="[
-          'w-full text-left px-3 py-1.5 text-sm transition-colors',
+          'w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center gap-2.5',
           item.danger
             ? 'text-red-400 hover:bg-red-950/60 hover:text-red-300'
             : 'text-zinc-200 hover:bg-zinc-800',
         ]"
         @click="item.action?.()"
       >
-        {{ item.label }}
+        <svg v-if="item.icon" class="size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
+        </svg>
+        <span>{{ item.label }}</span>
       </button>
     </template>
   </div>

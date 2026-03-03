@@ -598,10 +598,12 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
   const items: ContextMenuItem[] = [
     {
       label: 'Copy',
+      icon: 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
       action: () => { clipboard.value = { mode: 'copy', paths }; close() },
     },
     {
       label: 'Move',
+      icon: 'M5 12h14m-7-7l7 7-7 7',
       action: () => {
         clipboard.value = { mode: 'move', paths }
         selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
@@ -610,21 +612,28 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
     },
     {
       label: 'Download',
+      icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
       action: () => { close(); downloadPaths(paths) },
     },
     { separator: true },
   ]
   if (single) {
-    items.push({ label: 'Rename', action: () => { close(); startRename(entry) } })
+    items.push({
+      label: 'Rename',
+      icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z',
+      action: () => { close(); startRename(entry) },
+    })
   }
   items.push({
     label: 'Delete',
+    icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
     danger: true,
     action: () => { close(); openDeleteDialog(paths, single ? entry.name : undefined) },
   })
   items.push({ separator: true })
   items.push({
     label: 'Details',
+    icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
     action: () => { close(); openDetails(entriesForPaths(paths)) },
   })
   return items
@@ -694,36 +703,66 @@ onMounted(() => {
               <div class="w-px h-4 bg-zinc-700 mx-0.5 shrink-0" />
 
               <button
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
+                title="Copy"
                 @click="onCopy"
-              >Copy</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
 
               <button
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
+                title="Move"
                 @click="onMove"
-              >Move</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7-7l7 7-7 7" />
+                </svg>
+              </button>
 
               <button
                 :disabled="downloading"
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-50 transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 disabled:opacity-40 transition-colors shrink-0"
+                :title="downloading ? 'Zipping…' : 'Download'"
                 @click="onDownload"
-              >{{ downloading ? 'Zipping…' : 'Download' }}</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </button>
 
               <button
                 v-if="selectedPaths.length === 1"
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
+                title="Rename"
                 @click="startRename([...visibleEntries, ...searchResults].find(e => e.path === selectedPaths[0])!)"
-              >Rename</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
 
               <button
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-red-800 text-zinc-200 hover:text-white transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-700 transition-colors shrink-0"
+                title="Delete"
                 @click="openDeleteDialog([...selectedPaths])"
-              >Delete</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
 
               <button
-                class="px-2.5 py-1 rounded text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors shrink-0"
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0"
+                title="Details"
                 @click="openDetails(entriesForPaths([...selectedPaths]))"
-              >Details</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
             </template>
 
             <!-- Separator between selection actions and clipboard -->
@@ -739,9 +778,14 @@ onMounted(() => {
                 {{ clipboard.paths.length }} item{{ clipboard.paths.length !== 1 ? 's' : '' }}
               </span>
               <button
-                class="px-2.5 py-1 rounded text-sm bg-blue-700 hover:bg-blue-600 text-white transition-colors shrink-0"
+                class="p-1.5 rounded text-blue-400 hover:text-blue-300 hover:bg-zinc-700 transition-colors shrink-0"
+                title="Paste here"
                 @click="onPaste"
-              >Paste here</button>
+              >
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              </button>
               <button
                 class="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
                 title="Clear clipboard"
