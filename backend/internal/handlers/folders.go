@@ -54,15 +54,18 @@ func (h *FoldersHandler) GetPref(c *gin.Context) {
 		return
 	}
 
-	viewMode = autoDetectViewMode(abs)
+	var persist bool
+	viewMode, persist = autoDetectViewMode(abs)
 
-	// Persist so future visits are instant
-	//nolint:errcheck
-	h.db.Exec(
-		`INSERT INTO folder_prefs (user_id, path, view_mode) VALUES (?, ?, ?)
-		 ON CONFLICT(user_id, path) DO UPDATE SET view_mode = excluded.view_mode`,
-		userID, rel, viewMode,
-	)
+	// Only persist when the folder has files — empty folders should re-detect on next visit
+	if persist {
+		//nolint:errcheck
+		h.db.Exec(
+			`INSERT INTO folder_prefs (user_id, path, view_mode) VALUES (?, ?, ?)
+			 ON CONFLICT(user_id, path) DO UPDATE SET view_mode = excluded.view_mode`,
+			userID, rel, viewMode,
+		)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"view_mode": viewMode})
 }
@@ -98,12 +101,12 @@ func (h *FoldersHandler) SetPref(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"view_mode": body.ViewMode})
 }
 
-// autoDetectViewMode returns "grid" if ≥20% of files in the directory are
-// thumbnail-capable (images or videos), otherwise "list".
-func autoDetectViewMode(dir string) string {
+// autoDetectViewMode returns the detected view mode and whether it should be
+// persisted. Empty folders return ("list", false) so they re-detect on next visit.
+func autoDetectViewMode(dir string) (mode string, persist bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "list"
+		return "list", false
 	}
 
 	var totalFiles, thumbFiles int
@@ -117,8 +120,11 @@ func autoDetectViewMode(dir string) string {
 		}
 	}
 
-	if totalFiles > 0 && float64(thumbFiles)/float64(totalFiles) >= thumbnailThreshold {
-		return "grid"
+	if totalFiles == 0 {
+		return "list", false
 	}
-	return "list"
+	if float64(thumbFiles)/float64(totalFiles) >= thumbnailThreshold {
+		return "grid", true
+	}
+	return "list", true
 }
