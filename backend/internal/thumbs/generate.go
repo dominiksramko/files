@@ -155,9 +155,9 @@ func generateMagickThumb(srcPath, dstPath string, size int) error {
 	return nil
 }
 
-// generateSVGThumb rasterises the SVG at srcPath via resvg, composites the
-// result onto a checkerboard background (so transparent areas are visible in
-// the JPEG thumbnail), then crops and encodes to dstPath.
+// generateSVGThumb rasterises the SVG at srcPath via rsvg-convert, composites
+// the result onto a checkerboard background (so transparent areas are visible
+// in the JPEG thumbnail), then crops and encodes to dstPath.
 func generateSVGThumb(srcPath, dstPath string, size int) error {
 	tmp, err := os.CreateTemp("", "svg-thumb-*.png")
 	if err != nil {
@@ -168,8 +168,8 @@ func generateSVGThumb(srcPath, dstPath string, size int) error {
 
 	// Rasterise at 2× the target size so the subsequent downscale is high quality.
 	rasterSize := strconv.Itoa(size * 2)
-	if out, err := exec.Command("resvg", "--width", rasterSize, srcPath, tmp.Name()).CombinedOutput(); err != nil {
-		return fmt.Errorf("resvg: %w: %s", err, strings.TrimSpace(string(out)))
+	if out, err := exec.Command("rsvg-convert", "--width", rasterSize, srcPath, "-o", tmp.Name()).CombinedOutput(); err != nil {
+		return fmt.Errorf("rsvg-convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	f, err := os.Open(tmp.Name())

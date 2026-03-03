@@ -84,7 +84,7 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
 Any new CLI tool used by the backend must be added to the `apk add` line in `backend/Dockerfile` runtime stage (Alpine). Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
-- `resvg` — SVG rasterisation for thumbnails
+- `librsvg` (provides `rsvg-convert`) — SVG rasterisation for thumbnails
 - `imagemagick` — thumbnails for AVIF, HEIC, HEIF, JXL, ICO, PSD, TGA, XCF, HDR, EXR, DDS
 
 ## Dev Commands
