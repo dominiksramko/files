@@ -98,11 +98,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         </div>
 
         <!-- Main content + side arrows -->
-        <div class="flex-1 flex items-center min-h-0 gap-2 px-2">
+        <div class="flex-1 flex items-stretch min-h-0 gap-2 px-2">
           <!-- Prev arrow -->
           <button
             :class="[
-              'shrink-0 p-2 rounded-full transition-all',
+              'self-center shrink-0 p-2 rounded-full transition-all',
               hasPrev
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
@@ -125,7 +125,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <!-- Next arrow -->
           <button
             :class="[
-              'shrink-0 p-2 rounded-full transition-all',
+              'self-center shrink-0 p-2 rounded-full transition-all',
               hasNext
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',

@@ -82,61 +82,64 @@ onUnmounted(() => {
 
 <template>
   <div
-    ref="imageContainer"
-    class="relative flex-1 flex items-center justify-center min-h-0 min-w-0 overflow-hidden select-none"
-    :style="{
-      maxHeight: 'calc(100vh - 120px)',
-      cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default',
-    }"
+    class="self-stretch flex flex-col min-h-0 min-w-0 overflow-hidden select-none py-4"
+    :style="{ cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default' }"
     @click.stop
     @dblclick.stop="resetZoom"
     @wheel.prevent="onWheel"
     @mousedown="onPanStart"
   >
+    <!-- Image area -->
     <div
-      v-if="imageError"
-      class="flex flex-col items-center justify-center gap-3 text-zinc-500"
+      ref="imageContainer"
+      class="flex-1 flex items-center justify-center min-h-0 min-w-0"
     >
-      <AppIcon name="xCircle" class="size-12" :stroke-width="1.5" />
-      <p class="text-sm">Preview not available — download to view</p>
+      <div
+        v-if="imageError"
+        class="flex flex-col items-center justify-center gap-3 text-zinc-500"
+      >
+        <AppIcon name="xCircle" class="size-12" :stroke-width="1.5" />
+        <p class="text-sm">Preview not available — download to view</p>
+      </div>
+      <img
+        v-else
+        :src="streamUrl"
+        :alt="entry.name"
+        :style="{
+          transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+          transformOrigin: 'center center',
+          transition: isPanning ? 'none' : 'transform 0.1s ease',
+          willChange: 'transform',
+        }"
+        :class="['w-full h-full object-contain rounded-lg select-none', hasAlpha && 'checkerboard']"
+        draggable="false"
+        @error="imageError = true"
+      />
     </div>
-    <img
-      v-else
-      :src="streamUrl"
-      :alt="entry.name"
-      :style="{
-        maxHeight: 'calc(100vh - 120px)',
-        transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-        transformOrigin: 'center center',
-        transition: isPanning ? 'none' : 'transform 0.1s ease',
-        willChange: 'transform',
-      }"
-      :class="['max-w-full object-contain rounded-lg select-none', hasAlpha && 'checkerboard']"
-      draggable="false"
-      @error="imageError = true"
-    />
 
-    <!-- Bottom-center zoom overlay -->
-    <div v-if="!imageError" class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">
-      <button
-        :class="['p-1 rounded-full transition-colors', zoom <= 1 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
-        title="Zoom out (-)"
-        @click.stop="zoomOut"
-      >
-        <AppIcon name="zoomOut" class="size-4" />
-      </button>
-      <button
-        class="text-xs text-zinc-300 tabular-nums w-10 text-center select-none hover:text-white transition-colors rounded px-0.5 py-1"
-        title="Reset zoom (0)"
-        @click.stop="resetZoom"
-      >{{ Math.round(zoom * 100) }}%</button>
-      <button
-        :class="['p-1 rounded-full transition-colors', zoom >= 8 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
-        title="Zoom in (+)"
-        @click.stop="zoomIn"
-      >
-        <AppIcon name="zoomIn" class="size-4" />
-      </button>
+    <!-- Zoom controls — always below the image, never overlapping -->
+    <div v-if="!imageError" class="shrink-0 flex justify-center py-2">
+      <div class="flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">
+        <button
+          :class="['p-1 rounded-full transition-colors', zoom <= 1 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
+          title="Zoom out (-)"
+          @click.stop="zoomOut"
+        >
+          <AppIcon name="zoomOut" class="size-4" />
+        </button>
+        <button
+          class="text-xs text-zinc-300 tabular-nums w-10 text-center select-none hover:text-white transition-colors rounded px-0.5 py-1"
+          title="Reset zoom (0)"
+          @click.stop="resetZoom"
+        >{{ Math.round(zoom * 100) }}%</button>
+        <button
+          :class="['p-1 rounded-full transition-colors', zoom >= 8 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
+          title="Zoom in (+)"
+          @click.stop="zoomIn"
+        >
+          <AppIcon name="zoomIn" class="size-4" />
+        </button>
+      </div>
     </div>
   </div>
 </template>
