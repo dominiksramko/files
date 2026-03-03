@@ -102,6 +102,59 @@ func generateThumb(srcPath, dstPath string, size int) error {
 	return nil
 }
 
+// generateMagickThumb uses ImageMagick's convert to rasterise srcPath to a
+// temporary PNG (selecting frame [0] for multi-frame/multi-layer formats such
+// as ICO, PSD and XCF), then composites onto a checkerboard and encodes to JPEG.
+func generateMagickThumb(srcPath, dstPath string, size int) error {
+	tmp, err := os.CreateTemp("", "magick-thumb-*.png")
+	if err != nil {
+		return fmt.Errorf("temp file: %w", err)
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	// -background none preserves transparency; [0] takes the first frame/layer.
+	// -flatten merges layers (PSD, XCF) onto the transparent background.
+	// -resize shrinks large images before handing off to Go, keeping aspect ratio.
+	rasterSize := strconv.Itoa(size * 2)
+	args := []string{
+		"-background", "none",
+		srcPath + "[0]",
+		"-flatten",
+		"-resize", rasterSize + "x" + rasterSize + ">",
+		tmp.Name(),
+	}
+	if out, err := exec.Command("convert", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("convert: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	f, err := os.Open(tmp.Name())
+	if err != nil {
+		return fmt.Errorf("open converted: %w", err)
+	}
+	defer f.Close()
+
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+
+	composited := flattenOnCheckerboard(src)
+	thumb := squareCrop(composited, size)
+
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return fmt.Errorf("create dst: %w", err)
+	}
+	defer out.Close()
+
+	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
+		os.Remove(dstPath)
+		return fmt.Errorf("encode: %w", err)
+	}
+	return nil
+}
+
 // generateSVGThumb rasterises the SVG at srcPath via resvg, composites the
 // result onto a checkerboard background (so transparent areas are visible in
 // the JPEG thumbnail), then crops and encodes to dstPath.

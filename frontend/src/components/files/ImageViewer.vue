@@ -7,8 +7,13 @@ const props = defineProps<{ entry: FileEntry }>()
 
 const streamUrl = filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 
-const transparentMimes = new Set(['image/png', 'image/svg+xml', 'image/webp', 'image/gif', 'image/avif'])
+const transparentMimes = new Set([
+  'image/png', 'image/svg+xml', 'image/webp', 'image/gif', 'image/avif',
+  'image/tiff', 'image/jxl', 'image/x-icon', 'image/vnd.adobe.photoshop',
+  'image/x-tga', 'image/x-xcf', 'image/x-exr', 'image/vnd.ms-dds',
+])
 const hasAlpha = transparentMimes.has(props.entry.mime)
+const imageError = ref(false)
 
 const zoom           = ref(1)
 const panX           = ref(0)
@@ -87,7 +92,18 @@ onUnmounted(() => {
     @wheel.prevent="onWheel"
     @mousedown="onPanStart"
   >
+    <div
+      v-if="imageError"
+      class="flex flex-col items-center justify-center gap-3 text-zinc-500"
+    >
+      <svg class="size-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+      </svg>
+      <p class="text-sm">Preview not available — download to view</p>
+    </div>
     <img
+      v-else
       :src="streamUrl"
       :alt="entry.name"
       :style="{
@@ -99,10 +115,11 @@ onUnmounted(() => {
       }"
       :class="['max-w-full object-contain rounded-lg select-none', hasAlpha && 'checkerboard']"
       draggable="false"
+      @error="imageError = true"
     />
 
     <!-- Bottom-center zoom overlay -->
-    <div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">
+    <div v-if="!imageError" class="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-black/60 backdrop-blur-sm rounded-full px-2 py-1">
       <button
         :class="['p-1 rounded-full transition-colors', zoom <= 1 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
         title="Zoom out (-)"

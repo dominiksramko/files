@@ -14,8 +14,6 @@ const maxConcurrent = 4
 const ThumbMaxDim = 320
 
 // IsThumbnailable reports whether the given MIME type can be thumbnailed.
-// Videos use FFmpeg; images use the Go image package.
-// SVG is excluded (needs a full SVG renderer).
 func IsThumbnailable(mime string) bool {
 	if strings.HasPrefix(mime, "video/") {
 		return true
@@ -24,6 +22,17 @@ func IsThumbnailable(mime string) bool {
 	case "image/jpeg", "image/png", "image/gif",
 		"image/webp", "image/bmp", "image/tiff",
 		"image/svg+xml":
+		return true
+	}
+	return isMagickThumbable(mime)
+}
+
+// isMagickThumbable reports whether the MIME type requires ImageMagick for thumbnailing.
+func isMagickThumbable(mime string) bool {
+	switch mime {
+	case "image/avif", "image/heic", "image/heif", "image/jxl",
+		"image/x-icon", "image/vnd.adobe.photoshop", "image/x-tga",
+		"image/x-xcf", "image/vnd.radiance", "image/x-exr", "image/vnd.ms-dds":
 		return true
 	}
 	return false
@@ -173,6 +182,8 @@ func (s *Service) process(t task) {
 		err = generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
 	case t.mime == "image/svg+xml":
 		err = generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
+	case isMagickThumbable(t.mime):
+		err = generateMagickThumb(t.absPath, thumbPath, ThumbMaxDim)
 	default:
 		err = generateThumb(t.absPath, thumbPath, ThumbMaxDim)
 	}

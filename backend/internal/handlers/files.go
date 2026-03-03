@@ -353,10 +353,32 @@ func mimeByExt(ext string) string {
 		return "image/webp"
 	case ".svg":
 		return "image/svg+xml"
+	case ".tiff", ".tif":
+		return "image/tiff"
 	case ".bmp":
 		return "image/bmp"
 	case ".ico":
 		return "image/x-icon"
+	case ".avif":
+		return "image/avif"
+	case ".heic":
+		return "image/heic"
+	case ".heif":
+		return "image/heif"
+	case ".jxl":
+		return "image/jxl"
+	case ".psd":
+		return "image/vnd.adobe.photoshop"
+	case ".tga":
+		return "image/x-tga"
+	case ".xcf":
+		return "image/x-xcf"
+	case ".hdr":
+		return "image/vnd.radiance"
+	case ".exr":
+		return "image/x-exr"
+	case ".dds":
+		return "image/vnd.ms-dds"
 	// Videos
 	case ".mp4":
 		return "video/mp4"

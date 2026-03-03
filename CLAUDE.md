@@ -84,6 +84,7 @@ Any new CLI tool used by the backend must be added to the `apk add` line in `bac
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
 - `resvg` — SVG rasterisation for thumbnails
+- `imagemagick` — thumbnails for AVIF, HEIC, HEIF, JXL, ICO, PSD, TGA, XCF, HDR, EXR, DDS
 
 ## Dev Commands
 ```bash
