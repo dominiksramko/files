@@ -355,6 +355,7 @@ func needsRemux(mime string) bool {
 func (h *FilesHandler) Search(c *gin.Context) {
 	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	basePath := c.Query("path")
+	showHidden := c.Query("hidden") == "true"
 	root := userRoot(c)
 
 	c.Header("Content-Type", "text/event-stream")
@@ -384,6 +385,12 @@ func (h *FilesHandler) Search(c *gin.Context) {
 
 	_ = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == abs {
+			return nil
+		}
+		if !showHidden && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		select {
