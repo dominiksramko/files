@@ -60,6 +60,9 @@ function toggleHidden() {
 const searchQuery = ref('')
 const searchResults = ref<FileEntry[]>([])
 const searchLoading = ref(false)
+const searchExpanded = ref(false) // mobile: search bar expanded
+const mobileSearchOpen = computed(() => searchExpanded.value || searchQuery.value.trim().length > 0)
+const mobileSearchInputRef = ref<HTMLInputElement | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let searchSource: EventSource | null = null
 
@@ -70,24 +73,20 @@ function closeSearchSource() {
   }
 }
 
-watch(searchQuery, (query) => {
-  if (((route.query.q as string) ?? '') !== query) {
-    router.replace({ query: routeQuery() })
-  }
+function openMobileSearch() {
+  searchExpanded.value = true
+  nextTick(() => mobileSearchInputRef.value?.focus())
+}
+
+function startSearch(query: string) {
   if (searchTimer) clearTimeout(searchTimer)
   closeSearchSource()
-  if (!query.trim()) {
-    searchResults.value = []
-    searchLoading.value = false
-    return
-  }
   searchResults.value = []
   searchLoading.value = true
   searchTimer = setTimeout(() => {
-    const url = filesApi.searchStreamUrl(query.trim())
+    const url = filesApi.searchStreamUrl(query.trim(), '', showHidden.value)
     const es = new EventSource(url)
     searchSource = es
-
     es.onmessage = (e) => {
       try {
         const obj = JSON.parse(e.data as string)
@@ -100,19 +99,39 @@ watch(searchQuery, (query) => {
         searchResults.value.push(obj as FileEntry)
       } catch { /* ignore malformed */ }
     }
-
     es.onerror = () => {
       searchLoading.value = false
       es.close()
       if (searchSource === es) searchSource = null
     }
   }, 300)
+}
+
+watch(searchQuery, (query) => {
+  if (((route.query.q as string) ?? '') !== query) {
+    router.replace({ query: routeQuery() })
+  }
+  if (!query.trim()) {
+    if (searchTimer) clearTimeout(searchTimer)
+    closeSearchSource()
+    searchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  startSearch(query)
+})
+
+watch(showHidden, () => {
+  if (searchQuery.value.trim()) startSearch(searchQuery.value)
 })
 
 function clearSearch() {
   closeSearchSource()
+  if (searchTimer) clearTimeout(searchTimer)
+  searchExpanded.value = false
   searchQuery.value = ''
   searchResults.value = []
+  searchLoading.value = false
 }
 
 // ── Sort state ─────────────────────────────────────────────────────────────
@@ -687,8 +706,37 @@ onMounted(() => {
       <!-- Row 2: Search/FileOps (left, flex-1) + Action buttons (right, fixed) -->
       <div class="px-3 h-11 flex items-center gap-2">
 
-        <!-- Left: swaps between search and fileops — same height, no layout shift -->
-        <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
+        <!-- MOBILE: full-width expanded search (replaces everything) -->
+        <template v-if="mobileSearchOpen">
+          <div class="relative flex-1 sm:hidden">
+            <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
+            <input
+              ref="mobileSearchInputRef"
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search files…"
+              class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg pl-8 pr-7 py-1.5 border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+              @keydown.escape="clearSearch"
+            />
+            <button
+              v-if="searchQuery"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+              @click="clearSearch"
+            >
+              <AppIcon name="x" class="size-3.5" />
+            </button>
+          </div>
+          <button
+            class="sm:hidden shrink-0 p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            title="Close search"
+            @click="clearSearch"
+          >
+            <AppIcon name="x" class="size-4" />
+          </button>
+        </template>
+
+        <!-- Left: swaps between search and fileops — hidden on mobile when search open -->
+        <div :class="['flex-1 min-w-0 items-center gap-1.5 overflow-hidden', mobileSearchOpen ? 'hidden sm:flex' : 'flex']">
 
           <!-- ── FileOps mode ── -->
           <FileOpsBar
@@ -707,8 +755,8 @@ onMounted(() => {
             @deselect-all="deselectAll"
           />
 
-          <!-- ── Search mode ── -->
-          <div v-else class="relative w-full">
+          <!-- ── Search input — desktop only (sm+) ── -->
+          <div v-else class="relative w-full hidden sm:block">
             <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
             <input
               v-model="searchQuery"
@@ -727,8 +775,19 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Right: action buttons (always visible) -->
-        <div class="flex items-center gap-0.5 shrink-0">
+        <!-- Right: action buttons — hidden on mobile when search open -->
+        <div :class="['items-center gap-0.5 shrink-0', mobileSearchOpen ? 'hidden sm:flex' : 'flex']">
+
+          <!-- Search icon — mobile only, not shown during fileops -->
+          <button
+            v-if="!fileopsActive"
+            class="sm:hidden p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
+            title="Search"
+            @click="openMobileSearch"
+          >
+            <AppIcon name="search" class="size-4" />
+          </button>
+
           <!-- New folder -->
           <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
             <AppIcon name="newFolder" class="size-4" />
