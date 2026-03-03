@@ -22,7 +22,7 @@ RUN go build -o server ./cmd/server
 # ---- runtime ----
 FROM alpine:3.20
 
-RUN apk add --no-cache p7zip ca-certificates tzdata ffmpeg librsvg imagemagick
+RUN apk add --no-cache p7zip ca-certificates tzdata ffmpeg rsvg-convert imagemagick
 
 WORKDIR /app
 COPY --from=backend-builder /backend/server .
