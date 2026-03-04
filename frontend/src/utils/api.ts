@@ -232,6 +232,12 @@ export const progress = {
     request<{ message: string }>('DELETE', `/progress${qs({ path })}`),
 }
 
+// --- System ---
+export const system = {
+  diskSpace: () =>
+    request<{ total: number; free: number; used: number; pct: number }>('GET', '/system/disk'),
+}
+
 // --- Admin cache ---
 export const adminCache = {
   clearAll: () => request<{ message: string }>('DELETE', '/cache'),

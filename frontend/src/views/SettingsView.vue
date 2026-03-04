@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { auth as authApi } from '@/utils/api'
+import { auth as authApi, system as systemApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppAccordion from '@/components/ui/AppAccordion.vue'
@@ -119,6 +119,22 @@ async function saveDisplayName() {
   }
 }
 
+// --- Disk space ---
+const diskSpace = ref<{ total: number; free: number; used: number; pct: number } | null>(null)
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1e12) return (bytes / 1e12).toFixed(1) + ' TB'
+  if (bytes >= 1e9)  return (bytes / 1e9).toFixed(1) + ' GB'
+  if (bytes >= 1e6)  return (bytes / 1e6).toFixed(1) + ' MB'
+  return (bytes / 1e3).toFixed(0) + ' KB'
+}
+
+onMounted(async () => {
+  try {
+    diskSpace.value = await systemApi.diskSpace()
+  } catch { /* non-fatal */ }
+})
+
 // --- Change password ---
 const currentPassword = ref('')
 const newPassword = ref('')
@@ -180,6 +196,22 @@ async function changePassword() {
           <div class="pt-2 border-t border-zinc-800">
             <p class="text-xs text-zinc-500 font-medium mb-0.5">Root directory</p>
             <p class="text-sm text-zinc-300 font-mono">{{ authStore.user?.root_dir || '—' }}</p>
+          </div>
+          <div v-if="diskSpace" class="pt-2 border-t border-zinc-800">
+            <div class="flex items-center justify-between mb-1.5">
+              <p class="text-xs text-zinc-500 font-medium">Disk space</p>
+              <p class="text-xs text-zinc-400">
+                {{ formatBytes(diskSpace.used) }} used of {{ formatBytes(diskSpace.total) }}
+                <span class="text-zinc-500">({{ diskSpace.pct.toFixed(0) }}%)</span>
+              </p>
+            </div>
+            <div class="h-1.5 rounded-full bg-zinc-700 overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all"
+                :class="diskSpace.pct >= 90 ? 'bg-red-500' : diskSpace.pct >= 70 ? 'bg-yellow-500' : 'bg-blue-500'"
+                :style="{ width: diskSpace.pct.toFixed(1) + '%' }"
+              />
+            </div>
           </div>
         </div>
       </div>
