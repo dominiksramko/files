@@ -2,6 +2,14 @@ import type { ArchiveEntry, FileEntry, LoginResponse, SubtitlePrefs, User } from
 
 const BASE = '/api/v1'
 
+export class ConflictError extends Error {
+  conflicts: string[]
+  constructor(conflicts: string[]) {
+    super('conflict')
+    this.conflicts = conflicts
+  }
+}
+
 function token(): string {
   return localStorage.getItem('token') ?? ''
 }
@@ -26,6 +34,10 @@ async function request<T>(
     signal,
   })
 
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({ conflicts: [] as string[] }))
+    throw new ConflictError(body.conflicts ?? [])
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error ?? res.statusText)
@@ -155,11 +167,11 @@ export const fileops = {
     return res.blob()
   },
 
-  copy: (paths: string[], dest: string, destNames?: string[]) =>
-    request<{ message: string }>('POST', '/files/copy', { paths, dest, ...(destNames ? { dest_names: destNames } : {}) }),
+  copy: (paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+    request<{ message: string }>('POST', '/files/copy', { paths, dest, conflict_mode: conflictMode }),
 
-  move: (paths: string[], dest: string, destNames?: string[]) =>
-    request<{ message: string }>('POST', '/files/move', { paths, dest, ...(destNames ? { dest_names: destNames } : {}) }),
+  move: (paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+    request<{ message: string }>('POST', '/files/move', { paths, dest, conflict_mode: conflictMode }),
 
   mkdir: (path: string) =>
     request<{ message: string }>('POST', '/files/mkdir', { path }),

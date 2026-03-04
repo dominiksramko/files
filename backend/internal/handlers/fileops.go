@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -45,19 +48,23 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// POST /api/v1/files/copy   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "dest_names": ["name1", ...] }
-// dest_names is optional; when provided, dest_names[i] overrides the filename used at the destination.
+// POST /api/v1/files/copy
+// body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "conflict_mode": "error"|"replace"|"rename" }
+// conflict_mode defaults to "error" — returns HTTP 409 with conflicting names.
 func (h *FileOpsHandler) Copy(c *gin.Context) {
 	root := userRoot(c)
 
 	var body struct {
-		Paths     []string `json:"paths"`
-		Dest      string   `json:"dest"`
-		DestNames []string `json:"dest_names"`
+		Paths        []string `json:"paths"`
+		Dest         string   `json:"dest"`
+		ConflictMode string   `json:"conflict_mode"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths and dest required"})
 		return
+	}
+	if body.ConflictMode == "" {
+		body.ConflictMode = "error"
 	}
 
 	destAbs, err := safePath(root, body.Dest)
@@ -66,22 +73,32 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 		return
 	}
 
-	for i, rel := range body.Paths {
-		srcAbs, err := safePath(root, rel)
+	srcAbs := make([]string, 0, len(body.Paths))
+	for _, rel := range body.Paths {
+		abs, err := safePath(root, rel)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		dstName := filepath.Base(srcAbs)
-		if i < len(body.DestNames) && body.DestNames[i] != "" {
-			if strings.ContainsAny(body.DestNames[i], "/\\") {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "dest_name must not contain path separators"})
-				return
-			}
-			dstName = body.DestNames[i]
+		srcAbs = append(srcAbs, abs)
+	}
+
+	if body.ConflictMode == "error" {
+		if conflicts := findConflicts(srcAbs, destAbs); len(conflicts) > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
+			return
 		}
-		target := filepath.Join(destAbs, dstName)
-		if err := copyEntry(srcAbs, target); err != nil {
+	}
+
+	existing, claimed := buildExistingMap(destAbs)
+
+	for _, src := range srcAbs {
+		dstName := filepath.Base(src)
+		if body.ConflictMode == "rename" {
+			dstName = findFreeName(dstName, existing, claimed)
+			claimed[dstName] = true
+		}
+		if err := copyEntry(src, filepath.Join(destAbs, dstName)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -90,19 +107,23 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "copied"})
 }
 
-// POST /api/v1/files/move   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "dest_names": ["name1", ...] }
-// dest_names is optional; when provided, dest_names[i] overrides the filename used at the destination.
+// POST /api/v1/files/move
+// body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "conflict_mode": "error"|"replace"|"rename" }
+// conflict_mode defaults to "error" — returns HTTP 409 with conflicting names.
 func (h *FileOpsHandler) Move(c *gin.Context) {
 	root := userRoot(c)
 
 	var body struct {
-		Paths     []string `json:"paths"`
-		Dest      string   `json:"dest"`
-		DestNames []string `json:"dest_names"`
+		Paths        []string `json:"paths"`
+		Dest         string   `json:"dest"`
+		ConflictMode string   `json:"conflict_mode"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths and dest required"})
 		return
+	}
+	if body.ConflictMode == "" {
+		body.ConflictMode = "error"
 	}
 
 	destAbs, err := safePath(root, body.Dest)
@@ -111,28 +132,39 @@ func (h *FileOpsHandler) Move(c *gin.Context) {
 		return
 	}
 
-	for i, rel := range body.Paths {
-		srcAbs, err := safePath(root, rel)
+	srcAbs := make([]string, 0, len(body.Paths))
+	for _, rel := range body.Paths {
+		abs, err := safePath(root, rel)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		dstName := filepath.Base(srcAbs)
-		if i < len(body.DestNames) && body.DestNames[i] != "" {
-			if strings.ContainsAny(body.DestNames[i], "/\\") {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "dest_name must not contain path separators"})
-				return
-			}
-			dstName = body.DestNames[i]
+		srcAbs = append(srcAbs, abs)
+	}
+
+	if body.ConflictMode == "error" {
+		if conflicts := findConflicts(srcAbs, destAbs); len(conflicts) > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
+			return
+		}
+	}
+
+	existing, claimed := buildExistingMap(destAbs)
+
+	for _, src := range srcAbs {
+		dstName := filepath.Base(src)
+		if body.ConflictMode == "rename" {
+			dstName = findFreeName(dstName, existing, claimed)
+			claimed[dstName] = true
 		}
 		target := filepath.Join(destAbs, dstName)
 		// Try fast rename first; fall back to copy+delete for cross-device moves
-		if err := os.Rename(srcAbs, target); err != nil {
-			if err2 := copyEntry(srcAbs, target); err2 != nil {
+		if err := os.Rename(src, target); err != nil {
+			if err2 := copyEntry(src, target); err2 != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
 				return
 			}
-			if err2 := os.RemoveAll(srcAbs); err2 != nil {
+			if err2 := os.RemoveAll(src); err2 != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
 				return
 			}
@@ -255,6 +287,61 @@ func (h *FileOpsHandler) Rename(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "renamed"})
 }
 
+// ── Conflict helpers ──────────────────────────────────────────────────────────
+
+// findConflicts returns base names from srcAbs that already exist in destAbs.
+func findConflicts(srcAbs []string, destAbs string) []string {
+	entries, err := os.ReadDir(destAbs)
+	if err != nil {
+		return nil // dest doesn't exist yet — no conflicts
+	}
+	existing := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		existing[e.Name()] = true
+	}
+	var conflicts []string
+	for _, p := range srcAbs {
+		name := filepath.Base(p)
+		if existing[name] {
+			conflicts = append(conflicts, name)
+		}
+	}
+	return conflicts
+}
+
+// buildExistingMap returns a set of names already present in dir and an empty claimed set.
+func buildExistingMap(dir string) (existing, claimed map[string]bool) {
+	existing = make(map[string]bool)
+	claimed = make(map[string]bool)
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		existing[e.Name()] = true
+	}
+	return
+}
+
+// findFreeName returns a name not present in existing or claimed,
+// appending " (1)", " (2)", etc. as needed.
+func findFreeName(name string, existing, claimed map[string]bool) string {
+	if !existing[name] && !claimed[name] {
+		return name
+	}
+	lastDot := strings.LastIndex(name, ".")
+	base, ext := name, ""
+	if lastDot >= 0 {
+		base = name[:lastDot]
+		ext = name[lastDot:]
+	}
+	for n := 1; ; n++ {
+		candidate := fmt.Sprintf("%s (%d)%s", base, n, ext)
+		if !existing[candidate] && !claimed[candidate] {
+			return candidate
+		}
+	}
+}
+
+// ── Copy helpers ──────────────────────────────────────────────────────────────
+
 // copyEntry copies a file or directory recursively from src to dst.
 func copyEntry(src, dst string) error {
 	info, err := os.Stat(src)
@@ -264,7 +351,7 @@ func copyEntry(src, dst string) error {
 	if info.IsDir() {
 		return copyDir(src, dst)
 	}
-	return copyFile(src, dst)
+	return copyFileViaTemp(src, dst)
 }
 
 func copyDir(src, dst string) error {
@@ -289,7 +376,10 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
-func copyFile(src, dst string) error {
+// copyFileViaTemp copies src to dst via a temporary file with SHA-256 verification.
+// The temp file is created in the same directory as dst to guarantee an atomic
+// os.Rename (same filesystem). On any error the temp file is removed.
+func copyFileViaTemp(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -301,16 +391,61 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+	// Temp file in same directory as dst ensures same filesystem → atomic rename.
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".~tmp_")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	tmpPath := tmp.Name()
 
-	if _, err = io.Copy(out, in); err != nil {
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	// Stream-copy while hashing the source data.
+	srcHasher := sha256.New()
+	tee := io.TeeReader(in, srcHasher)
+	if _, err = io.Copy(tmp, tee); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
 		return err
 	}
 
-	// Preserve mtime
-	return os.Chtimes(dst, info.ModTime(), info.ModTime())
+	// Verify: re-read the temp file and compare hashes.
+	tmpIn, err := os.Open(tmpPath)
+	if err != nil {
+		return err
+	}
+	dstHasher := sha256.New()
+	if _, err = io.Copy(dstHasher, tmpIn); err != nil {
+		tmpIn.Close()
+		return err
+	}
+	tmpIn.Close()
+
+	if !bytes.Equal(srcHasher.Sum(nil), dstHasher.Sum(nil)) {
+		return fmt.Errorf("copy verification failed: hash mismatch after write")
+	}
+
+	// Preserve permissions and mtime.
+	if err = os.Chmod(tmpPath, info.Mode()); err != nil {
+		return err
+	}
+	_ = os.Chtimes(tmpPath, info.ModTime(), info.ModTime())
+
+	// Atomic rename to final destination.
+	if err = os.Rename(tmpPath, dst); err != nil {
+		return err
+	}
+	succeeded = true
+	return nil
 }

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
-import { files as filesApi, folders as foldersApi, fileops } from '@/utils/api'
+import { files as filesApi, folders as foldersApi, fileops, ConflictError } from '@/utils/api'
 import { useThumbnails } from '@/composables/useThumbnails'
 import { useToast } from '@/composables/useToast'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
@@ -282,33 +282,12 @@ const pendingPaste = ref<{
   paths: string[]
   dest: string
   conflictingNames: string[]
-  keepAllNames: string[]
 } | null>(null)
 
 async function onPaste() {
   if (!clipboard.value) return
   const { mode, paths } = clipboard.value
-  const dest = filesStore.currentPath
-
-  const existingNames = new Set(filesStore.entries.map((e) => e.name))
-  const conflicts = paths
-    .map((p) => p.split('/').pop()!)
-    .filter((name) => existingNames.has(name))
-
-  if (conflicts.length > 0) {
-    const taken = new Set(existingNames)
-    const keepAllNames = paths.map((p) => {
-      const name = p.split('/').pop()!
-      const newName = findFreeName(name, taken)
-      taken.add(newName)
-      return newName
-    })
-    pendingPaste.value = { mode, paths: [...paths], dest, conflictingNames: conflicts, keepAllNames }
-    pasteConflictDialog.value = true
-    return
-  }
-
-  await executePaste(mode, paths, dest)
+  await doPaste(mode, paths, filesStore.currentPath, 'error')
 }
 
 function onPasteReplace() {
@@ -316,28 +295,33 @@ function onPasteReplace() {
   const { mode, paths, dest } = pendingPaste.value
   pasteConflictDialog.value = false
   pendingPaste.value = null
-  executePaste(mode, paths, dest)
+  doPaste(mode, paths, dest, 'replace')
 }
 
 function onPasteKeepAll() {
   if (!pendingPaste.value) return
-  const { mode, paths, dest, keepAllNames } = pendingPaste.value
+  const { mode, paths, dest } = pendingPaste.value
   pasteConflictDialog.value = false
   pendingPaste.value = null
-  executePaste(mode, paths, dest, keepAllNames)
+  doPaste(mode, paths, dest, 'rename')
 }
 
-async function executePaste(mode: 'copy' | 'move', paths: string[], dest: string, destNames?: string[]) {
+async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename') {
   try {
     if (mode === 'copy') {
-      await fileops.copy(paths, dest, destNames)
+      await fileops.copy(paths, dest, conflictMode)
     } else {
-      await fileops.move(paths, dest, destNames)
+      await fileops.move(paths, dest, conflictMode)
       selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
     }
     clipboard.value = null
     filesStore.refresh()
   } catch (err) {
+    if (err instanceof ConflictError) {
+      pendingPaste.value = { mode, paths: [...paths], dest, conflictingNames: err.conflicts }
+      pasteConflictDialog.value = true
+      return
+    }
     showToast((err as Error).message, 'error')
   }
 }
@@ -534,54 +518,31 @@ const pendingMove = ref<{
   paths: string[]
   dest: string
   conflictingNames: string[]
-  keepAllNames: string[]  // pre-computed dest names for "keep all"
 } | null>(null)
 
 async function onDropToFolder(destPath: string, draggedPaths: string[]) {
   // No-op if dest is current folder
   if (destPath === filesStore.currentPath) return
-  // No-op / guard if dragging a folder into itself or a descendant
+  // Guard: can't drag a folder into itself or a descendant
   for (const p of draggedPaths) {
     if (destPath === p || destPath.startsWith(p + '/')) return
   }
-
-  let destEntries: FileEntry[] = []
-  try {
-    destEntries = await filesApi.list(destPath)
-  } catch {
-    // Can't list dest — proceed without conflict detection
-  }
-
-  const existingNames = new Set(destEntries.map((e) => e.name))
-  const conflicts = draggedPaths
-    .map((p) => p.split('/').pop()!)
-    .filter((name) => existingNames.has(name))
-
-  if (conflicts.length > 0) {
-    // Pre-compute the renamed filenames now, while all values are plain JS
-    const taken = new Set(existingNames)
-    const keepAllNames = draggedPaths.map((p) => {
-      const name = p.split('/').pop()!
-      const newName = findFreeName(name, taken)
-      taken.add(newName)
-      return newName
-    })
-    pendingMove.value = { paths: [...draggedPaths], dest: destPath, conflictingNames: conflicts, keepAllNames }
-    moveConflictDialog.value = true
-    return
-  }
-
-  await performMove(draggedPaths, destPath)
+  await performMove(draggedPaths, destPath, 'error')
 }
 
-async function performMove(paths: string[], dest: string, destNames?: string[]) {
+async function performMove(paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename') {
   try {
-    await fileops.move([...paths], dest, destNames)
+    await fileops.move([...paths], dest, conflictMode)
     selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
     const count = paths.length
     showToast(`Moved ${count} item${count !== 1 ? 's' : ''}`, 'success')
     filesStore.refresh()
   } catch (err) {
+    if (err instanceof ConflictError) {
+      pendingMove.value = { paths: [...paths], dest, conflictingNames: err.conflicts }
+      moveConflictDialog.value = true
+      return
+    }
     showToast((err as Error).message, 'error')
   }
 }
@@ -591,15 +552,15 @@ function onMoveReplace() {
   const { paths, dest } = pendingMove.value
   moveConflictDialog.value = false
   pendingMove.value = null
-  performMove(paths, dest)
+  performMove(paths, dest, 'replace')
 }
 
 function onMoveKeepAll() {
   if (!pendingMove.value) return
-  const { paths, dest, keepAllNames } = pendingMove.value
+  const { paths, dest } = pendingMove.value
   moveConflictDialog.value = false
   pendingMove.value = null
-  performMove(paths, dest, keepAllNames)
+  performMove(paths, dest, 'rename')
 }
 
 // ── New folder ────────────────────────────────────────────────────────────
