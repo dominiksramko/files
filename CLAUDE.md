@@ -46,6 +46,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 ## UI Component Rules
 - **AppCheckbox.vue** — always use for checkboxes; supports `v-model`, `indeterminate` prop; never use native `<input type="checkbox">`
 - **AppSelect.vue** — ALWAYS use for dropdowns/selects; NEVER use native `<select>`. Supports `v-model`, `options: { label, value }[]`, `disabled`. Handles string and number values correctly. Usage: `<AppSelect v-model="val" :options="[{ label: 'Foo', value: 'foo' }]" />`
+- **AppAccordion.vue + AppAccordionItem.vue** — use for collapsible settings sections; only one item open at a time. Wrap items in `<AppAccordion>`, each section in `<AppAccordionItem title="…">`. Uses CSS grid-template-rows transition for smooth animation.
 - **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl
 - **AppIcon.vue** — ALWAYS use for icons; NEVER write inline SVGs. Registry: `frontend/src/utils/icons.ts`. Usage: `<AppIcon name="trash" class="size-4" />`. Optional `stroke-width` prop. To add a new icon, add it to `icons.ts` first.
 - **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted globally in `AppLayout` — no need to add it per-view.

@@ -4,6 +4,8 @@ import { useAuthStore } from '@/stores/auth'
 import { auth as authApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppAccordion from '@/components/ui/AppAccordion.vue'
+import AppAccordionItem from '@/components/ui/AppAccordionItem.vue'
 import { useToast } from '@/composables/useToast'
 import type { SubtitlePrefs } from '@/types'
 
@@ -182,153 +184,143 @@ async function changePassword() {
         </div>
       </div>
 
-      <!-- Subtitle appearance -->
-      <div>
-        <h2 class="text-sm font-semibold text-zinc-300 mb-3">Subtitle appearance</h2>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4">
+      <AppAccordion>
 
-          <!-- Preview -->
-          <div class="rounded-lg flex flex-col items-center justify-end py-6 gap-1 select-none" style="background: linear-gradient(160deg, #1e3040 0%, #2a3d2a 40%, #1a1a1a 100%)">
-            <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
-              I should have stayed in bed today.
-            </span>
-            <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
-              Yeah, that would've been smarter.
-            </span>
-          </div>
+        <!-- Subtitle appearance -->
+        <AppAccordionItem title="Subtitle appearance">
+          <div class="space-y-4 pt-2">
+            <div class="rounded-lg flex flex-col items-center justify-end py-6 gap-1 select-none" style="background: linear-gradient(160deg, #1e3040 0%, #2a3d2a 40%, #1a1a1a 100%)">
+              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
+                I should have stayed in bed today.
+              </span>
+              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
+                Yeah, that would've been smarter.
+              </span>
+            </div>
 
-          <!-- Controls -->
-          <div class="space-y-2.5">
-            <div v-for="row in [
-              { label: 'Color',      field: 'color',       options: colorOptions },
-              { label: 'Background', field: 'bg_opacity',  options: bgOptions },
-              { label: 'Style',      field: 'text_style',  options: styleOptions },
-              { label: 'Size',       field: 'font_size',   options: sizeOptions },
-              { label: 'Font',       field: 'font_family', options: fontOptions },
-            ]" :key="row.field" class="flex items-center gap-3">
-              <label class="text-xs font-medium text-zinc-400 w-24 shrink-0">{{ row.label }}</label>
-              <AppSelect
-                :model-value="(localPrefs as any)[row.field]"
-                :options="row.options"
-                @update:model-value="(localPrefs as any)[row.field] = $event"
-              />
+            <div class="space-y-2.5">
+              <div v-for="row in [
+                { label: 'Color',      field: 'color',       options: colorOptions },
+                { label: 'Background', field: 'bg_opacity',  options: bgOptions },
+                { label: 'Style',      field: 'text_style',  options: styleOptions },
+                { label: 'Size',       field: 'font_size',   options: sizeOptions },
+                { label: 'Font',       field: 'font_family', options: fontOptions },
+              ]" :key="row.field" class="flex items-center gap-3">
+                <label class="text-xs font-medium text-zinc-400 w-24 shrink-0">{{ row.label }}</label>
+                <AppSelect
+                  :model-value="(localPrefs as any)[row.field]"
+                  :options="row.options"
+                  @update:model-value="(localPrefs as any)[row.field] = $event"
+                />
+              </div>
+            </div>
+
+            <div class="flex justify-end">
+              <button
+                :disabled="subtitleLoading"
+                class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+                @click="saveSubtitlePrefs"
+              >
+                <AppSpinner v-if="subtitleLoading" size="sm" />
+                {{ subtitleLoading ? 'Saving…' : 'Save' }}
+              </button>
             </div>
           </div>
+        </AppAccordionItem>
 
-          <div class="flex justify-end pt-1">
-            <button
-              :disabled="subtitleLoading"
-              class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
-              @click="saveSubtitlePrefs"
+        <!-- Display name -->
+        <AppAccordionItem title="Display name">
+          <form class="space-y-3 pt-2" @submit.prevent="saveDisplayName">
+            <div
+              v-if="displayNameSuccess"
+              class="text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
             >
-              <AppSpinner v-if="subtitleLoading" size="sm" />
-              {{ subtitleLoading ? 'Saving…' : 'Save' }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Display name -->
-      <div>
-        <h2 class="text-sm font-semibold text-zinc-300 mb-3">Display name</h2>
-        <form
-          class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3"
-          @submit.prevent="saveDisplayName"
-        >
-          <div
-            v-if="displayNameSuccess"
-            class="text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
-          >
-            Display name updated.
-          </div>
-          <div
-            v-if="displayNameError"
-            class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
-          >
-            {{ displayNameError }}
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-zinc-400 mb-1.5">Name shown in the header</label>
-            <input
-              v-model="displayName"
-              type="text"
-              placeholder="Your name"
-              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div class="flex justify-end pt-1">
-            <button
-              type="submit"
-              :disabled="displayNameLoading"
-              class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+              Display name updated.
+            </div>
+            <div
+              v-if="displayNameError"
+              class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
             >
-              <AppSpinner v-if="displayNameLoading" size="sm" />
-              {{ displayNameLoading ? 'Saving…' : 'Save' }}
-            </button>
-          </div>
-        </form>
-      </div>
+              {{ displayNameError }}
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">Name shown in the header</label>
+              <input
+                v-model="displayName"
+                type="text"
+                placeholder="Your name"
+                class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div class="flex justify-end">
+              <button
+                type="submit"
+                :disabled="displayNameLoading"
+                class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <AppSpinner v-if="displayNameLoading" size="sm" />
+                {{ displayNameLoading ? 'Saving…' : 'Save' }}
+              </button>
+            </div>
+          </form>
+        </AppAccordionItem>
 
-      <!-- Change password -->
-      <div>
-        <h2 class="text-sm font-semibold text-zinc-300 mb-3">Change password</h2>
-        <form
-          class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3"
-          @submit.prevent="changePassword"
-        >
-          <div
-            v-if="success"
-            class="text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
-          >
-            Password updated successfully.
-          </div>
-          <div
-            v-if="error"
-            class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
-          >
-            {{ error }}
-          </div>
-
-          <div>
-            <label class="block text-xs font-medium text-zinc-400 mb-1.5">Current password</label>
-            <input
-              v-model="currentPassword"
-              type="password"
-              required
-              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-zinc-400 mb-1.5">New password</label>
-            <input
-              v-model="newPassword"
-              type="password"
-              required
-              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-zinc-400 mb-1.5">Confirm new password</label>
-            <input
-              v-model="confirmPassword"
-              type="password"
-              required
-              class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div class="flex justify-end pt-1">
-            <button
-              type="submit"
-              :disabled="loading"
-              class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+        <!-- Change password -->
+        <AppAccordionItem title="Change password">
+          <form class="space-y-3 pt-2" @submit.prevent="changePassword">
+            <div
+              v-if="success"
+              class="text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
             >
-              <AppSpinner v-if="loading" size="sm" />
-              {{ loading ? 'Saving…' : 'Update password' }}
-            </button>
-          </div>
-        </form>
-      </div>
+              Password updated successfully.
+            </div>
+            <div
+              v-if="error"
+              class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
+            >
+              {{ error }}
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">Current password</label>
+              <input
+                v-model="currentPassword"
+                type="password"
+                required
+                class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">New password</label>
+              <input
+                v-model="newPassword"
+                type="password"
+                required
+                class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">Confirm new password</label>
+              <input
+                v-model="confirmPassword"
+                type="password"
+                required
+                class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div class="flex justify-end">
+              <button
+                type="submit"
+                :disabled="loading"
+                class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <AppSpinner v-if="loading" size="sm" />
+                {{ loading ? 'Saving…' : 'Update password' }}
+              </button>
+            </div>
+          </form>
+        </AppAccordionItem>
+
+      </AppAccordion>
     </div>
   </div>
 </template>
