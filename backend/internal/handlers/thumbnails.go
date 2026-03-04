@@ -151,18 +151,3 @@ func (h *ThumbnailHandler) enqueueFolder(root, rel, folderAbs string) {
 	}
 }
 
-// DELETE /api/v1/thumbnails/clear
-// Clears all thumbnail cache (DB records and physical files). Admin-only.
-func (h *ThumbnailHandler) Clear(c *gin.Context) {
-	if h.svc == nil {
-		c.JSON(http.StatusOK, gin.H{"message": "thumbnails disabled"})
-		return
-	}
-
-	if err := h.svc.ClearAll(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "thumbnails cleared"})
-}

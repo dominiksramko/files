@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import type { User } from '@/types'
-import { users as usersApi, thumbnails } from '@/utils/api'
+import { users as usersApi, adminCache } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
 import UserFormModal from '@/components/admin/UserFormModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -57,15 +57,15 @@ function onSaved() {
   fetchUsers()
 }
 
-async function confirmClearThumbnails() {
+async function confirmClearCache() {
   showClearDialog.value = false
   clearingThumbs.value = true
   error.value = ''
   try {
-    await thumbnails.clearAll()
-    showToast('Thumbnail cache cleared', 'success')
+    await adminCache.clearAll()
+    showToast('Cache cleared', 'success')
   } catch (e: unknown) {
-    showToast(e instanceof Error ? e.message : 'Failed to clear thumbnails', 'error')
+    showToast(e instanceof Error ? e.message : 'Failed to clear cache', 'error')
   } finally {
     clearingThumbs.value = false
   }
@@ -88,7 +88,7 @@ onMounted(fetchUsers)
             @click="showClearDialog = true"
           >
             <AppIcon name="trash" class="size-4" />
-            {{ clearingThumbs ? 'Clearing…' : 'Clear thumbnail cache' }}
+            {{ clearingThumbs ? 'Clearing…' : 'Clear cache' }}
           </button>
           <button
             class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg transition-colors"
@@ -220,7 +220,7 @@ onMounted(fetchUsers)
       </table>
     </div>
 
-    <!-- Clear thumbnail cache dialog -->
+    <!-- Clear cache dialog -->
     <Transition name="fade">
       <div
         v-if="showClearDialog"
@@ -228,8 +228,10 @@ onMounted(fetchUsers)
         @click.self="showClearDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl w-72">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear thumbnail cache?</h3>
-          <p class="text-xs text-zinc-400 mb-4">All generated thumbnails will be deleted. They will be regenerated when you next browse folders.</p>
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear cache?</h3>
+          <p class="text-xs text-zinc-400 mb-4">
+            All generated thumbnails and HLS video segments will be deleted.
+          </p>
           <div class="flex gap-2 justify-end">
             <button
               class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
@@ -237,7 +239,7 @@ onMounted(fetchUsers)
             >Cancel</button>
             <button
               class="px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors"
-              @click="confirmClearThumbnails"
+              @click="confirmClearCache"
             >Clear cache</button>
           </div>
         </div>

@@ -232,9 +232,9 @@ export const progress = {
     request<{ message: string }>('DELETE', `/progress${qs({ path })}`),
 }
 
-// --- Thumbnails ---
-export const thumbnails = {
-  clearAll: () => request<{ message: string }>('DELETE', '/thumbnails/clear'),
+// --- Admin cache ---
+export const adminCache = {
+  clearAll: () => request<{ message: string }>('DELETE', '/cache'),
 }
 
 // --- Users ---

@@ -53,6 +53,7 @@ func main() {
 	opsH := handlers.NewFileOpsHandler()
 	subsH := handlers.NewSubtitlesHandler()
 	thumbH := handlers.NewThumbnailHandler(thumbSvc)
+	cacheH := handlers.NewCacheHandler(thumbSvc, cfg.HLSCacheDir, cfg.ConvCacheDir)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 	infoH := handlers.NewInfoHandler()
@@ -117,7 +118,7 @@ func main() {
 				admin.POST("/users", usersH.Create)
 				admin.PUT("/users/:id", usersH.Update)
 				admin.DELETE("/users/:id", usersH.Delete)
-				admin.DELETE("/thumbnails/clear", thumbH.Clear)
+				admin.DELETE("/cache", cacheH.Clear)
 			}
 		}
 	}
