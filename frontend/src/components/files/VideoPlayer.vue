@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Plyr from 'plyr'
 import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
-import { files as filesApi } from '@/utils/api'
+import { files as filesApi, progress as progressApi } from '@/utils/api'
 
 const props = defineProps<{ entry: FileEntry }>()
 
@@ -30,6 +30,93 @@ const subtitles = ref<SubtitleTrack[]>([])
 let plyrInstance: Plyr | null = null
 let hlsInstance: any = null
 let alive = true
+
+// --- Resume prompt ---
+const showResumePrompt = ref(false)
+const savedPosition    = ref(0)
+
+function formatTime(s: number): string {
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = Math.floor(s % 60)
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+  return `${m}:${String(ss).padStart(2, '0')}`
+}
+
+function dismissResume() {
+  showResumePrompt.value = false
+}
+
+function resumePlayback() {
+  showResumePrompt.value = false
+  if (plyrInstance) {
+    plyrInstance.currentTime = savedPosition.value
+    plyrInstance.play()
+  }
+}
+
+// --- Progress saving ---
+const FINISHED_THRESHOLD = 0.92
+let progressInterval: ReturnType<typeof setInterval> | null = null
+let seekTimer: ReturnType<typeof setTimeout> | null = null
+
+async function saveOrClear() {
+  if (!plyrInstance) return
+  const pos = plyrInstance.currentTime
+  const dur = plyrInstance.duration
+  if (!dur || pos < 2) return
+  if (pos / dur >= FINISHED_THRESHOLD) {
+    await progressApi.delete(props.entry.path).catch(() => {})
+    if (progressInterval) { clearInterval(progressInterval); progressInterval = null }
+    return
+  }
+  progressApi.save(props.entry.path, pos, dur).catch(() => {})
+}
+
+function setupPlyr(el: HTMLVideoElement) {
+  const plyrOptions: Plyr.Options = {
+    controls: [
+      'play-large', 'play', 'rewind', 'fast-forward',
+      'progress', 'current-time', 'duration',
+      'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen',
+    ],
+    settings: ['captions', 'speed'],
+    captions: { active: true, language: 'auto', update: true },
+    speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
+    keyboard: { focused: true, global: false },
+  }
+
+  plyrInstance = new Plyr(el, plyrOptions)
+
+  // Fetch saved progress once the player is ready
+  plyrInstance.on('ready', async () => {
+    if (!alive) return
+    try {
+      const prog = await progressApi.get(props.entry.path)
+      if (!alive || !prog) return
+      if (prog.duration && prog.position / prog.duration < FINISHED_THRESHOLD) {
+        savedPosition.value = prog.position
+        showResumePrompt.value = true
+      }
+    } catch {
+      // no saved progress — nothing to do
+    }
+  })
+
+  // Save on pause
+  plyrInstance.on('pause', () => saveOrClear())
+
+  // Save on seek (debounced)
+  plyrInstance.on('seeked', () => {
+    if (seekTimer) clearTimeout(seekTimer)
+    seekTimer = setTimeout(() => saveOrClear(), 1000)
+  })
+
+  // Save every 30s while playing
+  progressInterval = setInterval(() => {
+    if (plyrInstance?.playing) saveOrClear()
+  }, 30000)
+}
 
 const plyrOptions: Plyr.Options = {
   controls: [
@@ -68,18 +155,18 @@ onMounted(async () => {
       hlsInstance = new Hls()
       hlsInstance.loadSource(filesApi.hlsPlaylistUrl(props.entry.path))
       hlsInstance.attachMedia(videoEl.value)
-      
+
       hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
-         if (alive && videoEl.value && !plyrInstance) {
-           plyrInstance = new Plyr(videoEl.value!, plyrOptions)
-         }
+        if (alive && videoEl.value && !plyrInstance) {
+          setupPlyr(videoEl.value!)
+        }
       })
     } else if (videoEl.value.canPlayType('application/vnd.apple.mpegurl')) {
       videoEl.value.src = filesApi.hlsPlaylistUrl(props.entry.path)
-      plyrInstance = new Plyr(videoEl.value, plyrOptions)
+      setupPlyr(videoEl.value)
     }
   } else {
-    plyrInstance = new Plyr(videoEl.value, plyrOptions)
+    setupPlyr(videoEl.value)
   }
 })
 
@@ -87,6 +174,18 @@ onMounted(async () => {
 // own DOM manipulation before Vue unmounts the component.
 onBeforeUnmount(() => {
   alive = false
+  if (seekTimer) clearTimeout(seekTimer)
+  if (progressInterval) { clearInterval(progressInterval); progressInterval = null }
+
+  // Fire-and-forget final position save
+  if (plyrInstance) {
+    const pos = plyrInstance.currentTime
+    const dur = plyrInstance.duration
+    if (dur && pos >= 2 && pos / dur < FINISHED_THRESHOLD) {
+      progressApi.save(props.entry.path, pos, dur).catch(() => {})
+    }
+  }
+
   if (hlsInstance) {
     hlsInstance.destroy()
     hlsInstance = null
@@ -97,7 +196,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="plyr-wrapper w-full max-w-5xl" @click.stop>
+  <div class="plyr-wrapper w-full max-w-5xl relative" @click.stop>
     <video ref="videoEl" preload="metadata" playsinline :poster="poster">
       <source v-if="src" :src="src" :type="sourceType" />
       <track
@@ -110,6 +209,24 @@ onBeforeUnmount(() => {
         :default="i === 0"
       />
     </video>
+
+    <!-- Resume prompt -->
+    <Transition name="fade">
+      <div
+        v-if="showResumePrompt"
+        class="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 bg-black/85 backdrop-blur-sm rounded-xl px-4 py-2.5 text-sm whitespace-nowrap"
+      >
+        <span class="text-zinc-300">Continue from <span class="font-medium text-white">{{ formatTime(savedPosition) }}</span>?</span>
+        <button
+          class="text-zinc-400 hover:text-white transition-colors"
+          @click="dismissResume"
+        >Start over</button>
+        <button
+          class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg transition-colors"
+          @click="resumePlayback"
+        >Resume</button>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -126,5 +243,14 @@ onBeforeUnmount(() => {
 :deep(.plyr video) {
   max-height: calc(100vh - 120px);
   object-fit: contain;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

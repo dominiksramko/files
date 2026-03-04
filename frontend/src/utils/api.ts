@@ -208,6 +208,18 @@ export const folders = {
     request<{ view_mode: 'grid' | 'list' }>('PUT', '/folders/pref', { path, view_mode }),
 }
 
+// --- Watch progress ---
+export const progress = {
+  get: (path: string) =>
+    request<{ position: number; duration: number }>('GET', `/progress${qs({ path })}`),
+
+  save: (path: string, position: number, duration: number) =>
+    request<{ message: string }>('PUT', '/progress', { path, position, duration }),
+
+  delete: (path: string) =>
+    request<{ message: string }>('DELETE', `/progress${qs({ path })}`),
+}
+
 // --- Thumbnails ---
 export const thumbnails = {
   clearAll: () => request<{ message: string }>('DELETE', '/thumbnails/clear'),

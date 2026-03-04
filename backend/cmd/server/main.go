@@ -56,6 +56,7 @@ func main() {
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 	infoH := handlers.NewInfoHandler()
+	progressH := handlers.NewProgressHandler(db)
 
 	// Auth middleware (applied per group)
 	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
@@ -95,6 +96,11 @@ func main() {
 			authed.GET("/files/subtitle", subsH.Stream)
 			authed.GET("/files/size", infoH.SizeStream)
 			authed.GET("/files/info", infoH.Meta)
+
+			// Watch progress
+			authed.GET("/progress", progressH.Get)
+			authed.PUT("/progress", progressH.Save)
+			authed.DELETE("/progress", progressH.Delete)
 
 			// Thumbnails
 			authed.GET("/thumbnails/get", thumbH.Get)
