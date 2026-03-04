@@ -101,7 +101,7 @@ function esc(s: string): string {
                 </div>
               </td>
               <!-- Size -->
-              <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums w-24 shrink-0">
+              <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums w-24 hidden sm:table-cell">
                 {{ entry.is_dir ? '—' : formatSize(entry.size) }}
               </td>
               <!-- Modified -->

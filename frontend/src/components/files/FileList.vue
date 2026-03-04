@@ -93,7 +93,7 @@ function handleClick(entry: FileEntry) {
               <span v-if="sortKey === 'name'" class="ml-1 text-xs">{{ sortDesc ? '↓' : '↑' }}</span>
             </th>
             <th
-              class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-24"
+              class="text-right px-4 py-2.5 font-medium text-zinc-400 cursor-pointer hover:text-white select-none w-24 hidden sm:table-cell"
               @click="emit('toggleSort', 'size')"
             >
               Size
@@ -143,7 +143,7 @@ function handleClick(entry: FileEntry) {
               </div>
             </td>
 
-            <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">
+            <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums hidden sm:table-cell">
               {{ entry.is_dir ? '—' : formatSize(entry.size) }}
             </td>
             <td class="px-4 py-2.5 text-right text-zinc-500 text-xs hidden sm:table-cell">

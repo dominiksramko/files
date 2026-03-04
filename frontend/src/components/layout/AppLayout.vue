@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppHeader from './AppHeader.vue'
+import AppToast from '@/components/ui/AppToast.vue'
 </script>
 
 <template>
@@ -8,5 +9,6 @@ import AppHeader from './AppHeader.vue'
     <main class="flex-1 overflow-hidden">
       <RouterView />
     </main>
+    <AppToast />
   </div>
 </template>

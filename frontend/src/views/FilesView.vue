@@ -6,6 +6,7 @@ import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi, folders as foldersApi, fileops } from '@/utils/api'
 import { useThumbnails } from '@/composables/useThumbnails'
+import { useToast } from '@/composables/useToast'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
@@ -665,15 +666,7 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
 })
 
 // ── Toast ──────────────────────────────────────────────────────────────────
-type ToastKind = 'success' | 'error'
-const toast = ref<{ message: string; kind: ToastKind } | null>(null)
-let toastTimer: ReturnType<typeof setTimeout> | null = null
-
-function showToast(message: string, kind: ToastKind) {
-  if (toastTimer) clearTimeout(toastTimer)
-  toast.value = { message, kind }
-  toastTimer = setTimeout(() => { toast.value = null }, 3000)
-}
+const { show: showToast } = useToast()
 
 // ── Computed helpers ──────────────────────────────────────────────────────
 const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard.value !== null)
@@ -1142,18 +1135,6 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Toast -->
-    <Transition name="toast">
-      <div
-        v-if="toast"
-        :class="[
-          'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium pointer-events-none',
-          toast.kind === 'success' ? 'bg-green-800 text-green-100' : 'bg-red-800 text-red-100',
-        ]"
-      >
-        {{ toast.message }}
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -1167,13 +1148,4 @@ onMounted(() => {
   opacity: 0;
 }
 
-.toast-enter-active,
-.toast-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px);
-}
 </style>
