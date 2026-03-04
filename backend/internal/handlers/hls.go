@@ -66,7 +66,7 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 		return
 	}
 	durationStr := strings.TrimSpace(string(out))
-	durationStr = strings.Split(durationStr, "\n")[0] // Just in case multiple durations are printed
+	durationStr = strings.Split(durationStr, "\n")[0]
 	duration, err := strconv.ParseFloat(durationStr, 64)
 	if err != nil || duration <= 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse video duration"})
@@ -131,8 +131,7 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 	chunkPath := filepath.Join(cacheDir, chunkName)
 
 	if !fileExists(chunkPath) {
-		err := h.ensureGenerating(abs, cacheDir, hashHex, seq)
-		if err != nil {
+		if err := h.ensureGenerating(abs, cacheDir, hashHex, seq); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start generator"})
 			return
 		}
@@ -151,30 +150,11 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 		}
 	}
 
-	// Proactively start the next window when we're 2 chunks from the boundary,
-	// so ffmpeg is already running before the player requests the first chunk of
-	// the next window.
-	nextWindowStart := ((seq / hlsWindowSize) + 1) * hlsWindowSize
-	if seq >= nextWindowStart-2 {
-		go func() { _ = h.ensureGenerating(abs, cacheDir, hashHex, nextWindowStart) }()
-	}
-
 	c.Header("Cache-Control", "public, max-age=604800") // 1 week
 	c.File(chunkPath)
 }
 
-const hlsWindowSize = 6 // chunks per ffmpeg run (6 × 10s = 60s)
-
-func windowKey(hash string, windowStart int) string {
-	return fmt.Sprintf("%s:%d", hash, windowStart)
-}
-
 func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) error {
-	// Align seq to the start of its window so all requests within the same
-	// 60-second span share one ffmpeg process.
-	windowStart := (seq / hlsWindowSize) * hlsWindowSize
-	key := windowKey(hash, windowStart)
-
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -182,9 +162,10 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		return nil
 	}
 
-	// Already generating this window — nothing to do.
-	if _, running := h.activeCmds[key]; running {
-		return nil
+	// Kill any existing process for this file and restart from seq.
+	if oldCmd, exists := h.activeCmds[hash]; exists {
+		_ = oldCmd.Process.Kill()
+		delete(h.activeCmds, hash)
 	}
 
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
@@ -214,24 +195,21 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		}
 	}
 
-	startAt := float64(windowStart) * 10.0
-	windowDuration := float64(hlsWindowSize) * 10.0
+	startAt := float64(seq) * 10.0
 
-	// nice -n 10: ffmpeg only runs when the system has spare CPU,
-	// keeping the server responsive for other requests.
+	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
 	cmd := exec.Command("nice", "-n", "10",
 		"ffmpeg",
 		"-y",
 		"-ss", fmt.Sprintf("%.3f", startAt),
 		"-i", absPath,
-		"-t", fmt.Sprintf("%.3f", windowDuration),
-		"-avoid_negative_ts", "make_zero",
+		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
 		"-c:v", "copy",
 		"-c:a", audioCodec,
 		"-f", "hls",
 		"-hls_time", "10",
 		"-hls_list_size", "0",
-		"-start_number", strconv.Itoa(windowStart),
+		"-start_number", strconv.Itoa(seq),
 		"-hls_flags", "temp_file",
 		"-hls_segment_filename", filepath.Join(cacheDir, "chunk_%03d.ts"),
 		filepath.Join(cacheDir, "playlist.m3u8"),
@@ -241,13 +219,13 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		return err
 	}
 
-	h.activeCmds[key] = cmd
+	h.activeCmds[hash] = cmd
 
 	go func() {
 		_ = cmd.Wait()
 		h.mu.Lock()
-		if h.activeCmds[key] == cmd {
-			delete(h.activeCmds, key)
+		if h.activeCmds[hash] == cmd {
+			delete(h.activeCmds, hash)
 		}
 		h.mu.Unlock()
 	}()
