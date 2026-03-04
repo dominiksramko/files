@@ -180,6 +180,22 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		_ = os.Chtimes(accessFile, time.Now(), time.Now())
 	}
 
+	// Use the source audio codec directly if it's already TS-compatible,
+	// otherwise transcode to AAC (much cheaper than re-encoding unnecessarily).
+	audioCodec := "aac"
+	if probe, err := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "a:0",
+		"-show_entries", "stream=codec_name",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		absPath,
+	).Output(); err == nil {
+		switch strings.TrimSpace(string(probe)) {
+		case "aac", "mp3":
+			audioCodec = "copy"
+		}
+	}
+
 	startAt := float64(seq) * 10.0
 	cmd := exec.Command("ffmpeg",
 		"-y",
@@ -187,7 +203,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		"-i", absPath,
 		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
 		"-c:v", "copy",
-		"-c:a", "aac",
+		"-c:a", audioCodec,
 		"-f", "hls",
 		"-hls_time", "10",
 		"-hls_list_size", "0",
