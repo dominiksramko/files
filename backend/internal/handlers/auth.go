@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -132,7 +133,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 
 func (h *AuthHandler) fetchUser(username string) (*models.User, error) {
 	row := h.db.QueryRow(
-		`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE username = ?`,
+		`SELECT id, username, password, root_dir, is_admin, display_name, subtitle_prefs FROM users WHERE username = ?`,
 		username,
 	)
 	return scanUser(row)
@@ -140,7 +141,7 @@ func (h *AuthHandler) fetchUser(username string) (*models.User, error) {
 
 func (h *AuthHandler) fetchUserByID(id int64) (*models.User, error) {
 	row := h.db.QueryRow(
-		`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE id = ?`,
+		`SELECT id, username, password, root_dir, is_admin, display_name, subtitle_prefs FROM users WHERE id = ?`,
 		id,
 	)
 	return scanUser(row)
@@ -148,11 +149,52 @@ func (h *AuthHandler) fetchUserByID(id int64) (*models.User, error) {
 
 func scanUser(row *sql.Row) (*models.User, error) {
 	u := &models.User{}
-	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName)
+	err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName, &u.SubtitlePrefsRaw)
 	if err != nil {
 		return nil, err
 	}
 	return u, nil
+}
+
+// PUT /api/v1/auth/subtitle-prefs
+func (h *AuthHandler) UpdateSubtitlePrefs(c *gin.Context) {
+	userID := c.GetInt64("userID")
+
+	var prefs models.SubtitlePrefs
+	if err := c.ShouldBindJSON(&prefs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if prefs.Color == "" {
+		prefs.Color = "#ffffff"
+	}
+	if prefs.FontSize < 50 || prefs.FontSize > 300 {
+		prefs.FontSize = 100
+	}
+	if prefs.BgOpacity < 0 || prefs.BgOpacity > 1 {
+		prefs.BgOpacity = 0.5
+	}
+	validStyles := map[string]bool{"none": true, "raised": true, "depressed": true, "uniform": true, "drop-shadow": true}
+	if !validStyles[prefs.TextStyle] {
+		prefs.TextStyle = "drop-shadow"
+	}
+	if prefs.FontFamily == "" {
+		prefs.FontFamily = "sans-serif"
+	}
+
+	raw, err := json.Marshal(prefs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode prefs"})
+		return
+	}
+
+	if _, err := h.db.Exec(`UPDATE users SET subtitle_prefs = ? WHERE id = ?`, string(raw), userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update subtitle prefs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, prefs)
 }
 
 func (h *AuthHandler) generateToken(u *models.User) (string, error) {

@@ -1,4 +1,4 @@
-import type { ArchiveEntry, FileEntry, LoginResponse, User } from '@/types'
+import type { ArchiveEntry, FileEntry, LoginResponse, SubtitlePrefs, User } from '@/types'
 
 const BASE = '/api/v1'
 
@@ -54,6 +54,9 @@ export const auth = {
 
   updateProfile: (display_name: string) =>
     request<User>('PUT', '/auth/profile', { display_name }),
+
+  updateSubtitlePrefs: (prefs: SubtitlePrefs) =>
+    request<SubtitlePrefs>('PUT', '/auth/subtitle-prefs', prefs),
 }
 
 // --- Files ---

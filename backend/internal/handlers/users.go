@@ -22,7 +22,7 @@ func NewUsersHandler(db *sql.DB, usersRoot string) *UsersHandler {
 
 // GET /api/v1/users
 func (h *UsersHandler) List(c *gin.Context) {
-	rows, err := h.db.Query(`SELECT id, username, root_dir, is_admin, display_name FROM users ORDER BY username`)
+	rows, err := h.db.Query(`SELECT id, username, root_dir, is_admin, display_name, subtitle_prefs FROM users ORDER BY username`)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -31,12 +31,12 @@ func (h *UsersHandler) List(c *gin.Context) {
 
 	users := []models.UserResponse{}
 	for rows.Next() {
-		var u models.UserResponse
-		if err := rows.Scan(&u.ID, &u.Username, &u.RootDir, &u.IsAdmin, &u.DisplayName); err != nil {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Username, &u.RootDir, &u.IsAdmin, &u.DisplayName, &u.SubtitlePrefsRaw); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		users = append(users, u)
+		users = append(users, u.ToResponse())
 	}
 	c.JSON(http.StatusOK, users)
 }
@@ -77,11 +77,12 @@ func (h *UsersHandler) Create(c *gin.Context) {
 
 	id, _ := result.LastInsertId()
 	c.JSON(http.StatusCreated, models.UserResponse{
-		ID:          id,
-		Username:    req.Username,
-		DisplayName: req.DisplayName,
-		RootDir:     rootDir,
-		IsAdmin:     req.IsAdmin,
+		ID:            id,
+		Username:      req.Username,
+		DisplayName:   req.DisplayName,
+		RootDir:       rootDir,
+		IsAdmin:       req.IsAdmin,
+		SubtitlePrefs: models.DefaultSubtitlePrefs(),
 	})
 }
 
@@ -105,9 +106,9 @@ func (h *UsersHandler) Update(c *gin.Context) {
 	}
 
 	// Fetch current record
-	row := h.db.QueryRow(`SELECT id, username, password, root_dir, is_admin, display_name FROM users WHERE id = ?`, id)
+	row := h.db.QueryRow(`SELECT id, username, password, root_dir, is_admin, display_name, subtitle_prefs FROM users WHERE id = ?`, id)
 	var u models.User
-	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Password, &u.RootDir, &u.IsAdmin, &u.DisplayName, &u.SubtitlePrefsRaw); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
@@ -141,13 +142,7 @@ func (h *UsersHandler) Update(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, models.UserResponse{
-		ID:          u.ID,
-		Username:    u.Username,
-		DisplayName: u.DisplayName,
-		RootDir:     u.RootDir,
-		IsAdmin:     u.IsAdmin,
-	})
+	c.JSON(http.StatusOK, u.ToResponse())
 }
 
 // DELETE /api/v1/users/:id

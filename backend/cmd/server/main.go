@@ -72,6 +72,7 @@ func main() {
 			authed.GET("/auth/me", authH.Me)
 			authed.PUT("/auth/password", authH.ChangePassword)
 			authed.PUT("/auth/profile", authH.UpdateProfile)
+			authed.PUT("/auth/subtitle-prefs", authH.UpdateSubtitlePrefs)
 
 			// Files
 			authed.GET("/files/list", filesH.List)

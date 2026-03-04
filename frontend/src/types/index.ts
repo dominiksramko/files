@@ -1,9 +1,18 @@
+export interface SubtitlePrefs {
+  color: string
+  bg_opacity: number
+  font_size: number
+  text_style: string
+  font_family: string
+}
+
 export interface User {
   id: number
   username: string
   display_name?: string
   root_dir: string
   is_admin: boolean
+  subtitle_prefs?: SubtitlePrefs
 }
 
 export interface LoginResponse {
