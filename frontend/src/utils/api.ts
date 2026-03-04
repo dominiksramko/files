@@ -155,11 +155,11 @@ export const fileops = {
     return res.blob()
   },
 
-  copy: (paths: string[], dest: string) =>
-    request<{ message: string }>('POST', '/files/copy', { paths, dest }),
+  copy: (paths: string[], dest: string, destNames?: string[]) =>
+    request<{ message: string }>('POST', '/files/copy', { paths, dest, ...(destNames ? { dest_names: destNames } : {}) }),
 
-  move: (paths: string[], dest: string) =>
-    request<{ message: string }>('POST', '/files/move', { paths, dest }),
+  move: (paths: string[], dest: string, destNames?: string[]) =>
+    request<{ message: string }>('POST', '/files/move', { paths, dest, ...(destNames ? { dest_names: destNames } : {}) }),
 
   mkdir: (path: string) =>
     request<{ message: string }>('POST', '/files/mkdir', { path }),

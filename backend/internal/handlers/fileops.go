@@ -45,13 +45,15 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// POST /api/v1/files/copy   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir" }
+// POST /api/v1/files/copy   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "dest_names": ["name1", ...] }
+// dest_names is optional; when provided, dest_names[i] overrides the filename used at the destination.
 func (h *FileOpsHandler) Copy(c *gin.Context) {
 	root := userRoot(c)
 
 	var body struct {
-		Paths []string `json:"paths"`
-		Dest  string   `json:"dest"`
+		Paths     []string `json:"paths"`
+		Dest      string   `json:"dest"`
+		DestNames []string `json:"dest_names"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths and dest required"})
@@ -64,13 +66,21 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 		return
 	}
 
-	for _, rel := range body.Paths {
+	for i, rel := range body.Paths {
 		srcAbs, err := safePath(root, rel)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		target := filepath.Join(destAbs, filepath.Base(srcAbs))
+		dstName := filepath.Base(srcAbs)
+		if i < len(body.DestNames) && body.DestNames[i] != "" {
+			if strings.ContainsAny(body.DestNames[i], "/\\") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "dest_name must not contain path separators"})
+				return
+			}
+			dstName = body.DestNames[i]
+		}
+		target := filepath.Join(destAbs, dstName)
 		if err := copyEntry(srcAbs, target); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -80,13 +90,15 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "copied"})
 }
 
-// POST /api/v1/files/move   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir" }
+// POST /api/v1/files/move   body: { "paths": ["rel/src1", ...], "dest": "rel/dest_dir", "dest_names": ["name1", ...] }
+// dest_names is optional; when provided, dest_names[i] overrides the filename used at the destination.
 func (h *FileOpsHandler) Move(c *gin.Context) {
 	root := userRoot(c)
 
 	var body struct {
-		Paths []string `json:"paths"`
-		Dest  string   `json:"dest"`
+		Paths     []string `json:"paths"`
+		Dest      string   `json:"dest"`
+		DestNames []string `json:"dest_names"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths and dest required"})
@@ -99,13 +111,21 @@ func (h *FileOpsHandler) Move(c *gin.Context) {
 		return
 	}
 
-	for _, rel := range body.Paths {
+	for i, rel := range body.Paths {
 		srcAbs, err := safePath(root, rel)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		target := filepath.Join(destAbs, filepath.Base(srcAbs))
+		dstName := filepath.Base(srcAbs)
+		if i < len(body.DestNames) && body.DestNames[i] != "" {
+			if strings.ContainsAny(body.DestNames[i], "/\\") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "dest_name must not contain path separators"})
+				return
+			}
+			dstName = body.DestNames[i]
+		}
+		target := filepath.Join(destAbs, dstName)
 		// Try fast rename first; fall back to copy+delete for cross-device moves
 		if err := os.Rename(srcAbs, target); err != nil {
 			if err2 := copyEntry(srcAbs, target); err2 != nil {

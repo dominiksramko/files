@@ -267,6 +267,7 @@ const clipboard = ref<{ mode: 'copy' | 'move'; paths: string[] } | null>(null)
 
 function onCopy() {
   clipboard.value = { mode: 'copy', paths: [...selectedPaths.value] }
+  selectedPaths.value = []
 }
 
 function onMove() {
@@ -274,14 +275,65 @@ function onMove() {
   selectedPaths.value = []
 }
 
+// ── Paste conflict dialog ──────────────────────────────────────────────────
+const pasteConflictDialog = ref(false)
+const pendingPaste = ref<{
+  mode: 'copy' | 'move'
+  paths: string[]
+  dest: string
+  conflictingNames: string[]
+  keepAllNames: string[]
+} | null>(null)
+
 async function onPaste() {
   if (!clipboard.value) return
   const { mode, paths } = clipboard.value
+  const dest = filesStore.currentPath
+
+  const existingNames = new Set(filesStore.entries.map((e) => e.name))
+  const conflicts = paths
+    .map((p) => p.split('/').pop()!)
+    .filter((name) => existingNames.has(name))
+
+  if (conflicts.length > 0) {
+    const taken = new Set(existingNames)
+    const keepAllNames = paths.map((p) => {
+      const name = p.split('/').pop()!
+      const newName = findFreeName(name, taken)
+      taken.add(newName)
+      return newName
+    })
+    pendingPaste.value = { mode, paths: [...paths], dest, conflictingNames: conflicts, keepAllNames }
+    pasteConflictDialog.value = true
+    return
+  }
+
+  await executePaste(mode, paths, dest)
+}
+
+function onPasteReplace() {
+  if (!pendingPaste.value) return
+  const { mode, paths, dest } = pendingPaste.value
+  pasteConflictDialog.value = false
+  pendingPaste.value = null
+  executePaste(mode, paths, dest)
+}
+
+function onPasteKeepAll() {
+  if (!pendingPaste.value) return
+  const { mode, paths, dest, keepAllNames } = pendingPaste.value
+  pasteConflictDialog.value = false
+  pendingPaste.value = null
+  executePaste(mode, paths, dest, keepAllNames)
+}
+
+async function executePaste(mode: 'copy' | 'move', paths: string[], dest: string, destNames?: string[]) {
   try {
     if (mode === 'copy') {
-      await fileops.copy(paths, filesStore.currentPath)
+      await fileops.copy(paths, dest, destNames)
     } else {
-      await fileops.move(paths, filesStore.currentPath)
+      await fileops.move(paths, dest, destNames)
+      selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
     }
     clipboard.value = null
     filesStore.refresh()
@@ -452,7 +504,7 @@ async function performUpload(files: File[]) {
   }
 }
 
-// ── Drag & Drop ────────────────────────────────────────────────────────────
+// ── Upload Drag & Drop (OS files only — internal moves handled separately) ──
 const dragCounter = ref(0)
 const isDragging = computed(() => dragCounter.value > 0)
 
@@ -471,8 +523,83 @@ function onDragOver(e: DragEvent) {
 async function onDrop(e: DragEvent) {
   e.preventDefault()
   dragCounter.value = 0
+  if (!e.dataTransfer?.types.includes('Files')) return
   const files = Array.from(e.dataTransfer?.files ?? [])
   if (files.length) await uploadFiles(files)
+}
+
+// ── Internal drag-and-drop move ────────────────────────────────────────────
+const moveConflictDialog = ref(false)
+const pendingMove = ref<{
+  paths: string[]
+  dest: string
+  conflictingNames: string[]
+  keepAllNames: string[]  // pre-computed dest names for "keep all"
+} | null>(null)
+
+async function onDropToFolder(destPath: string, draggedPaths: string[]) {
+  // No-op if dest is current folder
+  if (destPath === filesStore.currentPath) return
+  // No-op / guard if dragging a folder into itself or a descendant
+  for (const p of draggedPaths) {
+    if (destPath === p || destPath.startsWith(p + '/')) return
+  }
+
+  let destEntries: FileEntry[] = []
+  try {
+    destEntries = await filesApi.list(destPath)
+  } catch {
+    // Can't list dest — proceed without conflict detection
+  }
+
+  const existingNames = new Set(destEntries.map((e) => e.name))
+  const conflicts = draggedPaths
+    .map((p) => p.split('/').pop()!)
+    .filter((name) => existingNames.has(name))
+
+  if (conflicts.length > 0) {
+    // Pre-compute the renamed filenames now, while all values are plain JS
+    const taken = new Set(existingNames)
+    const keepAllNames = draggedPaths.map((p) => {
+      const name = p.split('/').pop()!
+      const newName = findFreeName(name, taken)
+      taken.add(newName)
+      return newName
+    })
+    pendingMove.value = { paths: [...draggedPaths], dest: destPath, conflictingNames: conflicts, keepAllNames }
+    moveConflictDialog.value = true
+    return
+  }
+
+  await performMove(draggedPaths, destPath)
+}
+
+async function performMove(paths: string[], dest: string, destNames?: string[]) {
+  try {
+    await fileops.move([...paths], dest, destNames)
+    selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
+    const count = paths.length
+    showToast(`Moved ${count} item${count !== 1 ? 's' : ''}`, 'success')
+    filesStore.refresh()
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
+function onMoveReplace() {
+  if (!pendingMove.value) return
+  const { paths, dest } = pendingMove.value
+  moveConflictDialog.value = false
+  pendingMove.value = null
+  performMove(paths, dest)
+}
+
+function onMoveKeepAll() {
+  if (!pendingMove.value) return
+  const { paths, dest, keepAllNames } = pendingMove.value
+  moveConflictDialog.value = false
+  pendingMove.value = null
+  performMove(paths, dest, keepAllNames)
 }
 
 // ── New folder ────────────────────────────────────────────────────────────
@@ -696,7 +823,7 @@ onMounted(() => {
 
       <!-- Row 1: Breadcrumbs -->
       <div class="px-3 h-9 flex items-center border-b border-zinc-800/50">
-        <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" />
+        <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" @drop-to-folder="onDropToFolder" />
       </div>
 
       <!-- Row 2: Search/FileOps (left, flex-1) + Action buttons (right, fixed) -->
@@ -859,6 +986,7 @@ onMounted(() => {
         @archive-preview="archiveEntry = $event"
         @toggle-select="toggleSelect"
         @context-menu="onContextMenu"
+        @drop-to-folder="onDropToFolder"
       />
       <FileList
         v-else
@@ -876,6 +1004,7 @@ onMounted(() => {
         @select-all="selectAll"
         @deselect-all="deselectAll"
         @context-menu="onContextMenu"
+        @drop-to-folder="onDropToFolder"
       />
     </div>
 
@@ -974,7 +1103,7 @@ onMounted(() => {
           <h3 class="text-sm font-semibold text-zinc-100 mb-1">
             {{ deletePending && deletePending.paths.length === 1 ? 'Delete file?' : `Delete ${deletePending?.paths.length} files?` }}
           </h3>
-          <p class="text-xs text-zinc-400 mb-3">
+          <p class="text-xs text-zinc-400 mb-3 break-all">
             <template v-if="deletePending && deletePending.paths.length === 1">
               This will delete <span class="text-zinc-200">{{ deletePending.name ?? 'this file' }}</span> from your files.
             </template>
@@ -1027,6 +1156,82 @@ onMounted(() => {
             <button
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="onUploadKeepAll"
+            >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Paste conflict dialog -->
+    <Transition name="fade">
+      <div
+        v-if="pasteConflictDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="pasteConflictDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">
+            {{ pendingPaste?.mode === 'copy' ? 'Copy' : 'Move' }} conflicts
+          </h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            {{ pendingPaste?.conflictingNames.length }} item{{ pendingPaste?.conflictingNames.length !== 1 ? 's' : '' }} already exist in this folder.
+          </p>
+          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
+            <li
+              v-for="name in pendingPaste?.conflictingNames"
+              :key="name"
+              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
+            >{{ name }}</li>
+          </ul>
+          <div class="flex gap-2 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="pasteConflictDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+              @click="onPasteReplace"
+            >Replace</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="onPasteKeepAll"
+            >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Move conflict dialog -->
+    <Transition name="fade">
+      <div
+        v-if="moveConflictDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="moveConflictDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Move conflicts</h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            {{ pendingMove?.conflictingNames.length }} item{{ pendingMove?.conflictingNames.length !== 1 ? 's' : '' }} already exist in the destination folder.
+          </p>
+          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
+            <li
+              v-for="name in pendingMove?.conflictingNames"
+              :key="name"
+              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
+            >{{ name }}</li>
+          </ul>
+          <div class="flex gap-2 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="moveConflictDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+              @click="onMoveReplace"
+            >Replace</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="onMoveKeepAll"
             >Keep all</button>
           </div>
         </div>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
+import { fileCategory, formatSize, formatDate, setMoveDragImage } from '@/utils/formatters'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -25,6 +25,7 @@ const emit = defineEmits<{
   selectAll: []
   deselectAll: []
   contextMenu: [entry: FileEntry, x: number, y: number]
+  dropToFolder: [destPath: string, paths: string[]]
 }>()
 
 const allSelected = computed(
@@ -50,7 +51,46 @@ function handleClick(entry: FileEntry) {
   else emit('preview', entry)
 }
 
+// ── Drag & drop ──────────────────────────────────────────────────────────────
+const dragOverPath = ref<string | null>(null)
 
+function onRowDragStart(e: DragEvent, entry: FileEntry) {
+  const paths = props.selected.includes(entry.path) ? [...props.selected] : [entry.path]
+  e.dataTransfer!.setData('application/x-files-internal', JSON.stringify(paths))
+  e.dataTransfer!.effectAllowed = 'move'
+  setMoveDragImage(e, paths.length)
+}
+
+function onRowDragEnd() {
+  dragOverPath.value = null
+}
+
+function onRowDragOver(e: DragEvent, entry: FileEntry) {
+  if (!entry.is_dir) return
+  if (!e.dataTransfer?.types.includes('application/x-files-internal')) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  dragOverPath.value = entry.path
+}
+
+function onRowDragLeave(e: DragEvent, entry: FileEntry) {
+  if (!entry.is_dir) return
+  const related = e.relatedTarget as Node | null
+  const row = e.currentTarget as HTMLElement
+  if (!related || !row.contains(related)) {
+    if (dragOverPath.value === entry.path) dragOverPath.value = null
+  }
+}
+
+function onRowDrop(e: DragEvent, entry: FileEntry) {
+  if (!entry.is_dir) return
+  e.preventDefault()
+  dragOverPath.value = null
+  const raw = e.dataTransfer?.getData('application/x-files-internal')
+  if (!raw) return
+  const paths: string[] = JSON.parse(raw)
+  emit('dropToFolder', entry.path, paths)
+}
 </script>
 
 <template>
@@ -112,14 +152,22 @@ function handleClick(entry: FileEntry) {
           <tr
             v-for="entry in entries"
             :key="entry.path"
+            draggable="true"
             :class="[
               'border-b border-zinc-800/50 cursor-pointer group transition-colors',
-              selected.includes(entry.path)
-                ? 'bg-blue-950/40 hover:bg-blue-950/60'
-                : 'hover:bg-zinc-800/50',
+              entry.is_dir && dragOverPath === entry.path
+                ? 'bg-blue-900/30 outline outline-1 outline-blue-500/40'
+                : selected.includes(entry.path)
+                  ? 'bg-blue-950/40 hover:bg-blue-950/60'
+                  : 'hover:bg-zinc-800/50',
             ]"
             @click="handleClick(entry)"
             @contextmenu.prevent="emit('contextMenu', entry, $event.clientX, $event.clientY)"
+            @dragstart="onRowDragStart($event, entry)"
+            @dragend="onRowDragEnd"
+            @dragover="onRowDragOver($event, entry)"
+            @dragleave="onRowDragLeave($event, entry)"
+            @drop="onRowDrop($event, entry)"
           >
             <!-- Custom checkbox -->
             <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">

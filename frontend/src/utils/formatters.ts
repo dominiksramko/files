@@ -1,5 +1,29 @@
 import type { FileCategory } from '@/types'
 
+// Creates a compact drag ghost ("Moving 3 items") and sets it as the drag image.
+// The element is appended off-screen, used for one frame, then removed.
+export function setMoveDragImage(e: DragEvent, count: number): void {
+  const ghost = document.createElement('div')
+  ghost.textContent = `Moving ${count} item${count !== 1 ? 's' : ''}`
+  Object.assign(ghost.style, {
+    position: 'fixed',
+    top: '-1000px',
+    left: '-1000px',
+    background: '#27272a',
+    border: '1px solid #3f3f46',
+    borderRadius: '8px',
+    padding: '6px 12px',
+    color: '#f4f4f5',
+    fontSize: '13px',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+  })
+  document.body.appendChild(ghost)
+  e.dataTransfer!.setDragImage(ghost, -12, -12)
+  requestAnimationFrame(() => ghost.remove())
+}
+
 export function formatSize(bytes: number): string {
   if (bytes === 0) return '—'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']

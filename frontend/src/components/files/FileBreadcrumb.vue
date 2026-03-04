@@ -4,7 +4,10 @@ import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ path: string }>()
-const emit = defineEmits<{ navigate: [path: string] }>()
+const emit = defineEmits<{
+  navigate: [path: string]
+  dropToFolder: [destPath: string, paths: string[]]
+}>()
 
 const router = useRouter()
 
@@ -137,6 +140,40 @@ function handleScrollResize() {
   if (dropdownOpen.value) closeDropdown()
 }
 
+// ── Breadcrumb drop targets ───────────────────────────────────────────────────
+const dragOverCrumb = ref<string | null>(null)
+
+function isCurrent(crumb: { path: string }): boolean {
+  const crumbs = allCrumbs.value
+  return crumb.path === crumbs[crumbs.length - 1]?.path
+}
+
+function onCrumbDragOver(e: DragEvent, crumb: { path: string }) {
+  if (isCurrent(crumb)) return
+  if (!e.dataTransfer?.types.includes('application/x-files-internal')) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'move'
+  dragOverCrumb.value = crumb.path
+}
+
+function onCrumbDragLeave(e: DragEvent, crumb: { path: string }) {
+  const related = e.relatedTarget as Node | null
+  const el = e.currentTarget as HTMLElement
+  if (!related || !el.contains(related)) {
+    if (dragOverCrumb.value === crumb.path) dragOverCrumb.value = null
+  }
+}
+
+function onCrumbDrop(e: DragEvent, crumb: { path: string }) {
+  if (isCurrent(crumb)) return
+  e.preventDefault()
+  dragOverCrumb.value = null
+  const raw = e.dataTransfer?.getData('application/x-files-internal')
+  if (!raw) return
+  const paths: string[] = JSON.parse(raw)
+  emit('dropToFolder', crumb.path, paths)
+}
+
 onMounted(() => {
   document.addEventListener('mousedown', handleOutside)
   document.addEventListener('keydown', handleKeydown)
@@ -190,8 +227,14 @@ onUnmounted(() => {
             v-for="crumb in hiddenCrumbs"
             :key="crumb.path"
             :href="crumbHref(crumb.path)"
-            class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors flex items-center gap-2"
+            :class="[
+              'w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white transition-colors flex items-center gap-2',
+              dragOverCrumb === crumb.path ? 'bg-blue-800/60' : 'hover:bg-zinc-700',
+            ]"
             @click.prevent="emit('navigate', crumb.path); closeDropdown()"
+            @dragover="onCrumbDragOver($event, crumb)"
+            @dragleave="onCrumbDragLeave($event, crumb)"
+            @drop="onCrumbDrop($event, crumb)"
           >
             <AppIcon v-if="crumb.isHome" name="folder" class="size-3.5 shrink-0 text-zinc-400" />
             <span class="truncate">{{ crumb.label }}</span>
@@ -212,8 +255,16 @@ onUnmounted(() => {
       <a
         v-if="crumb.isHome"
         :href="crumbHref('')"
-        class="shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded text-zinc-400 hover:text-white hover:bg-zinc-800/70 transition-colors"
+        :class="[
+          'shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded transition-colors',
+          !isCurrent(crumb) && dragOverCrumb === crumb.path
+            ? 'bg-blue-800/50 text-white'
+            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70',
+        ]"
         @click.prevent="emit('navigate', '')"
+        @dragover="onCrumbDragOver($event, crumb)"
+        @dragleave="onCrumbDragLeave($event, crumb)"
+        @drop="onCrumbDrop($event, crumb)"
       >
         <AppIcon name="folder" class="size-4 shrink-0" />
         <span>Home</span>
@@ -224,10 +275,17 @@ onUnmounted(() => {
         v-else
         :href="crumbHref(crumb.path)"
         :class="[
-          'shrink-0 min-h-[2.5rem] flex items-center px-2 rounded whitespace-nowrap transition-colors hover:bg-zinc-800/70',
-          idx === shownCrumbs.length - 1 ? 'text-zinc-100 hover:text-white' : 'text-zinc-400 hover:text-white',
+          'shrink-0 min-h-[2.5rem] flex items-center px-2 rounded whitespace-nowrap transition-colors',
+          !isCurrent(crumb) && dragOverCrumb === crumb.path
+            ? 'bg-blue-800/50 text-white'
+            : idx === shownCrumbs.length - 1
+              ? 'text-zinc-100 hover:text-white hover:bg-zinc-800/70'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70',
         ]"
         @click.prevent="emit('navigate', crumb.path)"
+        @dragover="onCrumbDragOver($event, crumb)"
+        @dragleave="onCrumbDragLeave($event, crumb)"
+        @drop="onCrumbDrop($event, crumb)"
       >
         {{ crumb.label }}
       </a>
