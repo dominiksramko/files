@@ -164,22 +164,34 @@ export const fileops = {
   rename: (path: string, name: string) =>
     request<{ message: string }>('POST', '/files/rename', { path, name }),
 
-  upload: (path: string, files: File[]) => {
-    const form = new FormData()
-    files.forEach((f, i) => {
-      form.append('files', f)
-      form.append(`mtime_${i}`, Math.floor(f.lastModified / 1000).toString())
-    })
-    return fetch(`/api/v1/files/upload?path=${encodeURIComponent(path)}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
-      body: form,
-    }).then(async (res) => {
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(err.error ?? res.statusText)
+  upload: (path: string, files: File[], onProgress?: (loaded: number, total: number) => void): Promise<{ message: string; count: number }> => {
+    return new Promise((resolve, reject) => {
+      const form = new FormData()
+      files.forEach((f, i) => {
+        form.append('files', f)
+        form.append(`mtime_${i}`, Math.floor(f.lastModified / 1000).toString())
+      })
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `/api/v1/files/upload?path=${encodeURIComponent(path)}`)
+      xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') ?? ''}`)
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(e.loaded, e.total)
+        }
       }
-      return res.json() as Promise<{ message: string; count: number }>
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)) }
+          catch { reject(new Error('Invalid response')) }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText)
+            reject(new Error(err.error ?? xhr.statusText))
+          } catch { reject(new Error(xhr.statusText)) }
+        }
+      }
+      xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.send(form)
     })
   },
 }

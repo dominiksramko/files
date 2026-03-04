@@ -367,7 +367,7 @@ function cancelDelete() {
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 const uploadInput = ref<HTMLInputElement | null>(null)
-const uploading = ref(false)
+const uploadProgress = ref<{ pct: number; loaded: number; total: number; count: number } | null>(null)
 
 // ── Upload conflict modal ──────────────────────────────────────────────────
 const uploadConflictDialog = ref(false)
@@ -434,9 +434,12 @@ async function uploadFiles(files: File[]) {
 }
 
 async function performUpload(files: File[]) {
-  uploading.value = true
+  const totalSize = files.reduce((s, f) => s + f.size, 0)
+  uploadProgress.value = { pct: 0, loaded: 0, total: totalSize, count: files.length }
   try {
-    const res = await fileops.upload(filesStore.currentPath, files)
+    const res = await fileops.upload(filesStore.currentPath, files, (loaded, total) => {
+      uploadProgress.value = { pct: Math.round((loaded / total) * 100), loaded, total, count: files.length }
+    })
     showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
     await filesStore.refresh()
     // Reconnect the SSE stream so enqueueFolder rescans and picks up newly
@@ -445,7 +448,7 @@ async function performUpload(files: File[]) {
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
-    uploading.value = false
+    uploadProgress.value = null
   }
 }
 
@@ -787,7 +790,7 @@ onMounted(() => {
           </button>
 
           <!-- Upload -->
-          <button :class="['p-1.5 rounded transition-colors', uploading ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
+          <button :class="['p-1.5 rounded transition-colors', uploadProgress ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
             <AppIcon name="upload" class="size-4" />
           </button>
           <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
@@ -1030,6 +1033,30 @@ onMounted(() => {
       </div>
     </Transition>
 
+    <!-- Upload progress card -->
+    <Transition name="slide-up">
+      <div
+        v-if="uploadProgress"
+        class="fixed bottom-6 right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72"
+      >
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-zinc-100">
+            Uploading {{ uploadProgress.count }} file{{ uploadProgress.count !== 1 ? 's' : '' }}…
+          </span>
+          <span class="text-xs text-zinc-400">{{ uploadProgress.pct }}%</span>
+        </div>
+        <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+          <div
+            class="h-full bg-blue-500 rounded-full transition-[width] duration-200"
+            :style="{ width: `${uploadProgress.pct}%` }"
+          />
+        </div>
+        <div v-if="uploadProgress.total > 0" class="mt-1.5 text-xs text-zinc-500 text-right">
+          {{ formatSize(uploadProgress.loaded) }} / {{ formatSize(uploadProgress.total) }}
+        </div>
+      </div>
+    </Transition>
+
     <!-- Context menu -->
     <ContextMenu
       v-if="contextMenuState"
@@ -1148,4 +1175,13 @@ onMounted(() => {
   opacity: 0;
 }
 
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
 </style>
