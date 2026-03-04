@@ -404,9 +404,21 @@ function cancelDelete() {
 // ── Upload ─────────────────────────────────────────────────────────────────
 const uploadInput = ref<HTMLInputElement | null>(null)
 
-interface UploadJob { id: number; count: number; pct: number; loaded: number; total: number }
+interface UploadJob { id: number; count: number; pct: number; loaded: number; total: number; startedAt: number }
 const uploadJobs = ref<UploadJob[]>([])
 let nextUploadId = 0
+
+function formatEta(job: UploadJob): string {
+  if (job.loaded === 0 || job.total === 0) return ''
+  const elapsed = (Date.now() - job.startedAt) / 1000
+  if (elapsed < 2) return ''
+  const speed = job.loaded / elapsed // bytes/sec
+  const secs = (job.total - job.loaded) / speed
+  if (secs < 5) return 'almost done'
+  if (secs < 60) return `${Math.round(secs)}s remaining`
+  const m = Math.floor(secs / 60), s = Math.round(secs % 60)
+  return `${m}m ${s}s remaining`
+}
 
 // ── Upload conflict modal ──────────────────────────────────────────────────
 const uploadConflictDialog = ref(false)
@@ -475,7 +487,7 @@ async function uploadFiles(files: File[]) {
 async function performUpload(files: File[]) {
   const totalSize = files.reduce((s, f) => s + f.size, 0)
   const id = nextUploadId++
-  uploadJobs.value.push({ id, count: files.length, pct: 0, loaded: 0, total: totalSize })
+  uploadJobs.value.push({ id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now() })
   try {
     const res = await fileops.upload(filesStore.currentPath, files, (loaded, total) => {
       const job = uploadJobs.value.find(j => j.id === id)
@@ -1223,8 +1235,9 @@ onMounted(() => {
               :style="{ width: `${job.pct}%` }"
             />
           </div>
-          <div v-if="job.total > 0" class="mt-1.5 text-xs text-zinc-500 text-right">
-            {{ formatSize(job.loaded) }} / {{ formatSize(job.total) }}
+          <div v-if="job.total > 0" class="mt-1.5 flex items-center justify-between text-xs text-zinc-500">
+            <span>{{ formatEta(job) }}</span>
+            <span>{{ formatSize(job.loaded) }} / {{ formatSize(job.total) }}</span>
           </div>
         </div>
       </div>
