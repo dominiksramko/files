@@ -230,7 +230,7 @@ onMounted(fetchUsers)
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl w-72">
           <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear cache?</h3>
           <p class="text-xs text-zinc-400 mb-4">
-            All generated thumbnails and HLS video segments will be deleted.
+            All generated thumbnails, image previews and HLS video segments will be deleted.
           </p>
           <div class="flex gap-2 justify-end">
             <button
