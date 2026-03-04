@@ -161,6 +161,22 @@ func unwrapSingleItem(dir string) error {
 	}
 	src := filepath.Join(dir, entries[0].Name())
 	dst := filepath.Join(filepath.Dir(dir), entries[0].Name())
+
+	if dst == dir {
+		// The single item has the same name as the extraction folder (e.g. foo.zip
+		// contains a single top-level folder foo/). Rename the extraction folder
+		// aside, move the inner item to the final destination, then remove the shell.
+		tmp := dir + ".~unwrap_tmp"
+		if err := os.Rename(dir, tmp); err != nil {
+			return err
+		}
+		if err := os.Rename(filepath.Join(tmp, entries[0].Name()), dst); err != nil {
+			os.Rename(tmp, dir) // best-effort restore
+			return err
+		}
+		return os.RemoveAll(tmp) // should be empty; RemoveAll as a safety net
+	}
+
 	if err := os.Rename(src, dst); err != nil {
 		return err
 	}
