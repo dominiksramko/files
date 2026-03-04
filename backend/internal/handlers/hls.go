@@ -155,7 +155,18 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 	c.File(chunkPath)
 }
 
+const hlsWindowSize = 6 // chunks per ffmpeg run (6 × 10s = 60s)
+
+func windowKey(hash string, windowStart int) string {
+	return fmt.Sprintf("%s:%d", hash, windowStart)
+}
+
 func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) error {
+	// Align seq to the start of its window so all requests within the same
+	// 60-second span share one ffmpeg process.
+	windowStart := (seq / hlsWindowSize) * hlsWindowSize
+	key := windowKey(hash, windowStart)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -163,13 +174,12 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		return nil
 	}
 
-	if oldCmd, exists := h.activeCmds[hash]; exists {
-		_ = oldCmd.Process.Kill()
-		delete(h.activeCmds, hash)
+	// Already generating this window — nothing to do.
+	if _, running := h.activeCmds[key]; running {
+		return nil
 	}
 
-	err := os.MkdirAll(cacheDir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return err
 	}
 
@@ -181,7 +191,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 	}
 
 	// Use the source audio codec directly if it's already TS-compatible,
-	// otherwise transcode to AAC (much cheaper than re-encoding unnecessarily).
+	// otherwise transcode to AAC.
 	audioCodec := "aac"
 	if probe, err := exec.Command("ffprobe",
 		"-v", "error",
@@ -196,18 +206,24 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		}
 	}
 
-	startAt := float64(seq) * 10.0
-	cmd := exec.Command("ffmpeg",
+	startAt := float64(windowStart) * 10.0
+	windowDuration := float64(hlsWindowSize) * 10.0
+
+	// nice -n 10: ffmpeg only runs when the system has spare CPU,
+	// keeping the server responsive for other requests.
+	cmd := exec.Command("nice", "-n", "10",
+		"ffmpeg",
 		"-y",
 		"-ss", fmt.Sprintf("%.3f", startAt),
 		"-i", absPath,
+		"-t", fmt.Sprintf("%.3f", windowDuration),
 		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
 		"-c:v", "copy",
 		"-c:a", audioCodec,
 		"-f", "hls",
 		"-hls_time", "10",
 		"-hls_list_size", "0",
-		"-start_number", strconv.Itoa(seq),
+		"-start_number", strconv.Itoa(windowStart),
 		"-hls_flags", "temp_file",
 		"-hls_segment_filename", filepath.Join(cacheDir, "chunk_%03d.ts"),
 		filepath.Join(cacheDir, "playlist.m3u8"),
@@ -217,13 +233,13 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		return err
 	}
 
-	h.activeCmds[hash] = cmd
+	h.activeCmds[key] = cmd
 
 	go func() {
 		_ = cmd.Wait()
 		h.mu.Lock()
-		if h.activeCmds[hash] == cmd {
-			delete(h.activeCmds, hash)
+		if h.activeCmds[key] == cmd {
+			delete(h.activeCmds, key)
 		}
 		h.mu.Unlock()
 	}()
