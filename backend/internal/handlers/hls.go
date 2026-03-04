@@ -138,7 +138,7 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 		}
 
 		ready := false
-		for i := 0; i < 150; i++ {
+		for i := 0; i < 300; i++ {
 			if fileExists(chunkPath) {
 				ready = true
 				break
@@ -149,6 +149,14 @@ func (h *HLSHandler) Segment(c *gin.Context) {
 			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "chunk generation timeout"})
 			return
 		}
+	}
+
+	// Proactively start the next window when we're 2 chunks from the boundary,
+	// so ffmpeg is already running before the player requests the first chunk of
+	// the next window.
+	nextWindowStart := ((seq / hlsWindowSize) + 1) * hlsWindowSize
+	if seq >= nextWindowStart-2 {
+		go func() { _ = h.ensureGenerating(abs, cacheDir, hashHex, nextWindowStart) }()
 	}
 
 	c.Header("Cache-Control", "public, max-age=604800") // 1 week
@@ -217,7 +225,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		"-ss", fmt.Sprintf("%.3f", startAt),
 		"-i", absPath,
 		"-t", fmt.Sprintf("%.3f", windowDuration),
-		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
+		"-avoid_negative_ts", "make_zero",
 		"-c:v", "copy",
 		"-c:a", audioCodec,
 		"-f", "hls",
