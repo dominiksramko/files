@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime ----
 FROM alpine:3.20
 
-RUN apk add --no-cache p7zip ca-certificates tzdata ffmpeg rsvg-convert imagemagick
+RUN apk add --no-cache p7zip ca-certificates tzdata ffmpeg rsvg-convert imagemagick imagemagick-heic
 
 WORKDIR /app
 COPY --from=backend-builder /backend/server .
