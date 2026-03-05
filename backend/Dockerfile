@@ -25,16 +25,16 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime ----
 FROM alpine:3.20
 
-RUN apk add --no-cache p7zip ca-certificates tzdata ffmpeg rsvg-convert imagemagick imagemagick-heic
+COPY --from=linuxserver/unrar:7.2.4 /usr/bin/unrar-alpine /usr/bin/unrar
 
-RUN apk add --no-cache --virtual .build-deps g++ make wget && \
-    wget https://www.rarlab.com/rar/unrarsrc-6.2.3.tar.gz && \
-    tar -xzf unrarsrc-6.2.3.tar.gz && \
-    cd unrar && \
-    make && \
-    install -v -m755 unrar /usr/local/bin && \
-    cd .. && rm -rf unrar unrarsrc-6.2.3.tar.gz && \
-    apk del .build-deps
+RUN apk add --no-cache \
+    p7zip \
+    ca-certificates \
+    tzdata \
+    ffmpeg \
+    rsvg-convert \
+    imagemagick \
+    imagemagick-heic
 
 WORKDIR /app
 COPY --from=backend-builder /backend/server .
