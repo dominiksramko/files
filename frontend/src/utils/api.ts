@@ -179,14 +179,19 @@ export const fileops = {
   rename: (path: string, name: string) =>
     request<{ message: string }>('POST', '/files/rename', { path, name }),
 
-  upload: (path: string, files: File[], onProgress?: (loaded: number, total: number) => void): Promise<{ message: string; count: number }> => {
-    return new Promise((resolve, reject) => {
+  upload: (
+    path: string,
+    files: File[],
+    onProgress?: (loaded: number, total: number) => void,
+  ): { promise: Promise<{ message: string; count: number }>; abort: () => void } => {
+    let xhr: XMLHttpRequest
+    const promise = new Promise<{ message: string; count: number }>((resolve, reject) => {
       const form = new FormData()
       files.forEach((f, i) => {
         form.append('files', f)
         form.append(`mtime_${i}`, Math.floor(f.lastModified / 1000).toString())
       })
-      const xhr = new XMLHttpRequest()
+      xhr = new XMLHttpRequest()
       xhr.open('POST', `/api/v1/files/upload?path=${encodeURIComponent(path)}`)
       xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') ?? ''}`)
       if (onProgress) {
@@ -206,8 +211,10 @@ export const fileops = {
         }
       }
       xhr.onerror = () => reject(new Error('Upload failed'))
+      xhr.onabort = () => reject(new Error('cancelled'))
       xhr.send(form)
     })
+    return { promise, abort: () => xhr?.abort() }
   },
 }
 

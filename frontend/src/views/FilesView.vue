@@ -404,7 +404,7 @@ function cancelDelete() {
 // ── Upload ─────────────────────────────────────────────────────────────────
 const uploadInput = ref<HTMLInputElement | null>(null)
 
-interface UploadJob { id: number; count: number; pct: number; loaded: number; total: number; startedAt: number }
+interface UploadJob { id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
 const uploadJobs = ref<UploadJob[]>([])
 let nextUploadId = 0
 
@@ -487,19 +487,20 @@ async function uploadFiles(files: File[]) {
 async function performUpload(files: File[]) {
   const totalSize = files.reduce((s, f) => s + f.size, 0)
   const id = nextUploadId++
-  uploadJobs.value.push({ id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now() })
+  const { promise, abort } = fileops.upload(filesStore.currentPath, files, (loaded, total) => {
+    const job = uploadJobs.value.find(j => j.id === id)
+    if (job) { job.pct = Math.round((loaded / total) * 100); job.loaded = loaded; job.total = total }
+  })
+  uploadJobs.value.push({ id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now(), abort })
   try {
-    const res = await fileops.upload(filesStore.currentPath, files, (loaded, total) => {
-      const job = uploadJobs.value.find(j => j.id === id)
-      if (job) { job.pct = Math.round((loaded / total) * 100); job.loaded = loaded; job.total = total }
-    })
+    const res = await promise
     showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
     await filesStore.refresh()
     // Reconnect the SSE stream so enqueueFolder rescans and picks up newly
     // uploaded files that weren't present when the stream first connected.
     thumbConnect(filesStore.currentPath)
   } catch (err) {
-    showToast((err as Error).message, 'error')
+    if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
   } finally {
     uploadJobs.value = uploadJobs.value.filter(j => j.id !== id)
   }
@@ -1227,7 +1228,14 @@ onMounted(() => {
             <span class="text-sm font-medium text-zinc-100">
               Uploading {{ job.count }} file{{ job.count !== 1 ? 's' : '' }}…
             </span>
-            <span class="text-xs text-zinc-400">{{ job.pct }}%</span>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-zinc-400">{{ job.pct }}%</span>
+              <button
+                class="text-zinc-500 hover:text-zinc-200 transition-colors"
+                title="Cancel upload"
+                @click="job.abort()"
+              ><AppIcon name="x" class="size-3.5" /></button>
+            </div>
           </div>
           <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
             <div
