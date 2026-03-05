@@ -60,6 +60,16 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 		}
 	}
 
+	if ext == ".rar" {
+		entries, err := listUnrar(abs, password)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot read archive: %s", err)})
+			return
+		}
+		c.JSON(http.StatusOK, entries)
+		return
+	}
+
 	entries, err := list7z(abs, password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot read archive: %s", err)})
@@ -117,6 +127,8 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		err = extractZip(abs, destAbs)
 	case isTar(abs) && req.Password == "":
 		err = extractTar(abs, destAbs)
+	case ext == ".rar":
+		err = extractUnrar(abs, destAbs, req.Password)
 	default:
 		err = extract7z(abs, destAbs, req.Password)
 	}
@@ -358,6 +370,86 @@ func extractTar(src, dest string) error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// --- RAR (unrar) ---
+
+func listUnrar(path, password string) ([]ArchiveEntry, error) {
+	args := []string{"l"}
+	if password != "" {
+		args = append(args, "-p"+password)
+	}
+	args = append(args, path)
+
+	out, err := exec.Command("unrar", args...).Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := strings.ToLower(string(exitErr.Stderr) + string(out))
+			if strings.Contains(stderr, "password") || strings.Contains(stderr, "wrong password") || strings.Contains(stderr, "encrypted") {
+				return nil, fmt.Errorf("archive is password protected")
+			}
+		}
+		return nil, fmt.Errorf("unrar failed: %w", err)
+	}
+	return parseUnrarList(string(out)), nil
+}
+
+// parseUnrarList parses the output of "unrar l".
+// Output between the two "---" separator lines looks like:
+//
+//	 -rw-r--r--      1234  2023-01-01 12:00  file.txt
+//	 drwxr-xr-x         0  2023-01-01 12:00  folder/
+func parseUnrarList(output string) []ArchiveEntry {
+	var entries []ArchiveEntry
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	inData := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "---") {
+			if inData {
+				break // second separator — done
+			}
+			inData = true
+			continue
+		}
+		if !inData {
+			continue
+		}
+		// Fields: attrs  size  date  time  name (name may contain spaces)
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		attrs := fields[0]
+		var size int64
+		fmt.Sscanf(fields[1], "%d", &size)
+		name := strings.Join(fields[4:], " ")
+		isDir := strings.HasPrefix(attrs, "d") || strings.HasSuffix(name, "/")
+		entries = append(entries, ArchiveEntry{Name: name, Size: size, IsDir: isDir})
+	}
+	return entries
+}
+
+func extractUnrar(src, dest, password string) error {
+	args := []string{"x", "-y"}
+	if password != "" {
+		args = append(args, "-p"+password)
+	}
+	args = append(args, src, dest+string(os.PathSeparator))
+
+	var stderr bytes.Buffer
+	cmd := exec.Command("unrar", args...)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.ToLower(stderr.String())
+		if strings.Contains(msg, "password") || strings.Contains(msg, "wrong password") || strings.Contains(msg, "encrypted") {
+			return fmt.Errorf("wrong password or archive is encrypted")
+		}
+		return err
 	}
 	return nil
 }
