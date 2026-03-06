@@ -66,6 +66,17 @@ export function isTextFile(mime: string, name: string): boolean {
   return TEXT_EXTS.has(ext)
 }
 
+export function isOfficeFile(mime: string): boolean {
+  return [
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ].includes(mime)
+}
+
 export function isMarkdownFile(mime: string, name: string): boolean {
   if (mime === 'text/markdown' || mime === 'text/x-markdown') return true
   const ext = name.split('.').pop()?.toLowerCase() ?? ''

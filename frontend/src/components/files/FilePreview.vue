@@ -2,10 +2,11 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { isTextFile } from '@/utils/formatters'
+import { isOfficeFile, isTextFile } from '@/utils/formatters'
 import AudioPlayer  from '@/components/files/AudioPlayer.vue'
 import FileFallback from '@/components/files/FileFallback.vue'
 import ImageViewer  from '@/components/files/ImageViewer.vue'
+import OfficeViewer from '@/components/files/OfficeViewer.vue'
 import PdfViewer    from '@/components/files/PdfViewer.vue'
 import TextViewer   from '@/components/files/TextViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
@@ -36,6 +37,7 @@ const viewerComponent = computed(() => {
   if (m.startsWith('audio/')) return AudioPlayer
   if (m === 'application/pdf') return PdfViewer
   if (isTextFile(m, e.name)) return TextViewer
+  if (isOfficeFile(m)) return OfficeViewer
   return FileFallback
 })
 

@@ -139,6 +139,9 @@ export const files = {
     return `${BASE}/files/size?${params}`
   },
 
+  officeToken: (path: string) =>
+    request<{ token: string }>('POST', '/files/office-token', { path }),
+
   // Image resolution or video duration/resolution/codec for a single file.
   fileMeta: (path: string) =>
     request<{ image?: { width: number; height: number }; video?: { duration: number; width: number; height: number; codec?: string } }>(

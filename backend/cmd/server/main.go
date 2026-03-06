@@ -59,6 +59,7 @@ func main() {
 	infoH := handlers.NewInfoHandler()
 	progressH := handlers.NewProgressHandler(db)
 	systemH := handlers.NewSystemHandler(cfg.UsersRoot)
+	officeH := handlers.NewOfficeHandler(cfg.JWTSecret)
 
 	// Auth middleware (applied per group)
 	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
@@ -98,6 +99,7 @@ func main() {
 			authed.GET("/files/subtitle", subsH.Stream)
 			authed.GET("/files/size", infoH.SizeStream)
 			authed.GET("/files/info", infoH.Meta)
+			authed.POST("/files/office-token", officeH.GenerateToken)
 
 			// System info
 			authed.GET("/system/disk", systemH.DiskSpace)
@@ -126,6 +128,9 @@ func main() {
 			}
 		}
 	}
+
+	// Public office preview (short-lived HMAC token, no auth middleware)
+	r.GET("/public/office/:token", officeH.ServeFile)
 
 	// Health check
 	r.GET("/health", func(c *gin.Context) {
