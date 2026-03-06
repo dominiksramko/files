@@ -37,7 +37,7 @@ const viewerComponent = computed(() => {
   if (m.startsWith('audio/')) return AudioPlayer
   if (m === 'application/pdf') return PdfViewer
   if (isTextFile(m, e.name)) return TextViewer
-  if (isOfficeFile(m)) return OfficeViewer
+  if (isOfficeFile(m, e.name)) return OfficeViewer
   return FileFallback
 })
 

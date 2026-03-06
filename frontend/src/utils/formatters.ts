@@ -66,15 +66,29 @@ export function isTextFile(mime: string, name: string): boolean {
   return TEXT_EXTS.has(ext)
 }
 
-export function isOfficeFile(mime: string): boolean {
-  return [
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  ].includes(mime)
+const OFFICE_MIMES = new Set([
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'application/vnd.oasis.opendocument.presentation',
+])
+
+const OFFICE_EXTS = new Set([
+  'doc', 'dot', 'docx', 'docm', 'dotx', 'dotm',
+  'xls', 'xlt', 'xlsx', 'xlsm', 'xlsb', 'xltx', 'xltm',
+  'ppt', 'pot', 'pps', 'pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm',
+  'odt', 'ott', 'ods', 'ots', 'odp', 'otp',
+])
+
+export function isOfficeFile(mime: string, name: string): boolean {
+  if (OFFICE_MIMES.has(mime)) return true
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return OFFICE_EXTS.has(ext)
 }
 
 export function isMarkdownFile(mime: string, name: string): boolean {

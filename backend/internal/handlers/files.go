@@ -514,18 +514,24 @@ func mimeByExt(ext string) string {
 	case ".m4a":
 		return "audio/mp4"
 	// Office
-	case ".doc":
+	case ".doc", ".dot":
 		return "application/msword"
-	case ".docx":
+	case ".docx", ".docm", ".dotx", ".dotm":
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	case ".xls":
+	case ".xls", ".xlt":
 		return "application/vnd.ms-excel"
-	case ".xlsx":
+	case ".xlsx", ".xlsm", ".xlsb", ".xltx", ".xltm":
 		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-	case ".ppt":
+	case ".ppt", ".pot", ".pps":
 		return "application/vnd.ms-powerpoint"
-	case ".pptx":
+	case ".pptx", ".pptm", ".potx", ".potm", ".ppsx", ".ppsm":
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case ".odt", ".ott":
+		return "application/vnd.oasis.opendocument.text"
+	case ".ods", ".ots":
+		return "application/vnd.oasis.opendocument.spreadsheet"
+	case ".odp", ".otp":
+		return "application/vnd.oasis.opendocument.presentation"
 	case ".pdf":
 		return "application/pdf"
 	// Archives
