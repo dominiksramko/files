@@ -343,6 +343,7 @@ async function downloadPaths(paths: string[]) {
       const a = document.createElement('a')
       a.href = filesApi.downloadUrl(entry.path, entry.mod_time)
       a.click()
+      selectedPaths.value = []
       return
     }
   }
@@ -358,6 +359,7 @@ async function downloadPaths(paths: string[]) {
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
     URL.revokeObjectURL(url)
+    selectedPaths.value = []
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
@@ -395,7 +397,7 @@ async function confirmDelete() {
   try {
     await fileops.delete(paths)
     if (paths.some(p => previewEntry.value?.path === p)) closePreview()
-    selectedPaths.value = selectedPaths.value.filter(p => !paths.includes(p))
+    selectedPaths.value = []
     filesStore.refresh()
   } catch (err) {
     showToast((err as Error).message, 'error')
@@ -635,6 +637,7 @@ async function confirmRename() {
   const wasPreviewingThis = previewIndex.value >= 0 && previewEntry.value?.path === entry.path
   try {
     await fileops.rename(entry.path, trimmed)
+    selectedPaths.value = []
     await filesStore.refresh()
     if (wasPreviewingThis) {
       const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
@@ -702,6 +705,7 @@ async function confirmCompress() {
     const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
     await fileops.compress(compressPaths.value, dest, compressFormat.value, pass, protect)
     compressDialog.value = false
+    selectedPaths.value = []
     filesStore.refresh()
     showToast('Archive created', 'success')
   } catch (err) {
@@ -727,6 +731,7 @@ const extractError = ref('')
 async function openExtract(path: string) {
   try {
     await filesApi.extract(path)
+    selectedPaths.value = []
     filesStore.refresh()
     showToast('Extracted successfully', 'success')
   } catch (e) {
@@ -749,6 +754,7 @@ async function confirmExtract() {
   try {
     await filesApi.extract(extractPendingPath.value, undefined, extractPasswordInput.value)
     extractPasswordDialog.value = false
+    selectedPaths.value = []
     filesStore.refresh()
     showToast('Extracted successfully', 'success')
   } catch (e) {
