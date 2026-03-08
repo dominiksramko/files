@@ -362,6 +362,17 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "extracted"})
 }
 
+// CanExtract reports whether the file at path is a supported archive format.
+func CanExtract(name string) bool {
+	lower := strings.ToLower(name)
+	for _, ext := range []string{".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".rar", ".7z"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 // archiveBaseName strips all archive-related extensions from the filename.
 func archiveBaseName(path string) string {
 	base := filepath.Base(path)

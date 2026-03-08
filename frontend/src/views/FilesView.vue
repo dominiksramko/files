@@ -712,18 +712,10 @@ async function confirmCompress() {
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────
-const archiveExtensions = ['.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz', '.tar.zst', '.rar', '.7z']
-
-function isArchiveFile(entry: FileEntry): boolean {
-  if (entry.is_dir) return false
-  const lower = entry.name.toLowerCase()
-  return archiveExtensions.some((ext) => lower.endsWith(ext))
-}
-
 const singleSelectedArchive = computed(() => {
   if (selectedPaths.value.length !== 1) return null
   const entry = visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
-  return entry && isArchiveFile(entry) ? entry : null
+  return entry?.can_extract ? entry : null
 })
 
 const extractPasswordDialog = ref(false)
@@ -887,7 +879,7 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
     { label: 'Compress', icon: 'archive',    action: () => { close(); openCompressDialog(paths) } },
     { separator: true },
   ]
-  if (single && isArchiveFile(entry)) {
+  if (single && entry.can_extract) {
     items.push({ label: 'Extract here', icon: 'archiveOut', action: () => { close(); openExtract(entry.path) } })
   }
   if (single) {

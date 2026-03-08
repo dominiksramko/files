@@ -30,6 +30,7 @@ export interface FileEntry {
   mime: string
   has_thumb: boolean
   thumb_hash?: string
+  can_extract?: boolean
 }
 
 export interface ArchiveEntry {
