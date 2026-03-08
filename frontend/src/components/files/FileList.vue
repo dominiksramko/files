@@ -191,10 +191,10 @@ function onRowDrop(e: DragEvent, entry: FileEntry) {
               </div>
             </td>
 
-            <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums hidden sm:table-cell">
+            <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums whitespace-nowrap hidden sm:table-cell">
               {{ entry.is_dir ? '—' : formatSize(entry.size) }}
             </td>
-            <td class="px-4 py-2.5 text-right text-zinc-500 text-xs hidden sm:table-cell">
+            <td class="px-4 py-2.5 text-right text-zinc-500 text-xs whitespace-nowrap hidden sm:table-cell">
               {{ formatDate(entry.mod_time) }}
             </td>
 
