@@ -1437,11 +1437,24 @@ onMounted(async () => {
       </div>
     </Transition>
 
+    <!-- Zip download progress card -->
+    <Transition name="slide-up">
+      <div
+        v-if="downloading"
+        class="fixed bottom-6 right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72"
+      >
+        <div class="flex items-center gap-3">
+          <AppIcon name="archive" class="size-4 text-blue-400 shrink-0 animate-pulse" />
+          <span class="text-sm font-medium text-zinc-100">Zipping files…</span>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Upload progress card -->
     <Transition name="slide-up">
       <div
         v-if="uploadJobs.length > 0"
-        class="fixed bottom-6 right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72 space-y-3"
+        :class="['fixed right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72 space-y-3 transition-[bottom] duration-300', downloading ? 'bottom-24' : 'bottom-6']"
       >
         <div v-for="job in uploadJobs" :key="job.id">
           <div class="flex items-center justify-between mb-2">
