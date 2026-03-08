@@ -451,7 +451,7 @@ func extractZip(src, dest string) error {
 
 		rc, err := f.Open()
 		if err != nil {
-			if err == zip.ErrAlgorithm {
+			if err == zip.ErrAlgorithm || f.FileHeader.Flags&0x1 != 0 {
 				return fmt.Errorf("archive is password protected")
 			}
 			return err
@@ -465,6 +465,9 @@ func extractZip(src, dest string) error {
 		rc.Close()
 		out.Close()
 		if err != nil {
+			if f.FileHeader.Flags&0x1 != 0 {
+				return fmt.Errorf("archive is password protected")
+			}
 			return err
 		}
 	}
