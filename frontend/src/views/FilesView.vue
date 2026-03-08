@@ -333,9 +333,10 @@ async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, con
 }
 
 // ── Background jobs (upload progress, zip download) ────────────────────────
-interface UploadJob { kind: 'upload'; id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
-interface ZipJob    { kind: 'zip';    id: number }
-type BgJob = UploadJob | ZipJob
+interface UploadJob   { kind: 'upload';   id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
+interface ZipJob      { kind: 'zip';      id: number }
+interface CompressJob { kind: 'compress'; id: number; name: string }
+type BgJob = UploadJob | ZipJob | CompressJob
 
 const bgJobs = ref<BgJob[]>([])
 let nextJobId = 0
@@ -669,7 +670,6 @@ const compressName = ref('')
 const compressFormat = ref('zip')
 const compressPassword = ref('')
 const compressProtectFilenames = ref(false)
-const compressing = ref(false)
 
 const compressFormatOptions = [
   { label: 'ZIP (.zip)', value: 'zip' },
@@ -703,24 +703,30 @@ watch(compressFormat, (fmt) => {
   compressName.value = stripped + ext
 })
 
-async function confirmCompress() {
-  if (!compressName.value.trim() || compressing.value) return
-  compressing.value = true
-  try {
-    const name = compressName.value.trim()
-    const dest = filesStore.currentPath ? filesStore.currentPath + '/' + name : name
-    const pass = compressPassword.value || undefined
-    const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
-    await fileops.compress(compressPaths.value, dest, compressFormat.value, pass, protect)
-    compressDialog.value = false
-    selectedPaths.value = []
+function confirmCompress() {
+  const name = compressName.value.trim()
+  if (!name) return
+  const dest = filesStore.currentPath ? filesStore.currentPath + '/' + name : name
+  const pass = compressPassword.value || undefined
+  const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
+  const paths = [...compressPaths.value]
+
+  compressDialog.value = false
+
+  const id = nextJobId++
+  let selectionChanged = false
+  const stopWatch = watch(selectedPaths, () => { selectionChanged = true })
+  bgJobs.value.push({ kind: 'compress', id, name })
+  fileops.compress(paths, dest, compressFormat.value, pass, protect).then(() => {
+    if (!selectionChanged) selectedPaths.value = []
     filesStore.refresh()
     showToast('Archive created', 'success')
-  } catch (err) {
+  }).catch((err) => {
     showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
-  } finally {
-    compressing.value = false
-  }
+  }).finally(() => {
+    stopWatch()
+    bgJobs.value = bgJobs.value.filter(j => j.id !== id)
+  })
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────
@@ -1402,10 +1408,10 @@ onMounted(async () => {
               @click="compressDialog = false"
             >Cancel</button>
             <button
-              :disabled="compressing || !compressName.trim()"
+              :disabled="!compressName.trim()"
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
               @click="confirmCompress"
-            >{{ compressing ? 'Creating…' : 'Create' }}</button>
+            >Create</button>
           </div>
         </div>
       </div>
@@ -1458,6 +1464,12 @@ onMounted(async () => {
           <div v-if="job.kind === 'zip'" class="flex items-center gap-3">
             <AppIcon name="archive" class="size-4 text-blue-400 shrink-0 animate-pulse" />
             <span class="text-sm font-medium text-zinc-100">Zipping files…</span>
+          </div>
+
+          <!-- Compress -->
+          <div v-else-if="job.kind === 'compress'" class="flex items-center gap-3">
+            <AppIcon name="archive" class="size-4 text-blue-400 shrink-0 animate-pulse" />
+            <span class="text-sm font-medium text-zinc-100 truncate">Creating {{ job.name }}…</span>
           </div>
 
           <!-- Upload -->
