@@ -357,8 +357,7 @@ async function downloadPaths(paths: string[]) {
     }
   }
   const id = nextJobId++
-  let selectionChanged = false
-  const stopWatch = watch(selectedPaths, () => { selectionChanged = true })
+  const selectionRef = selectedPaths.value
   bgJobs.value.push({ kind: 'zip', id })
   try {
     const blob = await fileops.downloadZip(paths)
@@ -371,11 +370,10 @@ async function downloadPaths(paths: string[]) {
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
     URL.revokeObjectURL(url)
-    if (!selectionChanged) selectedPaths.value = []
+    if (selectedPaths.value === selectionRef) selectedPaths.value = []
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
-    stopWatch()
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
 }
@@ -714,17 +712,15 @@ function confirmCompress() {
   compressDialog.value = false
 
   const id = nextJobId++
-  let selectionChanged = false
-  const stopWatch = watch(selectedPaths, () => { selectionChanged = true })
+  const selectionRef = selectedPaths.value
   bgJobs.value.push({ kind: 'compress', id, name })
   fileops.compress(paths, dest, compressFormat.value, pass, protect).then(() => {
-    if (!selectionChanged) selectedPaths.value = []
+    if (selectedPaths.value === selectionRef) selectedPaths.value = []
     filesStore.refresh()
     showToast('Archive created', 'success')
   }).catch((err) => {
     showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
   }).finally(() => {
-    stopWatch()
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   })
 }
