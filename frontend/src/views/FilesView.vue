@@ -18,6 +18,7 @@ import ContextMenu from '@/components/ui/ContextMenu.vue'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 
 const filesStore = useFilesStore()
 const route = useRoute()
@@ -656,6 +657,7 @@ const compressPaths = ref<string[]>([])
 const compressName = ref('')
 const compressFormat = ref('zip')
 const compressPassword = ref('')
+const compressProtectFilenames = ref(false)
 const compressing = ref(false)
 
 const compressFormatOptions = [
@@ -680,6 +682,7 @@ function openCompressDialog(paths: string[]) {
   compressFormat.value = 'zip'
   compressName.value = folderName + '.zip'
   compressPassword.value = ''
+  compressProtectFilenames.value = false
   compressDialog.value = true
 }
 
@@ -696,7 +699,8 @@ async function confirmCompress() {
     const name = compressName.value.trim()
     const dest = filesStore.currentPath ? filesStore.currentPath + '/' + name : name
     const pass = compressPassword.value || undefined
-    await fileops.compress(compressPaths.value, dest, compressFormat.value, pass)
+    const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
+    await fileops.compress(compressPaths.value, dest, compressFormat.value, pass, protect)
     compressDialog.value = false
     filesStore.refresh()
     showToast('Archive created', 'success')
@@ -1320,6 +1324,11 @@ onMounted(async () => {
             @keydown.enter="confirmCompress"
             @keydown.escape="compressDialog = false"
           />
+
+          <div v-if="compressFormat === '7z' && compressPassword" class="flex items-center gap-2 mt-3">
+            <AppCheckbox v-model="compressProtectFilenames" />
+            <span class="text-xs text-zinc-300">Encrypt filenames</span>
+          </div>
 
           <div class="flex gap-2 mt-3 justify-end">
             <button

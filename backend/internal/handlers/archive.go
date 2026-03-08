@@ -25,10 +25,11 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 	root := userRoot(c)
 
 	var req struct {
-		Paths    []string `json:"paths" binding:"required"`
-		Dest     string   `json:"dest" binding:"required"`
-		Format   string   `json:"format" binding:"required"`
-		Password string   `json:"password"`
+		Paths            []string `json:"paths" binding:"required"`
+		Dest             string   `json:"dest" binding:"required"`
+		Format           string   `json:"format" binding:"required"`
+		Password         string   `json:"password"`
+		ProtectFilenames bool     `json:"protect_filenames"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -63,7 +64,7 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 	switch req.Format {
 	case "zip":
 		if req.Password != "" {
-			err = compress7zFormat(absInputs, destAbs, "zip", req.Password)
+			err = compress7zFormat(absInputs, destAbs, "zip", req.Password, false)
 		} else {
 			err = compressZip(absInputs, destAbs)
 		}
@@ -72,7 +73,7 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 	case "tar.gz":
 		err = compressTar(absInputs, destAbs, true)
 	case "7z":
-		err = compress7zFormat(absInputs, destAbs, "7z", req.Password)
+		err = compress7zFormat(absInputs, destAbs, "7z", req.Password, req.ProtectFilenames)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format: " + req.Format})
 		return
@@ -209,12 +210,12 @@ func compressTar(inputs []string, dest string, gzipped bool) error {
 
 // --- Compress: 7z / ZIP-with-password (CLI) ---
 
-func compress7zFormat(inputs []string, dest string, format string, password string) error {
+func compress7zFormat(inputs []string, dest string, format string, password string, protectFilenames bool) error {
 	args := []string{"a", "-t" + format}
 	if password != "" {
 		args = append(args, "-p"+password)
-		if format == "7z" {
-			args = append(args, "-mhe=on") // encrypt headers
+		if protectFilenames {
+			args = append(args, "-mhe=on")
 		}
 	}
 	args = append(args, dest)
