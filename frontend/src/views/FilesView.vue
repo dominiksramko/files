@@ -356,6 +356,8 @@ async function downloadPaths(paths: string[]) {
     }
   }
   const id = nextJobId++
+  let selectionChanged = false
+  const stopWatch = watch(selectedPaths, () => { selectionChanged = true })
   bgJobs.value.push({ kind: 'zip', id })
   try {
     const blob = await fileops.downloadZip(paths)
@@ -368,10 +370,11 @@ async function downloadPaths(paths: string[]) {
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
     URL.revokeObjectURL(url)
-    selectedPaths.value = []
+    if (!selectionChanged) selectedPaths.value = []
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
+    stopWatch()
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
 }
