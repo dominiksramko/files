@@ -18,6 +18,218 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// POST /api/v1/files/compress
+// Body: { paths, dest, format, password? }
+// Supported formats: zip, tar, tar.gz, 7z
+func (h *ArchiveHandler) Compress(c *gin.Context) {
+	root := userRoot(c)
+
+	var req struct {
+		Paths    []string `json:"paths" binding:"required"`
+		Dest     string   `json:"dest" binding:"required"`
+		Format   string   `json:"format" binding:"required"`
+		Password string   `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(req.Paths) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "paths required"})
+		return
+	}
+
+	destAbs, err := safePath(root, req.Dest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := os.Stat(destAbs); err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "destination already exists"})
+		return
+	}
+
+	var absInputs []string
+	for _, rel := range req.Paths {
+		abs, err := safePath(root, rel)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		absInputs = append(absInputs, abs)
+	}
+
+	switch req.Format {
+	case "zip":
+		if req.Password != "" {
+			err = compress7zFormat(absInputs, destAbs, "zip", req.Password)
+		} else {
+			err = compressZip(absInputs, destAbs)
+		}
+	case "tar":
+		err = compressTar(absInputs, destAbs, false)
+	case "tar.gz":
+		err = compressTar(absInputs, destAbs, true)
+	case "7z":
+		err = compress7zFormat(absInputs, destAbs, "7z", req.Password)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format: " + req.Format})
+		return
+	}
+
+	if err != nil {
+		os.Remove(destAbs)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "compressed"})
+}
+
+// --- Compress helpers ---
+
+// compressEntry holds the resolved info for a single entry to be archived.
+type compressEntry struct {
+	absPath string
+	name    string // path within the archive (slash-separated; dirs end with /)
+	info    os.FileInfo
+}
+
+// walkInputs iterates over each input path and calls fn for every file and
+// directory entry (including descendants of directories).
+func walkInputs(inputs []string, fn func(compressEntry) error) error {
+	for _, absPath := range inputs {
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if err := fn(compressEntry{absPath, info.Name(), info}); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := filepath.Walk(absPath, func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(filepath.Dir(absPath), path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if fi.IsDir() {
+				rel += "/"
+			}
+			return fn(compressEntry{path, rel, fi})
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// --- Compress: ZIP (pure Go) ---
+
+func compressZip(inputs []string, dest string) error {
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	defer zw.Close()
+
+	return walkInputs(inputs, func(e compressEntry) error {
+		header, err := zip.FileInfoHeader(e.info)
+		if err != nil {
+			return err
+		}
+		header.Name = e.name
+		if e.info.IsDir() {
+			_, err = zw.CreateHeader(header)
+			return err
+		}
+		header.Method = zip.Deflate
+		w, err := zw.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+		src, err := os.Open(e.absPath)
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+		_, err = io.Copy(w, src)
+		return err
+	})
+}
+
+// --- Compress: TAR / TAR.GZ (pure Go) ---
+
+func compressTar(inputs []string, dest string, gzipped bool) error {
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var tw *tar.Writer
+	if gzipped {
+		gz := gzip.NewWriter(f)
+		defer gz.Close()
+		tw = tar.NewWriter(gz)
+	} else {
+		tw = tar.NewWriter(f)
+	}
+	defer tw.Close()
+
+	return walkInputs(inputs, func(e compressEntry) error {
+		header, err := tar.FileInfoHeader(e.info, "")
+		if err != nil {
+			return err
+		}
+		header.Name = e.name
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		if e.info.IsDir() {
+			return nil
+		}
+		src, err := os.Open(e.absPath)
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+		_, err = io.Copy(tw, src)
+		return err
+	})
+}
+
+// --- Compress: 7z / ZIP-with-password (CLI) ---
+
+func compress7zFormat(inputs []string, dest string, format string, password string) error {
+	args := []string{"a", "-t" + format}
+	if password != "" {
+		args = append(args, "-p"+password)
+		if format == "7z" {
+			args = append(args, "-mhe=on") // encrypt headers
+		}
+	}
+	args = append(args, dest)
+	args = append(args, inputs...)
+
+	var stderr bytes.Buffer
+	cmd := exec.Command("7z", args...)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("7z failed: %s", strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
 type ArchiveHandler struct{}
 
 func NewArchiveHandler() *ArchiveHandler {

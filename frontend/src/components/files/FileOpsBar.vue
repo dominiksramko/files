@@ -11,6 +11,7 @@ const emit = defineEmits<{
   copy: []
   move: []
   download: []
+  compress: []
   rename: []
   delete: []
   details: []
@@ -47,6 +48,9 @@ const emit = defineEmits<{
       @click="emit('download')"
     >
       <AppIcon name="download" class="size-4" />
+    </button>
+    <button class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0" title="Compress" @click="emit('compress')">
+      <AppIcon name="archive" class="size-4" />
     </button>
     <button v-if="selectedCount === 1" class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0" title="Rename" @click="emit('rename')">
       <AppIcon name="pencil" class="size-4" />

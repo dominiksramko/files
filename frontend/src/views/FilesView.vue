@@ -17,6 +17,7 @@ import ArchiveContents from '@/components/archive/ArchiveContents.vue'
 import ContextMenu from '@/components/ui/ContextMenu.vue'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 
 const filesStore = useFilesStore()
 const route = useRoute()
@@ -649,6 +650,63 @@ function cancelRename() {
   renameDialog.value = false
 }
 
+// ── Compress ──────────────────────────────────────────────────────────────
+const compressDialog = ref(false)
+const compressPaths = ref<string[]>([])
+const compressName = ref('')
+const compressFormat = ref('zip')
+const compressPassword = ref('')
+const compressing = ref(false)
+
+const compressFormatOptions = [
+  { label: 'ZIP (.zip)', value: 'zip' },
+  { label: 'TAR (.tar)', value: 'tar' },
+  { label: 'TAR.GZ (.tar.gz)', value: 'tar.gz' },
+  { label: '7-Zip (.7z)', value: '7z' },
+]
+
+const compressExtMap: Record<string, string> = {
+  zip: '.zip',
+  tar: '.tar',
+  'tar.gz': '.tar.gz',
+  '7z': '.7z',
+}
+
+function openCompressDialog(paths: string[]) {
+  compressPaths.value = paths
+  const folderName = filesStore.currentPath
+    ? filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'archive'
+    : 'archive'
+  compressFormat.value = 'zip'
+  compressName.value = folderName + '.zip'
+  compressPassword.value = ''
+  compressDialog.value = true
+}
+
+watch(compressFormat, (fmt) => {
+  const ext = compressExtMap[fmt] ?? '.zip'
+  const stripped = compressName.value.replace(/\.(zip|tar\.gz|tar|7z)$/i, '')
+  compressName.value = stripped + ext
+})
+
+async function confirmCompress() {
+  if (!compressName.value.trim() || compressing.value) return
+  compressing.value = true
+  try {
+    const name = compressName.value.trim()
+    const dest = filesStore.currentPath ? filesStore.currentPath + '/' + name : name
+    const pass = compressPassword.value || undefined
+    await fileops.compress(compressPaths.value, dest, compressFormat.value, pass)
+    compressDialog.value = false
+    filesStore.refresh()
+    showToast('Archive created', 'success')
+  } catch (err) {
+    showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
+  } finally {
+    compressing.value = false
+  }
+}
+
 // ── Context menu ──────────────────────────────────────────────────────────
 const contextMenuState = ref<{ x: number; y: number; entry: FileEntry; paths: string[] } | null>(null)
 
@@ -767,6 +825,7 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
     { label: 'Copy',     icon: 'copy',       action: () => { clipboard.value = { mode: 'copy', paths }; close() } },
     { label: 'Move',     icon: 'arrowRight', action: () => { clipboard.value = { mode: 'move', paths }; selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p)); close() } },
     { label: 'Download', icon: 'download',   action: () => { close(); downloadPaths(paths) } },
+    { label: 'Compress', icon: 'archive',    action: () => { close(); openCompressDialog(paths) } },
     { separator: true },
   ]
   if (single) {
@@ -856,6 +915,7 @@ onMounted(async () => {
             @copy="onCopy"
             @move="onMove"
             @download="onDownload"
+            @compress="openCompressDialog([...selectedPaths])"
             @rename="onRename"
             @delete="openDeleteDialog([...selectedPaths])"
             @details="openDetails(entriesForPaths([...selectedPaths]))"
@@ -1219,6 +1279,58 @@ onMounted(async () => {
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="onMoveKeepAll"
             >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Compress dialog -->
+    <Transition name="fade">
+      <div
+        v-if="compressDialog"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        @click.self="compressDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Compress</h3>
+
+          <label class="block text-xs text-zinc-400 mb-1">Archive name</label>
+          <input
+            v-model="compressName"
+            type="text"
+            placeholder="archive.zip"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors mb-3"
+            @keydown.enter="confirmCompress"
+            @keydown.escape="compressDialog = false"
+          />
+
+          <label class="block text-xs text-zinc-400 mb-1">Format</label>
+          <AppSelect v-model="compressFormat" :options="compressFormatOptions" class="mb-3" />
+
+          <label class="block text-xs text-zinc-400 mb-1">
+            Password
+            <span class="text-zinc-600">(optional{{ compressFormat === 'tar' || compressFormat === 'tar.gz' ? ', not supported for TAR' : '' }})</span>
+          </label>
+          <input
+            v-model="compressPassword"
+            type="password"
+            placeholder="No password"
+            :disabled="compressFormat === 'tar' || compressFormat === 'tar.gz'"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-40"
+            @keydown.enter="confirmCompress"
+            @keydown.escape="compressDialog = false"
+          />
+
+          <div class="flex gap-2 mt-3 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="compressDialog = false"
+            >Cancel</button>
+            <button
+              :disabled="compressing || !compressName.trim()"
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
+              @click="confirmCompress"
+            >{{ compressing ? 'Creating…' : 'Create' }}</button>
           </div>
         </div>
       </div>

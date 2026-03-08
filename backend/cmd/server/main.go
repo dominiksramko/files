@@ -89,6 +89,7 @@ func main() {
 			authed.GET("/files/hls/segment", hlsH.Segment)
 			authed.GET("/files/archive", archiveH.Contents)
 			authed.POST("/files/extract", archiveH.Extract)
+			authed.POST("/files/compress", archiveH.Compress)
 			authed.DELETE("/files", opsH.Delete)
 			authed.POST("/files/copy", opsH.Copy)
 			authed.POST("/files/move", opsH.Move)
