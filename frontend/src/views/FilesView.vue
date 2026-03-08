@@ -332,9 +332,17 @@ async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, con
   }
 }
 
-// ── Download selection ─────────────────────────────────────────────────────
-const downloading = ref(false)
+// ── Background jobs (upload progress, zip download) ────────────────────────
+interface UploadJob { kind: 'upload'; id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
+interface ZipJob    { kind: 'zip';    id: number }
+type BgJob = UploadJob | ZipJob
 
+const bgJobs = ref<BgJob[]>([])
+let nextJobId = 0
+
+const downloading = computed(() => bgJobs.value.some(j => j.kind === 'zip'))
+
+// ── Download selection ─────────────────────────────────────────────────────
 async function downloadPaths(paths: string[]) {
   if (paths.length === 1) {
     const pool = [...visibleEntries.value, ...searchResults.value]
@@ -347,7 +355,8 @@ async function downloadPaths(paths: string[]) {
       return
     }
   }
-  downloading.value = true
+  const id = nextJobId++
+  bgJobs.value.push({ kind: 'zip', id })
   try {
     const blob = await fileops.downloadZip(paths)
     const url = URL.createObjectURL(blob)
@@ -363,7 +372,7 @@ async function downloadPaths(paths: string[]) {
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
-    downloading.value = false
+    bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
 }
 
@@ -411,10 +420,6 @@ function cancelDelete() {
 
 // ── Upload ─────────────────────────────────────────────────────────────────
 const uploadInput = ref<HTMLInputElement | null>(null)
-
-interface UploadJob { id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
-const uploadJobs = ref<UploadJob[]>([])
-let nextUploadId = 0
 
 function formatEta(job: UploadJob): string {
   if (job.loaded === 0 || job.total === 0) return ''
@@ -494,12 +499,12 @@ async function uploadFiles(files: File[]) {
 
 async function performUpload(files: File[]) {
   const totalSize = files.reduce((s, f) => s + f.size, 0)
-  const id = nextUploadId++
+  const id = nextJobId++
   const { promise, abort } = fileops.upload(filesStore.currentPath, files, (loaded, total) => {
-    const job = uploadJobs.value.find(j => j.id === id)
+    const job = bgJobs.value.find(j => j.id === id) as UploadJob | undefined
     if (job) { job.pct = Math.round((loaded / total) * 100); job.loaded = loaded; job.total = total }
   })
-  uploadJobs.value.push({ id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now(), abort })
+  bgJobs.value.push({ kind: 'upload', id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now(), abort })
   try {
     const res = await promise
     showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
@@ -510,7 +515,7 @@ async function performUpload(files: File[]) {
   } catch (err) {
     if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
   } finally {
-    uploadJobs.value = uploadJobs.value.filter(j => j.id !== id)
+    bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
 }
 
@@ -1025,7 +1030,7 @@ onMounted(async () => {
           </button>
 
           <!-- Upload -->
-          <button :class="['p-1.5 rounded transition-colors', uploadJobs.length > 0 ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
+          <button :class="['p-1.5 rounded transition-colors', bgJobs.some(j => j.kind === 'upload') ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
             <AppIcon name="upload" class="size-4" />
           </button>
           <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
@@ -1437,50 +1442,48 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- Zip download progress card -->
+    <!-- Background jobs card (upload progress + zip download) -->
     <Transition name="slide-up">
       <div
-        v-if="downloading"
-        class="fixed bottom-6 right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72"
+        v-if="bgJobs.length > 0"
+        class="fixed bottom-6 right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72 space-y-3"
       >
-        <div class="flex items-center gap-3">
-          <AppIcon name="archive" class="size-4 text-blue-400 shrink-0 animate-pulse" />
-          <span class="text-sm font-medium text-zinc-100">Zipping files…</span>
-        </div>
-      </div>
-    </Transition>
+        <template v-for="(job, i) in bgJobs" :key="job.id">
+          <div v-if="i > 0" class="border-t border-zinc-800" />
 
-    <!-- Upload progress card -->
-    <Transition name="slide-up">
-      <div
-        v-if="uploadJobs.length > 0"
-        :class="['fixed right-6 z-[9998] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl p-4 w-72 space-y-3 transition-[bottom] duration-300', downloading ? 'bottom-24' : 'bottom-6']"
-      >
-        <div v-for="job in uploadJobs" :key="job.id">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium text-zinc-100">
-              Uploading {{ job.count }} file{{ job.count !== 1 ? 's' : '' }}…
-            </span>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-zinc-400">{{ job.pct }}%</span>
-              <button
-                class="text-zinc-500 hover:text-zinc-200 transition-colors"
-                title="Cancel upload"
-                @click="job.abort()"
-              ><AppIcon name="x" class="size-3.5" /></button>
+          <!-- Zip download -->
+          <div v-if="job.kind === 'zip'" class="flex items-center gap-3">
+            <AppIcon name="archive" class="size-4 text-blue-400 shrink-0 animate-pulse" />
+            <span class="text-sm font-medium text-zinc-100">Zipping files…</span>
+          </div>
+
+          <!-- Upload -->
+          <div v-else>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-medium text-zinc-100">
+                Uploading {{ job.count }} file{{ job.count !== 1 ? 's' : '' }}…
+              </span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-zinc-400">{{ job.pct }}%</span>
+                <button
+                  class="text-zinc-500 hover:text-zinc-200 transition-colors"
+                  title="Cancel upload"
+                  @click="job.abort()"
+                ><AppIcon name="x" class="size-3.5" /></button>
+              </div>
+            </div>
+            <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-blue-500 rounded-full transition-[width] duration-200"
+                :style="{ width: `${job.pct}%` }"
+              />
+            </div>
+            <div v-if="job.total > 0" class="mt-1.5 flex items-center justify-between text-xs text-zinc-500">
+              <span>{{ formatEta(job) }}</span>
+              <span>{{ formatSize(job.loaded) }} / {{ formatSize(job.total) }}</span>
             </div>
           </div>
-          <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-            <div
-              class="h-full bg-blue-500 rounded-full transition-[width] duration-200"
-              :style="{ width: `${job.pct}%` }"
-            />
-          </div>
-          <div v-if="job.total > 0" class="mt-1.5 flex items-center justify-between text-xs text-zinc-500">
-            <span>{{ formatEta(job) }}</span>
-            <span>{{ formatSize(job.loaded) }} / {{ formatSize(job.total) }}</span>
-          </div>
-        </div>
+        </template>
       </div>
     </Transition>
 
