@@ -10,7 +10,7 @@ const { toast } = useToast()
       <div
         v-if="toast"
         :class="[
-          'fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium pointer-events-none whitespace-nowrap',
+          'fixed bottom-6 right-6 z-[9999] px-4 py-2.5 rounded-lg shadow-xl text-sm font-medium pointer-events-none whitespace-nowrap',
           toast.kind === 'success' ? 'bg-green-800 text-green-100'
           : toast.kind === 'error'   ? 'bg-red-800 text-red-100'
           :                            'bg-zinc-700 text-zinc-100',
