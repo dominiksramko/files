@@ -63,7 +63,25 @@ func (h *FilesHandler) List(c *gin.Context) {
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "directory not found"})
+			// Walk up the path until we find an existing directory.
+			fallback := rel
+			for {
+				parent := filepath.Dir(fallback)
+				if parent == "." || parent == fallback {
+					fallback = ""
+					break
+				}
+				fallback = parent
+				absParent, err2 := safePath(root, fallback)
+				if err2 != nil {
+					fallback = ""
+					break
+				}
+				if _, err2 := os.Stat(absParent); err2 == nil {
+					break
+				}
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "Directory not found", "fallback_path": fallback})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}

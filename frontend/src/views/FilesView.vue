@@ -198,12 +198,12 @@ function routeQuery() {
   return q
 }
 
-function navigate(path: string) {
+async function navigate(path: string) {
   thumbConnect(path)
-  filesStore.navigate(path)
-  fetchFolderPref(path)
+  const actualPath = await filesStore.navigate(path)
+  fetchFolderPref(actualPath)
   selectedPaths.value = []
-  router.push({ query: path ? { path } : {} })
+  router.push({ query: actualPath ? { path: actualPath } : {} })
 }
 
 watch(previewEntry, (entry) => {
@@ -214,13 +214,17 @@ watch(previewEntry, (entry) => {
 
 watch(
   () => route.query,
-  (q) => {
+  async (q) => {
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) {
       thumbConnect(p)
-      filesStore.navigate(p)
-      fetchFolderPref(p)
+      const actualPath = await filesStore.navigate(p)
+      fetchFolderPref(actualPath)
       selectedPaths.value = []
+      if (actualPath !== p) {
+        router.replace({ query: actualPath ? { path: actualPath } : {} })
+        return
+      }
     }
     const qParam = (q.q as string) ?? ''
     if (searchQuery.value !== qParam) searchQuery.value = qParam
@@ -780,11 +784,14 @@ const { show: showToast } = useToast()
 // ── Computed helpers ──────────────────────────────────────────────────────
 const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard.value !== null)
 
-onMounted(() => {
+onMounted(async () => {
   const initialPath = (route.query.path as string) || ''
   thumbConnect(initialPath)
-  filesStore.navigate(initialPath)
-  fetchFolderPref(initialPath)
+  const actualPath = await filesStore.navigate(initialPath)
+  fetchFolderPref(actualPath)
+  if (actualPath !== initialPath) {
+    router.replace({ query: actualPath ? { path: actualPath } : {} })
+  }
   if (route.query.q) searchQuery.value = route.query.q as string
 })
 </script>

@@ -10,6 +10,14 @@ export class ConflictError extends Error {
   }
 }
 
+export class NotFoundError extends Error {
+  fallbackPath: string
+  constructor(message: string, fallbackPath: string) {
+    super(message)
+    this.fallbackPath = fallbackPath
+  }
+}
+
 function token(): string {
   return localStorage.getItem('token') ?? ''
 }
@@ -40,6 +48,9 @@ async function request<T>(
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }))
+    if (res.status === 404 && 'fallback_path' in err) {
+      throw new NotFoundError(err.error ?? res.statusText, err.fallback_path as string)
+    }
     throw new Error(err.error ?? res.statusText)
   }
 
