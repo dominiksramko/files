@@ -5,6 +5,7 @@ defineProps<{
   selectedCount: number
   clipboard: { mode: 'copy' | 'move'; paths: string[] } | null
   downloading: boolean
+  canExtract: boolean
 }>()
 
 const emit = defineEmits<{
@@ -12,6 +13,7 @@ const emit = defineEmits<{
   move: []
   download: []
   compress: []
+  extract: []
   rename: []
   delete: []
   details: []
@@ -51,6 +53,9 @@ const emit = defineEmits<{
     </button>
     <button class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0" title="Compress" @click="emit('compress')">
       <AppIcon name="archive" class="size-4" />
+    </button>
+    <button v-if="canExtract" class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0" title="Extract here" @click="emit('extract')">
+      <AppIcon name="archiveOut" class="size-4" />
     </button>
     <button v-if="selectedCount === 1" class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors shrink-0" title="Rename" @click="emit('rename')">
       <AppIcon name="pencil" class="size-4" />

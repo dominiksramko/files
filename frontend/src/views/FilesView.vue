@@ -711,6 +711,61 @@ async function confirmCompress() {
   }
 }
 
+// ── Extract ───────────────────────────────────────────────────────────────
+const archiveExtensions = ['.zip', '.tar', '.tar.gz', '.tgz', '.tar.bz2', '.tar.xz', '.tar.zst', '.rar', '.7z']
+
+function isArchiveFile(entry: FileEntry): boolean {
+  if (entry.is_dir) return false
+  const lower = entry.name.toLowerCase()
+  return archiveExtensions.some((ext) => lower.endsWith(ext))
+}
+
+const singleSelectedArchive = computed(() => {
+  if (selectedPaths.value.length !== 1) return null
+  const entry = visibleEntries.value.find((e) => e.path === selectedPaths.value[0])
+  return entry && isArchiveFile(entry) ? entry : null
+})
+
+const extractPasswordDialog = ref(false)
+const extractPasswordInput = ref('')
+const extractPendingPath = ref('')
+const extracting = ref(false)
+const extractError = ref('')
+
+async function openExtract(path: string) {
+  try {
+    await filesApi.extract(path)
+    filesStore.refresh()
+    showToast('Extracted successfully', 'success')
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Extraction failed'
+    if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
+      extractPendingPath.value = path
+      extractPasswordInput.value = ''
+      extractError.value = ''
+      extractPasswordDialog.value = true
+    } else {
+      showToast(msg, 'error')
+    }
+  }
+}
+
+async function confirmExtract() {
+  if (!extractPasswordInput.value || extracting.value) return
+  extracting.value = true
+  extractError.value = ''
+  try {
+    await filesApi.extract(extractPendingPath.value, undefined, extractPasswordInput.value)
+    extractPasswordDialog.value = false
+    filesStore.refresh()
+    showToast('Extracted successfully', 'success')
+  } catch (e) {
+    extractError.value = e instanceof Error ? e.message : 'Extraction failed'
+  } finally {
+    extracting.value = false
+  }
+}
+
 // ── Context menu ──────────────────────────────────────────────────────────
 const contextMenuState = ref<{ x: number; y: number; entry: FileEntry; paths: string[] } | null>(null)
 
@@ -832,6 +887,9 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
     { label: 'Compress', icon: 'archive',    action: () => { close(); openCompressDialog(paths) } },
     { separator: true },
   ]
+  if (single && isArchiveFile(entry)) {
+    items.push({ label: 'Extract here', icon: 'archiveOut', action: () => { close(); openExtract(entry.path) } })
+  }
   if (single) {
     items.push({ label: 'Rename', icon: 'pencil', action: () => { close(); startRename(entry) } })
   }
@@ -916,10 +974,12 @@ onMounted(async () => {
             :selected-count="selectedPaths.length"
             :clipboard="clipboard"
             :downloading="downloading"
+            :can-extract="!!singleSelectedArchive"
             @copy="onCopy"
             @move="onMove"
             @download="onDownload"
             @compress="openCompressDialog([...selectedPaths])"
+            @extract="openExtract(singleSelectedArchive!.path)"
             @rename="onRename"
             @delete="openDeleteDialog([...selectedPaths])"
             @details="openDetails(entriesForPaths([...selectedPaths]))"
@@ -1340,6 +1400,40 @@ onMounted(async () => {
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
               @click="confirmCompress"
             >{{ compressing ? 'Creating…' : 'Create' }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Extract password dialog -->
+    <Transition name="fade">
+      <div
+        v-if="extractPasswordDialog"
+        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        @click.self="extractPasswordDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
+          <p class="text-xs text-zinc-400 mb-3">This archive is password protected.</p>
+          <input
+            v-model="extractPasswordInput"
+            type="password"
+            placeholder="Enter password"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+            @keydown.enter="confirmExtract"
+            @keydown.escape="extractPasswordDialog = false"
+          />
+          <p v-if="extractError" class="text-xs text-red-400 mt-2">{{ extractError }}</p>
+          <div class="flex gap-2 mt-3 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="extractPasswordDialog = false"
+            >Cancel</button>
+            <button
+              :disabled="extracting || !extractPasswordInput"
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
+              @click="confirmExtract"
+            >{{ extracting ? 'Extracting…' : 'Extract' }}</button>
           </div>
         </div>
       </div>
