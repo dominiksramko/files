@@ -34,7 +34,8 @@ RUN apk add --no-cache \
     ffmpeg \
     rsvg-convert \
     imagemagick \
-    imagemagick-heic
+    imagemagick-heic \
+    poppler-utils
 
 WORKDIR /app
 COPY --from=backend-builder /backend/server .

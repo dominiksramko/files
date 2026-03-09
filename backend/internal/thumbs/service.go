@@ -21,7 +21,7 @@ func IsThumbnailable(mime string) bool {
 	switch mime {
 	case "image/jpeg", "image/png", "image/gif",
 		"image/webp", "image/bmp", "image/tiff",
-		"image/svg+xml":
+		"image/svg+xml", "application/pdf":
 		return true
 	}
 	return isMagickThumbable(mime)
@@ -183,6 +183,8 @@ func (s *Service) process(t task) {
 		err = generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
 	case t.mime == "image/svg+xml":
 		err = generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
+	case t.mime == "application/pdf":
+		err = generatePDFThumb(t.absPath, thumbPath, ThumbMaxDim)
 	case isMagickThumbable(t.mime):
 		err = generateMagickThumb(t.absPath, thumbPath, t.mime, ThumbMaxDim)
 	default:

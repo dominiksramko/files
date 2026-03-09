@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, setMoveDragImage } from '@/utils/formatters'
+import type { IconName } from '@/utils/icons'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -181,6 +182,17 @@ const catIcon: Record<string, string> = {
   text: 'text-zinc-300',
   other: 'text-zinc-500',
 }
+const catIconName: Record<string, IconName> = {
+  folder: 'folder',
+  image: 'image',
+  video: 'video',
+  audio: 'music',
+  pdf: 'pdf',
+  office: 'document',
+  archive: 'archive',
+  text: 'document',
+  other: 'document',
+}
 </script>
 
 <template>
@@ -241,60 +253,14 @@ const catIcon: Record<string, string> = {
           :style="{ height: item.thumbH + 'px' }"
           class="overflow-hidden relative"
         >
-          <!-- Image: show thumbnail when ready, placeholder icon while generating -->
+          <!-- Thumbnail -->
           <img
-            v-if="!item.entry.is_dir && item.entry.mime.startsWith('image/') && item.entry.has_thumb && item.entry.thumb_hash"
+            v-if="item.entry.has_thumb && item.entry.thumb_hash"
             :src="filesApi.thumbUrl(item.entry.path, item.entry.thumb_hash)"
             :alt="item.entry.name"
             draggable="false"
             class="w-full h-full object-cover"
           />
-          <div
-            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('image/')"
-            class="w-full h-full flex items-center justify-center bg-green-950/60"
-          >
-            <AppIcon name="image" class="size-12 text-green-900" :stroke-width="1.5" />
-          </div>
-
-          <!-- Video: thumbnail when ready, icon placeholder while generating -->
-          <img
-            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/') && item.entry.has_thumb && item.entry.thumb_hash"
-            :src="filesApi.thumbUrl(item.entry.path, item.entry.thumb_hash)"
-            :alt="item.entry.name"
-            draggable="false"
-            class="w-full h-full object-cover"
-          />
-          <div
-            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('video/')"
-            class="w-full h-full flex items-center justify-center bg-purple-950/60"
-          >
-            <AppIcon name="video" class="size-12 text-purple-900" :stroke-width="1.5" />
-          </div>
-
-          <!-- Audio -->
-          <div
-            v-else-if="!item.entry.is_dir && item.entry.mime.startsWith('audio/')"
-            class="w-full h-full flex items-center justify-center bg-pink-950/60"
-          >
-            <AppIcon name="music" class="size-12 text-pink-400" :stroke-width="1.5" />
-          </div>
-
-          <!-- PDF -->
-          <div
-            v-else-if="!item.entry.is_dir && item.entry.mime === 'application/pdf'"
-            class="w-full h-full flex items-center justify-center bg-red-950/60"
-          >
-            <AppIcon name="pdf" class="size-12 text-red-400" :stroke-width="1.5" />
-          </div>
-
-          <!-- Archive -->
-          <div
-            v-else-if="!item.entry.is_dir && fileCategory(item.entry.mime, item.entry.name) === 'archive'"
-            class="w-full h-full flex items-center justify-center bg-orange-950/60"
-          >
-            <AppIcon name="archive" class="size-12 text-orange-400" :stroke-width="1.5" />
-          </div>
-
           <!-- Folder -->
           <div
             v-else-if="item.entry.is_dir"
@@ -302,14 +268,13 @@ const catIcon: Record<string, string> = {
           >
             <AppIcon name="folder" class="size-14 text-yellow-400" />
           </div>
-
-          <!-- Generic fallback -->
+          <!-- File placeholder icon -->
           <div
             v-else
             :class="['w-full h-full flex items-center justify-center', catBg[fileCategory(item.entry.mime, item.entry.name)] ?? catBg['other']]"
           >
             <AppIcon
-              name="document"
+              :name="catIconName[fileCategory(item.entry.mime, item.entry.name)] ?? 'document'"
               :class="['size-12', catIcon[fileCategory(item.entry.mime, item.entry.name)] ?? catIcon['other']]"
               :stroke-width="1.5"
             />

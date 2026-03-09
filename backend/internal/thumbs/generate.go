@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -202,6 +203,58 @@ func LargestICOFrame(srcPath string) (idx, count int) {
 		}
 	}
 	return idx, len(lines)
+}
+
+// generatePDFThumb rasterises the first page of the PDF at srcPath via
+// pdftoppm, then crops and encodes to a JPEG thumbnail at dstPath.
+func generatePDFThumb(srcPath, dstPath string, size int) error {
+	dir, err := os.MkdirTemp("", "pdf-thumb-*")
+	if err != nil {
+		return fmt.Errorf("temp dir: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	rasterSize := strconv.Itoa(size * 2)
+	// -r sets DPI; 150 is enough for a 320px thumbnail from a typical A4 page.
+	// -f 1 -l 1 renders only the first page. Output files are <prefix>-1.png.
+	if out, err := exec.Command(
+		"pdftoppm", "-r", "150", "-f", "1", "-l", "1", "-png",
+		"-scale-to", rasterSize,
+		srcPath, filepath.Join(dir, "p"),
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf("pdftoppm: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		return fmt.Errorf("pdftoppm produced no output")
+	}
+	pngPath := filepath.Join(dir, entries[0].Name())
+
+	f, err := os.Open(pngPath)
+	if err != nil {
+		return fmt.Errorf("open rasterized png: %w", err)
+	}
+	defer f.Close()
+
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return fmt.Errorf("decode png: %w", err)
+	}
+
+	thumb := squareCrop(src, size)
+
+	out, err := os.Create(dstPath)
+	if err != nil {
+		return fmt.Errorf("create dst: %w", err)
+	}
+	defer out.Close()
+
+	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
+		os.Remove(dstPath)
+		return fmt.Errorf("encode: %w", err)
+	}
+	return nil
 }
 
 // generateSVGThumb rasterises the SVG at srcPath via rsvg-convert, composites
