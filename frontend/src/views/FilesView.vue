@@ -720,6 +720,11 @@ watch(compressFormat, (fmt) => {
   compressName.value = stripped + ext
 })
 
+// ── Compress conflict ──────────────────────────────────────────────────────
+const compressConflictDialog = ref(false)
+interface PendingCompress { paths: string[]; dest: string; format: string; password?: string; protect: boolean }
+const pendingCompress = ref<PendingCompress | null>(null)
+
 function confirmCompress() {
   const name = compressName.value.trim()
   if (!name) return
@@ -727,20 +732,40 @@ function confirmCompress() {
   const pass = compressPassword.value || undefined
   const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
   const paths = [...compressPaths.value]
-
   compressDialog.value = false
+  runCompress(paths, dest, compressFormat.value, pass, protect, 'error')
+}
 
+function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean, conflictMode: 'error' | 'replace' | 'rename') {
+  const name = dest.split('/').pop() ?? dest
   const id = nextJobId++
   startBgJobTracking(id)
   bgJobs.value.push({ kind: 'compress', id, name })
-  fileops.compress(paths, dest, compressFormat.value, pass, protect).then(() => {
+  fileops.compress(paths, dest, format, password, protect, conflictMode).then(() => {
     if (canClearSelection(id)) selectedPaths.value = []
     showToast('Archive created', 'success')
   }).catch((err) => {
-    showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
+    if (err instanceof ConflictError) {
+      pendingCompress.value = { paths, dest, format, password, protect }
+      compressConflictDialog.value = true
+    } else {
+      showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
+    }
   }).finally(() => {
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   })
+}
+
+function onCompressReplace() {
+  compressConflictDialog.value = false
+  const p = pendingCompress.value!
+  runCompress(p.paths, p.dest, p.format, p.password, p.protect, 'replace')
+}
+
+function onCompressKeepAll() {
+  compressConflictDialog.value = false
+  const p = pendingCompress.value!
+  runCompress(p.paths, p.dest, p.format, p.password, p.protect, 'rename')
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────
@@ -1365,6 +1390,36 @@ onMounted(async () => {
             <button
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="onMoveKeepAll"
+            >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Compress conflict dialog -->
+    <Transition name="fade">
+      <div
+        v-if="compressConflictDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="compressConflictDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Archive already exists</h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            <span class="text-zinc-200">{{ pendingCompress?.dest.split('/').pop() }}</span> already exists in this folder.
+          </p>
+          <div class="flex gap-2 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="compressConflictDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+              @click="onCompressReplace"
+            >Replace</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="onCompressKeepAll"
             >Keep all</button>
           </div>
         </div>

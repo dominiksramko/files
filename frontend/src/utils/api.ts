@@ -193,8 +193,8 @@ export const fileops = {
   rename: (path: string, name: string) =>
     request<{ message: string }>('POST', '/files/rename', { path, name }),
 
-  compress: (paths: string[], dest: string, format: string, password?: string, protectFilenames?: boolean) =>
-    request<{ message: string }>('POST', '/files/compress', { paths, dest, format, password, protect_filenames: protectFilenames }),
+  compress: (paths: string[], dest: string, format: string, password?: string, protectFilenames?: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+    request<{ message: string }>('POST', '/files/compress', { paths, dest, format, password, protect_filenames: protectFilenames, conflict_mode: conflictMode }),
 
   upload: (
     path: string,

@@ -30,6 +30,7 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		Format           string   `json:"format" binding:"required"`
 		Password         string   `json:"password"`
 		ProtectFilenames bool     `json:"protect_filenames"`
+		ConflictMode     string   `json:"conflict_mode"` // "error" (default) | "replace" | "rename"
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -39,6 +40,9 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths required"})
 		return
 	}
+	if req.ConflictMode == "" {
+		req.ConflictMode = "error"
+	}
 
 	destAbs, err := safePath(root, req.Dest)
 	if err != nil {
@@ -46,9 +50,22 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		return
 	}
 
-	if _, err := os.Stat(destAbs); err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "destination already exists"})
-		return
+	if _, statErr := os.Stat(destAbs); statErr == nil {
+		switch req.ConflictMode {
+		case "error":
+			archiveName := filepath.Base(destAbs)
+			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{archiveName}})
+			return
+		case "replace":
+			if err := os.Remove(destAbs); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove existing file: " + err.Error()})
+				return
+			}
+		case "rename":
+			dir := filepath.Dir(destAbs)
+			existing, claimed := buildExistingMap(dir)
+			destAbs = filepath.Join(dir, findFreeName(filepath.Base(destAbs), existing, claimed))
+		}
 	}
 
 	var absInputs []string
@@ -85,7 +102,7 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "compressed"})
+	c.JSON(http.StatusOK, gin.H{"message": "compressed", "dest": filepath.Base(destAbs)})
 }
 
 // --- Compress helpers ---

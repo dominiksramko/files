@@ -88,6 +88,14 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
   - Destructive: `px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors`
   - Secondary/neutral: `px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors`
 
+## File Conflict Resolution Convention
+When a file operation (move, copy, upload, extract) would overwrite an existing file, the backend detects the conflict and returns a conflict response instead of silently overwriting. The frontend then presents the user with a resolution modal offering:
+- **Replace** — overwrite the existing file(s)
+- **Keep all** — rename the incoming file(s) by appending a suffix (e.g. `file (1).txt`, `file (2).txt`) until no conflict remains
+- **Cancel** — abort the operation entirely
+
+The resolution choice is sent back to the backend as a parameter on the retry request.
+
 ## External Tool Dependencies (must be in Dockerfile runtime stage)
 Any new CLI tool used by the backend must be added to the `apk add` line in `backend/Dockerfile` runtime stage (Alpine). Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
