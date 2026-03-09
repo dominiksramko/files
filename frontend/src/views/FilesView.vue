@@ -781,12 +781,27 @@ const extractPendingPath = ref('')
 const extracting = ref(false)
 const extractError = ref('')
 
+const extractConflictDialog = ref(false)
+const extractConflicts = ref<string[]>([])
+interface PendingExtract { path: string; password?: string }
+const pendingExtract = ref<PendingExtract | null>(null)
+
 async function openExtract(path: string) {
+  await runExtract(path, undefined, 'error')
+}
+
+async function runExtract(path: string, password: string | undefined, conflictMode: 'error' | 'replace' | 'rename') {
   try {
-    await filesApi.extract(path)
+    await filesApi.extract(path, undefined, password, conflictMode)
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
+    if (e instanceof ConflictError) {
+      pendingExtract.value = { path, password }
+      extractConflicts.value = e.conflicts
+      extractConflictDialog.value = true
+      return
+    }
     const msg = e instanceof Error ? e.message : 'Extraction failed'
     if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
       extractPendingPath.value = path
@@ -799,6 +814,18 @@ async function openExtract(path: string) {
   }
 }
 
+function onExtractReplace() {
+  extractConflictDialog.value = false
+  const p = pendingExtract.value!
+  runExtract(p.path, p.password, 'replace')
+}
+
+function onExtractKeepAll() {
+  extractConflictDialog.value = false
+  const p = pendingExtract.value!
+  runExtract(p.path, p.password, 'rename')
+}
+
 async function confirmExtract() {
   if (!extractPasswordInput.value || extracting.value) return
   extracting.value = true
@@ -809,7 +836,14 @@ async function confirmExtract() {
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
-    extractError.value = e instanceof Error ? e.message : 'Extraction failed'
+    if (e instanceof ConflictError) {
+      extractPasswordDialog.value = false
+      pendingExtract.value = { path: extractPendingPath.value, password: extractPasswordInput.value }
+      extractConflicts.value = e.conflicts
+      extractConflictDialog.value = true
+    } else {
+      extractError.value = e instanceof Error ? e.message : 'Extraction failed'
+    }
   } finally {
     extracting.value = false
   }
@@ -1390,6 +1424,45 @@ onMounted(async () => {
             <button
               class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
               @click="onMoveKeepAll"
+            >Keep all</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Extract conflict dialog -->
+    <Transition name="fade">
+      <div
+        v-if="extractConflictDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="extractConflictDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Extraction conflicts</h3>
+          <p class="text-xs text-zinc-400 mb-3">
+            {{ pendingExtract && (extractConflicts?.length ?? 0) > 0
+              ? `${extractConflicts!.length} file${extractConflicts!.length !== 1 ? 's' : ''} already exist in the destination.`
+              : 'Some files already exist in the destination.' }}
+          </p>
+          <ul v-if="extractConflicts?.length" class="mb-4 space-y-1 max-h-36 overflow-y-auto">
+            <li
+              v-for="name in extractConflicts"
+              :key="name"
+              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
+            >{{ name }}</li>
+          </ul>
+          <div class="flex gap-2 justify-end">
+            <button
+              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
+              @click="extractConflictDialog = false"
+            >Cancel</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+              @click="onExtractReplace"
+            >Replace</button>
+            <button
+              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              @click="onExtractKeepAll"
             >Keep all</button>
           </div>
         </div>

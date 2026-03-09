@@ -111,8 +111,8 @@ export const files = {
       `/files/archive${qs({ path, ...(password ? { password } : {}) })}`,
     ),
 
-  extract: (path: string, dest?: string, password?: string) =>
-    request<{ message: string }>('POST', '/files/extract', { path, dest, password }),
+  extract: (path: string, dest?: string, password?: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+    request<{ message: string }>('POST', '/files/extract', { path, dest, password, conflict_mode: conflictMode }),
 
   writeContent: (path: string, content: string) =>
     fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
