@@ -183,7 +183,7 @@ func (s *Service) process(t task) {
 	case t.mime == "image/svg+xml":
 		err = generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
 	case isMagickThumbable(t.mime):
-		err = generateMagickThumb(t.absPath, thumbPath, ThumbMaxDim)
+		err = generateMagickThumb(t.absPath, thumbPath, t.mime, ThumbMaxDim)
 	default:
 		err = generateThumb(t.absPath, thumbPath, ThumbMaxDim)
 	}

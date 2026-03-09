@@ -170,7 +170,7 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 
 	mime := mimeByExt(filepath.Ext(abs))
 	if needsImageConversion(mime) && info.Size() <= convertSizeLimit {
-		h.convertAndStream(c, abs)
+		h.convertAndStream(c, abs, mime)
 		return
 	}
 
@@ -305,7 +305,7 @@ const convertSizeLimit = 50 * 1024 * 1024 // 50 MB
 func needsImageConversion(mime string) bool {
 	switch mime {
 	case "image/heic", "image/heif", "image/tiff", "image/jxl",
-		"image/vnd.adobe.photoshop", "image/x-tga", "image/x-xcf",
+		"image/x-icon", "image/vnd.adobe.photoshop", "image/x-tga", "image/x-xcf",
 		"image/vnd.radiance", "image/x-exr", "image/vnd.ms-dds":
 		return true
 	}
@@ -314,8 +314,9 @@ func needsImageConversion(mime string) bool {
 
 // convertAndStream converts srcPath to JPEG via ImageMagick and writes it to
 // the response. Results are cached by content hash for convCacheTTL (7 days).
-// [0] selects the first frame/layer for multi-layer formats (PSD, XCF, ICO).
-func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath string) {
+func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
+	args := buildConvertArgs(srcPath, mime)
+
 	// Check cache first.
 	if h.convCache != nil {
 		if data, hash, ok := h.convCache.get(srcPath); ok {
@@ -324,14 +325,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath string) {
 			return
 		} else if hash != "" {
 			// Hash computed but cache missed — convert and store.
-			out, err := exec.Command(
-				"convert",
-				"-background", "white",
-				srcPath+"[0]",
-				"-flatten",
-				"-quality", "90",
-				"jpeg:-",
-			).Output()
+			out, err := exec.Command("convert", args...).Output()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 				return
@@ -343,20 +337,32 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath string) {
 	}
 
 	// No cache available — convert and serve without caching.
-	out, err := exec.Command(
-		"convert",
-		"-background", "white",
-		srcPath+"[0]",
-		"-flatten",
-		"-quality", "90",
-		"jpeg:-",
-	).Output()
+	out, err := exec.Command("convert", args...).Output()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 		return
 	}
 	c.Data(http.StatusOK, "image/jpeg", out)
 }
+
+// buildConvertArgs returns the ImageMagick convert arguments for previewing
+// srcPath as a JPEG. ICO files are composited largest-frame-first so all
+// layers appear correctly (same logic as thumbnail generation).
+func buildConvertArgs(srcPath, mime string) []string {
+	tail := []string{"-flatten", "-quality", "90", "jpeg:-"}
+	if mime == "image/x-icon" {
+		largest, count := thumbs.LargestICOFrame(srcPath)
+		args := []string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largest)}
+		for i := 0; i < count; i++ {
+			if i != largest {
+				args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+			}
+		}
+		return append(args, tail...)
+	}
+	return append([]string{"-background", "white", srcPath + "[0]"}, tail...)
+}
+
 
 // needsRemux reports whether a video format needs to be transcoded to HLS/MP4
 // because browsers cannot play the raw container or its typical audio codecs.

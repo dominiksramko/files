@@ -103,9 +103,14 @@ func generateThumb(srcPath, dstPath string, size int) error {
 }
 
 // generateMagickThumb uses ImageMagick's convert to rasterise srcPath to a
-// temporary PNG (selecting frame [0] for multi-frame/multi-layer formats such
-// as ICO, PSD and XCF), then composites onto a checkerboard and encodes to JPEG.
-func generateMagickThumb(srcPath, dstPath string, size int) error {
+// temporary PNG, then composites onto a checkerboard and encodes to JPEG.
+//
+// Frame/layer selection strategy:
+//   - ICO: contains multiple independent size variants; we pick the largest frame.
+//   - PSD/XCF: layered formats where all layers compose the final image; we load
+//     all layers and flatten them together.
+//   - Everything else: single-frame formats, [0] is used defensively.
+func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 	tmp, err := os.CreateTemp("", "magick-thumb-*.png")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
@@ -113,16 +118,22 @@ func generateMagickThumb(srcPath, dstPath string, size int) error {
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 
-	// -background none preserves transparency; [0] takes the first frame/layer.
-	// -flatten merges layers (PSD, XCF) onto the transparent background.
-	// -resize shrinks large images before handing off to Go, keeping aspect ratio.
 	rasterSize := strconv.Itoa(size * 2)
-	args := []string{
-		"-background", "none",
-		srcPath + "[0]",
-		"-flatten",
-		"-resize", rasterSize + "x" + rasterSize + ">",
-		tmp.Name(),
+
+	// Build the convert argument list based on format:
+	//   ICO  — composite all frames with the largest as base canvas, so all
+	//           layers contribute correctly (largest-first avoids the base being
+	//           clipped to a smaller frame's canvas).
+	//   PSD/XCF — all layers loaded and flattened to produce the merged image.
+	//   Others  — single-frame; [0] is used defensively.
+	var args []string
+	switch mime {
+	case "image/x-icon":
+		args = icoConvertArgs(srcPath, rasterSize, tmp.Name())
+	case "image/vnd.adobe.photoshop", "image/x-xcf":
+		args = []string{"-background", "none", srcPath, "-flatten", "-resize", rasterSize + "x" + rasterSize + ">", tmp.Name()}
+	default:
+		args = []string{"-background", "none", srcPath + "[0]", "-flatten", "-resize", rasterSize + "x" + rasterSize + ">", tmp.Name()}
 	}
 	if out, err := exec.Command("convert", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("convert: %w: %s", err, strings.TrimSpace(string(out)))
@@ -153,6 +164,43 @@ func generateMagickThumb(srcPath, dstPath string, size int) error {
 		return fmt.Errorf("encode: %w", err)
 	}
 	return nil
+}
+
+// icoConvertArgs builds the ImageMagick convert argument list for an ICO file.
+// It places the largest frame first (so it becomes the base canvas) then
+// appends all remaining frames; -flatten composites them in order.
+// This handles both the common case (multiple size variants of the same image)
+// and the less common case (complementary layers that must be composited).
+func icoConvertArgs(srcPath, rasterSize, tmpPath string) []string {
+	largest, count := LargestICOFrame(srcPath)
+
+	args := []string{"-background", "none", fmt.Sprintf("%s[%d]", srcPath, largest)}
+	for i := 0; i < count; i++ {
+		if i != largest {
+			args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+		}
+	}
+	args = append(args, "-flatten", "-resize", rasterSize+"x"+rasterSize+">", tmpPath)
+	return args
+}
+
+// LargestICOFrame returns the index of the frame with the greatest pixel area
+// and the total frame count. Falls back to (0, 1) on any error.
+func LargestICOFrame(srcPath string) (idx, count int) {
+	out, err := exec.Command("identify", "-format", "%w %h\n", srcPath).Output()
+	if err != nil {
+		return 0, 1
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	bestArea := 0
+	for i, line := range lines {
+		var w, h int
+		if _, err := fmt.Sscan(line, &w, &h); err == nil && w*h > bestArea {
+			idx = i
+			bestArea = w * h
+		}
+	}
+	return idx, len(lines)
 }
 
 // generateSVGThumb rasterises the SVG at srcPath via rsvg-convert, composites
