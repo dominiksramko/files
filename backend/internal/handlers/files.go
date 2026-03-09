@@ -112,8 +112,7 @@ func (h *FilesHandler) List(c *gin.Context) {
 			CanExtract: CanExtract(e.Name()),
 		}
 		// Report whether a finished thumbnail is already available.
-		// Enqueueing is handled by the SSE stream (thumbnails/stream) when the
-		// client connects to a folder.
+		// Enqueueing is handled by the watch stream when the client connects to a folder.
 		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
 			if hash, ok := h.thumbs.HashIfReady(filepath.Join(abs, e.Name()), info.ModTime().Unix()); ok {
 				fe.HasThumb = true

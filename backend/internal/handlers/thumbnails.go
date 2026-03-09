@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,68 +67,9 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 	c.File(thumbPath)
 }
 
-// GET /api/v1/thumbnails/stream?path=<folder-rel>
-// SSE endpoint: streams JSON events as thumbnails become ready for files inside
-// the given folder. Each event is: data: {"path":"<rel>","hash":"<hash>"}\n\n
-// The client should connect here immediately after loading a folder listing and
-// stay connected until navigating away.
-func (h *ThumbnailHandler) Stream(c *gin.Context) {
-	if h.svc == nil {
-		// Send an empty SSE stream that immediately closes.
-		c.Header("Content-Type", "text/event-stream")
-		c.Header("Cache-Control", "no-cache")
-		c.Writer.Flush()
-		return
-	}
-	root, rel := userRoot(c), c.Query("path")
-
-	folderAbs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no") // Disable nginx proxy buffering
-
-	ch, unsub := h.svc.Hub().Subscribe(folderAbs)
-	defer unsub()
-
-	// Flush headers immediately so the browser knows the connection is live.
-	c.Writer.Flush()
-
-	// Enqueue thumbnails for all thumbnailable files in this folder (async).
-	go h.enqueueFolder(root, rel, folderAbs)
-
-	type eventMsg struct {
-		Path string `json:"path"`
-		Hash string `json:"hash"`
-	}
-
-	for {
-		select {
-		case event, ok := <-ch:
-			if !ok {
-				return
-			}
-			data, _ := json.Marshal(eventMsg{Path: event.RelPath, Hash: event.Hash})
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
-		case <-c.Request.Context().Done():
-			return
-		}
-	}
-}
-
 // enqueueFolder scans a folder and enqueues thumbnail generation for all
-// thumbnailable files. This runs asynchronously after the SSE stream starts.
-func (h *ThumbnailHandler) enqueueFolder(root, rel, folderAbs string) {
-	enqueueFolder(h.svc, root, rel, folderAbs)
-}
-
-func enqueueFolder(svc *thumbs.Service, root, rel, folderAbs string) {
+// thumbnailable files. Called asynchronously when the watch stream connects.
+func enqueueFolder(svc *thumbs.Service, _, rel, folderAbs string) {
 	entries, err := os.ReadDir(folderAbs)
 	if err != nil {
 		return
@@ -154,4 +93,3 @@ func enqueueFolder(svc *thumbs.Service, root, rel, folderAbs string) {
 		svc.CheckAndEnqueue(entryAbs, entryRel, folderAbs, mime, info.ModTime().Unix())
 	}
 }
-
