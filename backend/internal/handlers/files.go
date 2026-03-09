@@ -46,9 +46,10 @@ type FileEntry struct {
 	ModTime    time.Time  `json:"mod_time"`
 	CreatedAt  *time.Time `json:"created_at,omitempty"`
 	Mime       string     `json:"mime"`
-	HasThumb   bool       `json:"has_thumb"`            // true when a ready thumbnail exists
-	ThumbHash  string     `json:"thumb_hash,omitempty"` // content hash, present when has_thumb is true
-	CanExtract bool       `json:"can_extract,omitempty"`
+	HasThumb    bool       `json:"has_thumb"`                // true when a ready thumbnail exists
+	ThumbHash   string     `json:"thumb_hash,omitempty"`     // content hash, present when has_thumb is true
+	ContentHash string     `json:"content_hash,omitempty"`   // content hash for all thumbnailable files
+	CanExtract  bool       `json:"can_extract,omitempty"`
 }
 
 // GET /api/v1/files/list?path=
@@ -111,12 +112,17 @@ func (h *FilesHandler) List(c *gin.Context) {
 			Mime:       mime,
 			CanExtract: CanExtract(e.Name()),
 		}
-		// Report whether a finished thumbnail is already available.
-		// Enqueueing is handled by the watch stream when the client connects to a folder.
+		// Set content hash and thumb status for thumbnailable files.
+		// ContentHash is always included so the frontend can match thumb events
+		// across duplicate files (same content, different names).
 		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
-			if hash, ok := h.thumbs.HashIfReady(filepath.Join(abs, e.Name()), info.ModTime().Unix()); ok {
-				fe.HasThumb = true
-				fe.ThumbHash = hash
+			entryAbsPath := filepath.Join(abs, e.Name())
+			if hash, err := h.thumbs.CachedHash(entryAbsPath, info.ModTime().Unix()); err == nil {
+				fe.ContentHash = hash
+				if _, ok := h.thumbs.HashIfReady(entryAbsPath, info.ModTime().Unix()); ok {
+					fe.HasThumb = true
+					fe.ThumbHash = hash
+				}
 			}
 		}
 		files = append(files, fe)

@@ -2,10 +2,9 @@ package thumbs
 
 import "sync"
 
-// ThumbEvent carries the relative path and content hash of a newly-ready thumbnail.
+// ThumbEvent carries the content hash of a newly-ready thumbnail.
 type ThumbEvent struct {
-	RelPath string
-	Hash    string
+	Hash string
 }
 
 // hub broadcasts thumbnail-ready events to SSE subscribers, keyed by folder abs path.
@@ -45,12 +44,12 @@ func (h *hub) Subscribe(folderAbs string) (<-chan ThumbEvent, func()) {
 
 // Broadcast sends a ThumbEvent to all subscribers watching folderAbs.
 // Non-blocking: slow subscribers are skipped (channel is buffered).
-func (h *hub) Broadcast(folderAbs, relPath, hash string) {
+func (h *hub) Broadcast(folderAbs, hash string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, ch := range h.subs[folderAbs] {
 		select {
-		case ch <- ThumbEvent{RelPath: relPath, Hash: hash}:
+		case ch <- ThumbEvent{Hash: hash}:
 		default:
 		}
 	}

@@ -21,7 +21,7 @@ import (
 //	event: add    data: FileEntry JSON
 //	event: remove data: {"path":"<rel>"}
 //	event: update data: FileEntry JSON
-//	event: thumb  data: {"path":"<rel>","hash":"<hash>"}
+//	event: thumb  data: {"hash":"<hash>"}
 func (h *FilesHandler) Watch(c *gin.Context) {
 	root, rel := userRoot(c), c.Query("path")
 
@@ -84,9 +84,12 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 			CanExtract: CanExtract(info.Name()),
 		}
 		if h.thumbs != nil && !info.IsDir() && thumbs.IsThumbnailable(mime) {
-			if hash, ok := h.thumbs.HashIfReady(absPath, info.ModTime().Unix()); ok {
-				fe.HasThumb = true
-				fe.ThumbHash = hash
+			if hash, err := h.thumbs.CachedHash(absPath, info.ModTime().Unix()); err == nil {
+				fe.ContentHash = hash
+				if _, ok := h.thumbs.HashIfReady(absPath, info.ModTime().Unix()); ok {
+					fe.HasThumb = true
+					fe.ThumbHash = hash
+				}
 			}
 		}
 		return fe, true
@@ -158,7 +161,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 				thumbCh = nil
 				continue
 			}
-			data, _ := json.Marshal(map[string]string{"path": event.RelPath, "hash": event.Hash})
+			data, _ := json.Marshal(map[string]string{"hash": event.Hash})
 			writeEvent("thumb", string(data))
 
 		case <-c.Request.Context().Done():

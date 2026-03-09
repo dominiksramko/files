@@ -85,9 +85,9 @@ func New(db *sql.DB, cacheDir string) (*Service, error) {
 // Hub exposes the internal hub so the HTTP handler can subscribe to events.
 func (s *Service) Hub() *hub { return s.hub }
 
-// cachedHash returns the content hash for absPath, using a sync.Map cache keyed
+// CachedHash returns the content hash for absPath, using a sync.Map cache keyed
 // by (absPath, mtime) to avoid re-reading files that haven't changed.
-func (s *Service) cachedHash(absPath string, mtime int64) (string, error) {
+func (s *Service) CachedHash(absPath string, mtime int64) (string, error) {
 	if v, ok := s.hashCache.Load(absPath); ok {
 		if e := v.(hashCacheEntry); e.mtime == mtime {
 			return e.hash, nil
@@ -106,7 +106,7 @@ func (s *Service) cachedHash(absPath string, mtime int64) (string, error) {
 // it never enqueues generation. mtime is used only as a hint to skip
 // re-hashing unchanged files.
 func (s *Service) HashIfReady(absPath string, mtime int64) (string, bool) {
-	hash, err := s.cachedHash(absPath, mtime)
+	hash, err := s.CachedHash(absPath, mtime)
 	if err != nil {
 		return "", false
 	}
@@ -121,11 +121,11 @@ func (s *Service) HashIfReady(absPath string, mtime int64) (string, bool) {
 }
 
 // CheckAndEnqueue ensures a thumbnail is queued for background generation when
-// one is missing or the file's content has changed. Already-done or in-progress
-// thumbnails are left untouched.
-// mtime is used only as a hint to skip re-hashing unchanged files.
+// one is missing or the file's content has changed. Duplicate files (same hash,
+// different names) share one generation task; the frontend matches thumb events
+// by content_hash across all entries.
 func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtime int64) {
-	hash, err := s.cachedHash(absPath, mtime)
+	hash, err := s.CachedHash(absPath, mtime)
 	if err != nil {
 		return
 	}
@@ -145,11 +145,12 @@ func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtim
 		s.enqueue(task{absPath, relPath, folderAbs, hash, thumbFile, mime})
 	case err != nil:
 		// DB error — skip silently.
+	case status == "pending":
+		// Already in progress — frontend will match by hash when done.
 	case status == "error":
 		// Previous attempt failed; retry.
 		s.db.Exec(`UPDATE thumbnails SET status = 'pending' WHERE content_hash = ?`, hash)
 		s.enqueue(task{absPath, relPath, folderAbs, hash, thumbFile, mime})
-	// status == "done" or "pending": nothing to do.
 	}
 }
 
@@ -200,7 +201,7 @@ func (s *Service) process(t task) {
 	)
 
 	if status == "done" {
-		s.hub.Broadcast(t.folderAbs, t.relPath, t.contentHash)
+		s.hub.Broadcast(t.folderAbs, t.contentHash)
 	}
 }
 

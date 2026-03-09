@@ -55,11 +55,12 @@ export const useFilesStore = defineStore('files', () => {
 
     es.addEventListener('thumb', (e: MessageEvent) => {
       try {
-        const { path: thumbPath, hash } = JSON.parse(e.data as string) as { path: string; hash: string }
-        const entry = entries.value.find((en) => en.path === thumbPath)
-        if (entry) {
-          entry.has_thumb = true
-          entry.thumb_hash = hash
+        const { hash } = JSON.parse(e.data as string) as { hash: string }
+        for (const entry of entries.value) {
+          if (entry.content_hash === hash) {
+            entry.has_thumb = true
+            entry.thumb_hash = hash
+          }
         }
       } catch { /* ignore */ }
     })
