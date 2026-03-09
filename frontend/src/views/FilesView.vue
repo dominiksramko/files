@@ -18,10 +18,13 @@ import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
+import ConflictDialog from '@/components/ui/ConflictDialog.vue'
+import { useConflictDialog } from '@/composables/useConflictDialog'
 
 const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
+const { prompt: promptConflict } = useConflictDialog()
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
 const viewMode = ref<'grid' | 'list'>('list')
@@ -274,38 +277,13 @@ function onMove() {
   selectedPaths.value = []
 }
 
-// ── Paste conflict dialog ──────────────────────────────────────────────────
-const pasteConflictDialog = ref(false)
-const pendingPaste = ref<{
-  mode: 'copy' | 'move'
-  paths: string[]
-  dest: string
-  conflictingNames: string[]
-} | null>(null)
-
 async function onPaste() {
   if (!clipboard.value) return
   const { mode, paths } = clipboard.value
-  await doPaste(mode, paths, filesStore.currentPath, 'error')
+  await doPaste(mode, paths, filesStore.currentPath)
 }
 
-function onPasteReplace() {
-  if (!pendingPaste.value) return
-  const { mode, paths, dest } = pendingPaste.value
-  pasteConflictDialog.value = false
-  pendingPaste.value = null
-  doPaste(mode, paths, dest, 'replace')
-}
-
-function onPasteKeepAll() {
-  if (!pendingPaste.value) return
-  const { mode, paths, dest } = pendingPaste.value
-  pasteConflictDialog.value = false
-  pendingPaste.value = null
-  doPaste(mode, paths, dest, 'rename')
-}
-
-async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename') {
+async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
   try {
     if (mode === 'copy') {
       await fileops.copy(paths, dest, conflictMode)
@@ -316,8 +294,9 @@ async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, con
     clipboard.value = null
   } catch (err) {
     if (err instanceof ConflictError) {
-      pendingPaste.value = { mode, paths: [...paths], dest, conflictingNames: err.conflicts }
-      pasteConflictDialog.value = true
+      const label = mode === 'copy' ? 'Copy' : 'Move'
+      const choice = await promptConflict(`${label} conflicts`, err.conflicts)
+      if (choice) doPaste(mode, paths, dest, choice)
       return
     }
     showToast((err as Error).message, 'error')
@@ -455,10 +434,6 @@ function formatEta(job: UploadJob): string {
 }
 
 // ── Upload conflict modal ──────────────────────────────────────────────────
-const uploadConflictDialog = ref(false)
-const pendingUploadFiles = ref<File[]>([])
-const conflictingNames = ref<string[]>([])
-
 function detectConflicts(files: File[]): string[] {
   const existing = new Set(filesStore.entries.map((e) => e.name))
   return files.map((f) => f.name).filter((name) => existing.has(name))
@@ -484,18 +459,6 @@ function resolveKeepAll(files: File[]): File[] {
   })
 }
 
-function onUploadReplace() {
-  uploadConflictDialog.value = false
-  performUpload(pendingUploadFiles.value)
-  pendingUploadFiles.value = []
-}
-
-function onUploadKeepAll() {
-  uploadConflictDialog.value = false
-  performUpload(resolveKeepAll(pendingUploadFiles.value))
-  pendingUploadFiles.value = []
-}
-
 function openFilePicker() {
   uploadInput.value?.click()
 }
@@ -510,10 +473,9 @@ async function handleFileInput(e: Event) {
 async function uploadFiles(files: File[]) {
   const conflicts = detectConflicts(files)
   if (conflicts.length > 0) {
-    pendingUploadFiles.value = files
-    conflictingNames.value = conflicts
-    uploadConflictDialog.value = true
-    return
+    const choice = await promptConflict('Upload conflicts', conflicts)
+    if (!choice) return
+    files = choice === 'rename' ? resolveKeepAll(files) : files
   }
   await performUpload(files)
 }
@@ -561,24 +523,15 @@ async function onDrop(e: DragEvent) {
 }
 
 // ── Internal drag-and-drop move ────────────────────────────────────────────
-const moveConflictDialog = ref(false)
-const pendingMove = ref<{
-  paths: string[]
-  dest: string
-  conflictingNames: string[]
-} | null>(null)
-
 async function onDropToFolder(destPath: string, draggedPaths: string[]) {
-  // No-op if dest is current folder
   if (destPath === filesStore.currentPath) return
-  // Guard: can't drag a folder into itself or a descendant
   for (const p of draggedPaths) {
     if (destPath === p || destPath.startsWith(p + '/')) return
   }
-  await performMove(draggedPaths, destPath, 'error')
+  await performMove(draggedPaths, destPath)
 }
 
-async function performMove(paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename') {
+async function performMove(paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
   try {
     await fileops.move([...paths], dest, conflictMode)
     selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
@@ -586,28 +539,12 @@ async function performMove(paths: string[], dest: string, conflictMode: 'error' 
     showToast(`Moved ${count} item${count !== 1 ? 's' : ''}`, 'success')
   } catch (err) {
     if (err instanceof ConflictError) {
-      pendingMove.value = { paths: [...paths], dest, conflictingNames: err.conflicts }
-      moveConflictDialog.value = true
+      const choice = await promptConflict('Move conflicts', err.conflicts)
+      if (choice) performMove(paths, dest, choice)
       return
     }
     showToast((err as Error).message, 'error')
   }
-}
-
-function onMoveReplace() {
-  if (!pendingMove.value) return
-  const { paths, dest } = pendingMove.value
-  moveConflictDialog.value = false
-  pendingMove.value = null
-  performMove(paths, dest, 'replace')
-}
-
-function onMoveKeepAll() {
-  if (!pendingMove.value) return
-  const { paths, dest } = pendingMove.value
-  moveConflictDialog.value = false
-  pendingMove.value = null
-  performMove(paths, dest, 'rename')
 }
 
 // ── New folder ────────────────────────────────────────────────────────────
@@ -720,52 +657,35 @@ watch(compressFormat, (fmt) => {
   compressName.value = stripped + ext
 })
 
-// ── Compress conflict ──────────────────────────────────────────────────────
-const compressConflictDialog = ref(false)
-interface PendingCompress { paths: string[]; dest: string; format: string; password?: string; protect: boolean }
-const pendingCompress = ref<PendingCompress | null>(null)
-
 function confirmCompress() {
   const name = compressName.value.trim()
   if (!name) return
   const dest = filesStore.currentPath ? filesStore.currentPath + '/' + name : name
   const pass = compressPassword.value || undefined
   const protect = compressFormat.value === '7z' && !!pass && compressProtectFilenames.value
-  const paths = [...compressPaths.value]
   compressDialog.value = false
-  runCompress(paths, dest, compressFormat.value, pass, protect, 'error')
+  runCompress([...compressPaths.value], dest, compressFormat.value, pass, protect)
 }
 
-function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean, conflictMode: 'error' | 'replace' | 'rename') {
+async function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
   const name = dest.split('/').pop() ?? dest
   const id = nextJobId++
   startBgJobTracking(id)
   bgJobs.value.push({ kind: 'compress', id, name })
-  fileops.compress(paths, dest, format, password, protect, conflictMode).then(() => {
+  try {
+    await fileops.compress(paths, dest, format, password, protect, conflictMode)
     if (canClearSelection(id)) selectedPaths.value = []
     showToast('Archive created', 'success')
-  }).catch((err) => {
+  } catch (err) {
     if (err instanceof ConflictError) {
-      pendingCompress.value = { paths, dest, format, password, protect }
-      compressConflictDialog.value = true
+      const choice = await promptConflict('Archive already exists', err.conflicts)
+      if (choice) runCompress(paths, dest, format, password, protect, choice)
     } else {
       showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
     }
-  }).finally(() => {
+  } finally {
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
-  })
-}
-
-function onCompressReplace() {
-  compressConflictDialog.value = false
-  const p = pendingCompress.value!
-  runCompress(p.paths, p.dest, p.format, p.password, p.protect, 'replace')
-}
-
-function onCompressKeepAll() {
-  compressConflictDialog.value = false
-  const p = pendingCompress.value!
-  runCompress(p.paths, p.dest, p.format, p.password, p.protect, 'rename')
+  }
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────
@@ -781,25 +701,19 @@ const extractPendingPath = ref('')
 const extracting = ref(false)
 const extractError = ref('')
 
-const extractConflictDialog = ref(false)
-const extractConflicts = ref<string[]>([])
-interface PendingExtract { path: string; password?: string }
-const pendingExtract = ref<PendingExtract | null>(null)
-
 async function openExtract(path: string) {
-  await runExtract(path, undefined, 'error')
+  await runExtract(path, undefined)
 }
 
-async function runExtract(path: string, password: string | undefined, conflictMode: 'error' | 'replace' | 'rename') {
+async function runExtract(path: string, password: string | undefined, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
   try {
     await filesApi.extract(path, undefined, password, conflictMode)
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
     if (e instanceof ConflictError) {
-      pendingExtract.value = { path, password }
-      extractConflicts.value = e.conflicts
-      extractConflictDialog.value = true
+      const choice = await promptConflict('Extraction conflicts', e.conflicts)
+      if (choice) runExtract(path, password, choice)
       return
     }
     const msg = e instanceof Error ? e.message : 'Extraction failed'
@@ -814,18 +728,6 @@ async function runExtract(path: string, password: string | undefined, conflictMo
   }
 }
 
-function onExtractReplace() {
-  extractConflictDialog.value = false
-  const p = pendingExtract.value!
-  runExtract(p.path, p.password, 'replace')
-}
-
-function onExtractKeepAll() {
-  extractConflictDialog.value = false
-  const p = pendingExtract.value!
-  runExtract(p.path, p.password, 'rename')
-}
-
 async function confirmExtract() {
   if (!extractPasswordInput.value || extracting.value) return
   extracting.value = true
@@ -838,9 +740,8 @@ async function confirmExtract() {
   } catch (e) {
     if (e instanceof ConflictError) {
       extractPasswordDialog.value = false
-      pendingExtract.value = { path: extractPendingPath.value, password: extractPasswordInput.value }
-      extractConflicts.value = e.conflicts
-      extractConflictDialog.value = true
+      const choice = await promptConflict('Extraction conflicts', e.conflicts)
+      if (choice) runExtract(extractPendingPath.value, extractPasswordInput.value, choice)
     } else {
       extractError.value = e instanceof Error ? e.message : 'Extraction failed'
     }
@@ -1317,187 +1218,7 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- Upload conflict dialog -->
-    <Transition name="fade">
-      <div
-        v-if="uploadConflictDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="uploadConflictDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Upload conflicts</h3>
-          <p class="text-xs text-zinc-400 mb-3">
-            {{ conflictingNames.length }} file{{ conflictingNames.length !== 1 ? 's' : '' }} already exist in this folder.
-          </p>
-          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
-            <li
-              v-for="name in conflictingNames"
-              :key="name"
-              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
-            >{{ name }}</li>
-          </ul>
-          <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="uploadConflictDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-              @click="onUploadReplace"
-            >Replace</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="onUploadKeepAll"
-            >Keep all</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Paste conflict dialog -->
-    <Transition name="fade">
-      <div
-        v-if="pasteConflictDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="pasteConflictDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">
-            {{ pendingPaste?.mode === 'copy' ? 'Copy' : 'Move' }} conflicts
-          </h3>
-          <p class="text-xs text-zinc-400 mb-3">
-            {{ pendingPaste?.conflictingNames.length }} item{{ pendingPaste?.conflictingNames.length !== 1 ? 's' : '' }} already exist in this folder.
-          </p>
-          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
-            <li
-              v-for="name in pendingPaste?.conflictingNames"
-              :key="name"
-              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
-            >{{ name }}</li>
-          </ul>
-          <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="pasteConflictDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-              @click="onPasteReplace"
-            >Replace</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="onPasteKeepAll"
-            >Keep all</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Move conflict dialog -->
-    <Transition name="fade">
-      <div
-        v-if="moveConflictDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="moveConflictDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Move conflicts</h3>
-          <p class="text-xs text-zinc-400 mb-3">
-            {{ pendingMove?.conflictingNames.length }} item{{ pendingMove?.conflictingNames.length !== 1 ? 's' : '' }} already exist in the destination folder.
-          </p>
-          <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
-            <li
-              v-for="name in pendingMove?.conflictingNames"
-              :key="name"
-              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
-            >{{ name }}</li>
-          </ul>
-          <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="moveConflictDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-              @click="onMoveReplace"
-            >Replace</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="onMoveKeepAll"
-            >Keep all</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Extract conflict dialog -->
-    <Transition name="fade">
-      <div
-        v-if="extractConflictDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="extractConflictDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Extraction conflicts</h3>
-          <p class="text-xs text-zinc-400 mb-3">
-            {{ pendingExtract && (extractConflicts?.length ?? 0) > 0
-              ? `${extractConflicts!.length} file${extractConflicts!.length !== 1 ? 's' : ''} already exist in the destination.`
-              : 'Some files already exist in the destination.' }}
-          </p>
-          <ul v-if="extractConflicts?.length" class="mb-4 space-y-1 max-h-36 overflow-y-auto">
-            <li
-              v-for="name in extractConflicts"
-              :key="name"
-              class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
-            >{{ name }}</li>
-          </ul>
-          <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="extractConflictDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-              @click="onExtractReplace"
-            >Replace</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="onExtractKeepAll"
-            >Keep all</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Compress conflict dialog -->
-    <Transition name="fade">
-      <div
-        v-if="compressConflictDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="compressConflictDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Archive already exists</h3>
-          <p class="text-xs text-zinc-400 mb-3">
-            <span class="text-zinc-200">{{ pendingCompress?.dest.split('/').pop() }}</span> already exists in this folder.
-          </p>
-          <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="compressConflictDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-              @click="onCompressReplace"
-            >Replace</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="onCompressKeepAll"
-            >Keep all</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <ConflictDialog />
 
     <!-- Compress dialog -->
     <Transition name="fade">

@@ -89,12 +89,19 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
   - Secondary/neutral: `px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors`
 
 ## File Conflict Resolution Convention
-When a file operation (move, copy, upload, extract) would overwrite an existing file, the backend detects the conflict and returns a conflict response instead of silently overwriting. The frontend then presents the user with a resolution modal offering:
+When a file operation (move, copy, upload, extract, compress) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The frontend then presents the user with a resolution modal offering:
 - **Replace** — overwrite the existing file(s)
 - **Keep all** — rename the incoming file(s) by appending a suffix (e.g. `file (1).txt`, `file (2).txt`) until no conflict remains
 - **Cancel** — abort the operation entirely
 
-The resolution choice is sent back to the backend as a parameter on the retry request.
+The resolution choice is sent back to the backend as `conflict_mode: 'replace' | 'rename'` on the retry request.
+
+### Unified conflict dialog system (IMPORTANT)
+All conflict flows use a single shared composable + component — do NOT create per-operation conflict dialogs:
+- Composable: `frontend/src/composables/useConflictDialog.ts` — `prompt(title, names): Promise<'replace' | 'rename' | null>`
+- Component: `frontend/src/components/ui/ConflictDialog.vue` — mounted once globally in `FilesView.vue` via `<ConflictDialog />`
+- Usage: `const { prompt: promptConflict } = useConflictDialog()` then `const choice = await promptConflict('Title', conflictNames)` — returns `'replace'`, `'rename'`, or `null` (cancel)
+- Backend `conflict_mode` parameter: `'replace'` maps to replace, `'rename'` maps to keep-all/rename
 
 ## External Tool Dependencies (must be in Dockerfile runtime stage)
 Any new CLI tool used by the backend must be added to the `apk add` line in `backend/Dockerfile` runtime stage (Alpine). Current tools:
