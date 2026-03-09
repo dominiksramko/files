@@ -80,6 +80,7 @@ func main() {
 
 			// Files
 			authed.GET("/files/list", filesH.List)
+			authed.GET("/files/watch", filesH.Watch)
 			authed.GET("/files/search", filesH.Search)
 			authed.GET("/files/download", filesH.Download)
 			authed.POST("/files/download-zip", filesH.DownloadZip)

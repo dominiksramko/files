@@ -5,7 +5,6 @@ import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import { files as filesApi, folders as foldersApi, fileops, ConflictError } from '@/utils/api'
-import { useThumbnails } from '@/composables/useThumbnails'
 import { useToast } from '@/composables/useToast'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
@@ -23,9 +22,6 @@ import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
-
-// ── Thumbnails ───────────────────────────────────────────────────────────────
-const { connect: thumbConnect } = useThumbnails()
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
 const viewMode = ref<'grid' | 'list'>('list')
@@ -201,7 +197,6 @@ function routeQuery() {
 }
 
 async function navigate(path: string) {
-  thumbConnect(path)
   const actualPath = await filesStore.navigate(path)
   fetchFolderPref(actualPath)
   selectedPaths.value = []
@@ -219,7 +214,6 @@ watch(
   async (q) => {
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) {
-      thumbConnect(p)
       const actualPath = await filesStore.navigate(p)
       fetchFolderPref(actualPath)
       selectedPaths.value = []
@@ -248,7 +242,6 @@ watch(previewableEntries, (entries) => {
 // ── Archive ────────────────────────────────────────────────────────────────
 function onExtracted() {
   archiveEntry.value = null
-  filesStore.refresh()
 }
 
 // ── Selection ──────────────────────────────────────────────────────────────
@@ -256,8 +249,8 @@ const selectedPaths = ref<string[]>([])
 
 function toggleSelect(path: string) {
   const idx = selectedPaths.value.indexOf(path)
-  if (idx >= 0) selectedPaths.value.splice(idx, 1)
-  else selectedPaths.value.push(path)
+  if (idx >= 0) selectedPaths.value = selectedPaths.value.filter((_, i) => i !== idx)
+  else selectedPaths.value = [...selectedPaths.value, path]
 }
 
 function selectAll() {
@@ -321,7 +314,6 @@ async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, con
       selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
     }
     clipboard.value = null
-    filesStore.refresh()
   } catch (err) {
     if (err instanceof ConflictError) {
       pendingPaste.value = { mode, paths: [...paths], dest, conflictingNames: err.conflicts }
@@ -343,6 +335,34 @@ let nextJobId = 0
 
 const downloading = computed(() => bgJobs.value.some(j => j.kind === 'zip'))
 
+// ── Selection-clear tracking for background jobs ────────────────────────────
+// Only the last-started job may clear selection, and only if the user hasn't
+// manually changed it since that job started.
+let lastBgJobId = -1
+let selectionChangedSinceLastJob = false
+let silentSelectionChange = false
+
+watch(selectedPaths, () => {
+  if (!silentSelectionChange) selectionChangedSinceLastJob = true
+})
+
+// When a path is removed via the watch stream, silently drop it from selection.
+watch(() => filesStore.lastRemovedPath, (path) => {
+  if (!path || !selectedPaths.value.includes(path)) return
+  silentSelectionChange = true
+  selectedPaths.value = selectedPaths.value.filter((p) => p !== path)
+  silentSelectionChange = false
+})
+
+function startBgJobTracking(id: number) {
+  lastBgJobId = id
+  selectionChangedSinceLastJob = false
+}
+
+function canClearSelection(id: number): boolean {
+  return id === lastBgJobId && !selectionChangedSinceLastJob
+}
+
 // ── Download selection ─────────────────────────────────────────────────────
 async function downloadPaths(paths: string[]) {
   if (paths.length === 1) {
@@ -357,7 +377,7 @@ async function downloadPaths(paths: string[]) {
     }
   }
   const id = nextJobId++
-  const selectionRef = selectedPaths.value
+  startBgJobTracking(id)
   bgJobs.value.push({ kind: 'zip', id })
   try {
     const blob = await fileops.downloadZip(paths)
@@ -370,7 +390,7 @@ async function downloadPaths(paths: string[]) {
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
     URL.revokeObjectURL(url)
-    if (selectedPaths.value === selectionRef) selectedPaths.value = []
+    if (canClearSelection(id)) selectedPaths.value = []
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
@@ -409,7 +429,6 @@ async function confirmDelete() {
     await fileops.delete(paths)
     if (paths.some(p => previewEntry.value?.path === p)) closePreview()
     selectedPaths.value = []
-    filesStore.refresh()
   } catch (err) {
     showToast((err as Error).message, 'error')
   }
@@ -510,10 +529,6 @@ async function performUpload(files: File[]) {
   try {
     const res = await promise
     showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
-    await filesStore.refresh()
-    // Reconnect the SSE stream so enqueueFolder rescans and picks up newly
-    // uploaded files that weren't present when the stream first connected.
-    thumbConnect(filesStore.currentPath)
   } catch (err) {
     if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
   } finally {
@@ -569,7 +584,6 @@ async function performMove(paths: string[], dest: string, conflictMode: 'error' 
     selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
     const count = paths.length
     showToast(`Moved ${count} item${count !== 1 ? 's' : ''}`, 'success')
-    filesStore.refresh()
   } catch (err) {
     if (err instanceof ConflictError) {
       pendingMove.value = { paths: [...paths], dest, conflictingNames: err.conflicts }
@@ -615,7 +629,6 @@ async function confirmNewFolder() {
   try {
     const path = filesStore.currentPath ? `${filesStore.currentPath}/${name}` : name
     await fileops.mkdir(path)
-    filesStore.refresh()
   } catch (err) {
     showToast((err as Error).message, 'error')
   }
@@ -645,10 +658,16 @@ async function confirmRename() {
   try {
     await fileops.rename(entry.path, trimmed)
     selectedPaths.value = []
-    await filesStore.refresh()
+    // Optimistically update the entry so preview index can be resolved immediately.
+    // The watch stream will deliver the authoritative REMOVE + ADD events shortly after.
+    const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
+    const newPath = parent ? `${parent}/${trimmed}` : trimmed
+    const idx = filesStore.entries.findIndex((e) => e.path === entry.path)
+    if (idx >= 0) {
+      const existing = filesStore.entries[idx]!
+      filesStore.entries[idx] = { ...existing, name: trimmed, path: newPath }
+    }
     if (wasPreviewingThis) {
-      const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
-      const newPath = parent ? `${parent}/${trimmed}` : trimmed
       const newIdx = previewableEntries.value.findIndex((e) => e.path === newPath)
       previewIndex.value = newIdx >= 0 ? newIdx : -1
     }
@@ -712,11 +731,10 @@ function confirmCompress() {
   compressDialog.value = false
 
   const id = nextJobId++
-  const selectionRef = selectedPaths.value
+  startBgJobTracking(id)
   bgJobs.value.push({ kind: 'compress', id, name })
   fileops.compress(paths, dest, compressFormat.value, pass, protect).then(() => {
-    if (selectedPaths.value === selectionRef) selectedPaths.value = []
-    filesStore.refresh()
+    if (canClearSelection(id)) selectedPaths.value = []
     showToast('Archive created', 'success')
   }).catch((err) => {
     showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
@@ -742,7 +760,6 @@ async function openExtract(path: string) {
   try {
     await filesApi.extract(path)
     selectedPaths.value = []
-    filesStore.refresh()
     showToast('Extracted successfully', 'success')
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Extraction failed'
@@ -765,7 +782,6 @@ async function confirmExtract() {
     await filesApi.extract(extractPendingPath.value, undefined, extractPasswordInput.value)
     extractPasswordDialog.value = false
     selectedPaths.value = []
-    filesStore.refresh()
     showToast('Extracted successfully', 'success')
   } catch (e) {
     extractError.value = e instanceof Error ? e.message : 'Extraction failed'
@@ -915,7 +931,6 @@ const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard
 
 onMounted(async () => {
   const initialPath = (route.query.path as string) || ''
-  thumbConnect(initialPath)
   const actualPath = await filesStore.navigate(initialPath)
   fetchFolderPref(actualPath)
   if (actualPath !== initialPath) {

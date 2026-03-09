@@ -127,6 +127,10 @@ func (h *ThumbnailHandler) Stream(c *gin.Context) {
 // enqueueFolder scans a folder and enqueues thumbnail generation for all
 // thumbnailable files. This runs asynchronously after the SSE stream starts.
 func (h *ThumbnailHandler) enqueueFolder(root, rel, folderAbs string) {
+	enqueueFolder(h.svc, root, rel, folderAbs)
+}
+
+func enqueueFolder(svc *thumbs.Service, root, rel, folderAbs string) {
 	entries, err := os.ReadDir(folderAbs)
 	if err != nil {
 		return
@@ -147,7 +151,7 @@ func (h *ThumbnailHandler) enqueueFolder(root, rel, folderAbs string) {
 
 		entryAbs := filepath.Join(folderAbs, e.Name())
 		entryRel := filepath.Join(rel, e.Name())
-		h.svc.CheckAndEnqueue(entryAbs, entryRel, folderAbs, mime, info.ModTime().Unix())
+		svc.CheckAndEnqueue(entryAbs, entryRel, folderAbs, mime, info.ModTime().Unix())
 	}
 }
 
