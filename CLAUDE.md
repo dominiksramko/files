@@ -3,6 +3,11 @@
 ## What This Is
 A self-hosted file browser with Vue3 frontend + Go backend.
 
+## Code Quality Rules (IMPORTANT — applies to both frontend and backend)
+- **No duplication.** Before writing new logic, check if it already exists. If the same logic appears in more than one place, extract it — composable, utility function, helper, middleware, shared component, whatever fits.
+- **Refactor proactively.** If a user mentions that something is used elsewhere, or if you notice while implementing that near-identical code already exists, do the refactor as part of the task — don't just copy-paste and move on.
+- **Shared logic belongs in one place.** Event handlers, formatters, API calls, drag-and-drop, conflict resolution, Go helper functions — if two places do the same thing, they should call the same function.
+
 ## Key Paths
 - `backend/` — Go + Gin + SQLite API server
 - `frontend/` — Vue3 + Pinia + Tailwind SPA
