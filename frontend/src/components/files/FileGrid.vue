@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, setMoveDragImage } from '@/utils/formatters'
-import type { IconName } from '@/utils/icons'
+import { fileCategory, entryCategory, catBg, catIconColor, catIconName, formatSize, setMoveDragImage } from '@/utils/formatters'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -160,39 +159,6 @@ function onCardDrop(e: DragEvent, entry: FileEntry) {
 }
 
 // ── Category helpers (icon colours) ─────────────────────────────────────────
-const catBg: Record<string, string> = {
-  folder: 'bg-yellow-950/60',
-  image: 'bg-green-950/60',
-  video: 'bg-purple-950/60',
-  audio: 'bg-pink-950/60',
-  pdf: 'bg-red-950/60',
-  office: 'bg-blue-950/60',
-  archive: 'bg-orange-950/60',
-  text: 'bg-zinc-800/60',
-  other: 'bg-zinc-800/60',
-}
-const catIcon: Record<string, string> = {
-  folder: 'text-yellow-400',
-  image: 'text-green-400',
-  video: 'text-purple-400',
-  audio: 'text-pink-400',
-  pdf: 'text-red-400',
-  office: 'text-blue-400',
-  archive: 'text-orange-400',
-  text: 'text-zinc-300',
-  other: 'text-zinc-500',
-}
-const catIconName: Record<string, IconName> = {
-  folder: 'folder',
-  image: 'image',
-  video: 'video',
-  audio: 'music',
-  pdf: 'pdf',
-  office: 'document',
-  archive: 'archive',
-  text: 'document',
-  other: 'document',
-}
 </script>
 
 <template>
@@ -271,11 +237,11 @@ const catIconName: Record<string, IconName> = {
           <!-- File placeholder icon -->
           <div
             v-else
-            :class="['w-full h-full flex items-center justify-center', catBg[fileCategory(item.entry.mime, item.entry.name)] ?? catBg['other']]"
+            :class="['w-full h-full flex items-center justify-center', catBg[entryCategory(item.entry.mime, item.entry.name, false)]]"
           >
             <AppIcon
-              :name="catIconName[fileCategory(item.entry.mime, item.entry.name)] ?? 'document'"
-              :class="['size-12', catIcon[fileCategory(item.entry.mime, item.entry.name)] ?? catIcon['other']]"
+              :name="catIconName[entryCategory(item.entry.mime, item.entry.name, false)]"
+              :class="['size-12', catIconColor[entryCategory(item.entry.mime, item.entry.name, false)]]"
               :stroke-width="1.5"
             />
           </div>

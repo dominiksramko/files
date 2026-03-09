@@ -1,4 +1,5 @@
 import type { FileCategory } from '@/types'
+import type { IconName } from '@/utils/icons'
 
 // Creates a compact drag ghost ("Moving 3 items") and sets it as the drag image.
 // The element is appended off-screen, used for one frame, then removed.
@@ -132,6 +133,48 @@ export function fileCategory(mime: string, name: string): FileCategory {
     return 'archive'
   if (isTextFile(mime, name)) return 'text'
   return 'other'
+}
+
+export type EntryCat = FileCategory | 'folder'
+
+export function entryCategory(mime: string, name: string, isDir: boolean): EntryCat {
+  return isDir ? 'folder' : fileCategory(mime, name)
+}
+
+export const catBg: Record<EntryCat, string> = {
+  folder:  'bg-yellow-950/60',
+  image:   'bg-green-950/60',
+  video:   'bg-purple-950/60',
+  audio:   'bg-pink-950/60',
+  pdf:     'bg-red-950/60',
+  office:  'bg-blue-950/60',
+  archive: 'bg-orange-950/60',
+  text:    'bg-zinc-800/60',
+  other:   'bg-zinc-800/60',
+}
+
+export const catIconColor: Record<EntryCat, string> = {
+  folder:  'text-yellow-400',
+  image:   'text-green-400',
+  video:   'text-purple-400',
+  audio:   'text-pink-400',
+  pdf:     'text-red-400',
+  office:  'text-blue-400',
+  archive: 'text-orange-400',
+  text:    'text-zinc-300',
+  other:   'text-zinc-500',
+}
+
+export const catIconName: Record<EntryCat, IconName> = {
+  folder:  'folder',
+  image:   'image',
+  video:   'video',
+  audio:   'music',
+  pdf:     'pdf',
+  office:  'document',
+  archive: 'archive',
+  text:    'document',
+  other:   'document',
 }
 
 export function isPreviewable(mime: string): boolean {
