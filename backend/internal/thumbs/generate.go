@@ -87,6 +87,7 @@ func generateThumb(srcPath, dstPath string, size int) error {
 		return fmt.Errorf("decode: %w", err)
 	}
 
+	src = applyOrientation(src, jpegOrientation(srcPath))
 	thumb := squareCrop(src, size)
 
 	out, err := os.Create(dstPath)
