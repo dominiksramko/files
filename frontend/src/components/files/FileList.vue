@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, formatDate, setMoveDragImage } from '@/utils/formatters'
+import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
+import { useFileInteraction } from '@/composables/useFileInteraction'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -41,56 +42,8 @@ function onHeaderCheckbox() {
   else emit('selectAll')
 }
 
-function handleClick(entry: FileEntry, e: MouseEvent) {
-  if (props.selected.length > 0 || e.shiftKey) {
-    emit('toggleSelect', entry.path, e.shiftKey)
-    return
-  }
-  if (entry.is_dir) emit('navigate', entry.path)
-  else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
-  else emit('preview', entry)
-}
-
-// ── Drag & drop ──────────────────────────────────────────────────────────────
-const dragOverPath = ref<string | null>(null)
-
-function onRowDragStart(e: DragEvent, entry: FileEntry) {
-  const paths = props.selected.includes(entry.path) ? [...props.selected] : [entry.path]
-  e.dataTransfer!.setData('application/x-files-internal', JSON.stringify(paths))
-  e.dataTransfer!.effectAllowed = 'move'
-  setMoveDragImage(e, paths.length)
-}
-
-function onRowDragEnd() {
-  dragOverPath.value = null
-}
-
-function onRowDragOver(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  if (!e.dataTransfer?.types.includes('application/x-files-internal')) return
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-  dragOverPath.value = entry.path
-}
-
-function onRowDragLeave(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  const related = e.relatedTarget as Node | null
-  const row = e.currentTarget as HTMLElement
-  if (!related || !row.contains(related)) {
-    if (dragOverPath.value === entry.path) dragOverPath.value = null
-  }
-}
-
-function onRowDrop(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  e.preventDefault()
-  dragOverPath.value = null
-  const raw = e.dataTransfer?.getData('application/x-files-internal')
-  if (!raw) return
-  const paths: string[] = JSON.parse(raw)
-  emit('dropToFolder', entry.path, paths)
-}
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop } =
+  useFileInteraction(props, emit)
 </script>
 
 <template>
@@ -163,11 +116,11 @@ function onRowDrop(e: DragEvent, entry: FileEntry) {
             ]"
             @click="handleClick(entry, $event)"
             @contextmenu.prevent="emit('contextMenu', entry, $event.clientX, $event.clientY)"
-            @dragstart="onRowDragStart($event, entry)"
-            @dragend="onRowDragEnd"
-            @dragover="onRowDragOver($event, entry)"
-            @dragleave="onRowDragLeave($event, entry)"
-            @drop="onRowDrop($event, entry)"
+            @dragstart="onDragStart($event, entry)"
+            @dragend="onDragEnd"
+            @dragover="onDragOver($event, entry)"
+            @dragleave="onDragLeave($event, entry)"
+            @drop="onDrop($event, entry)"
           >
             <!-- Custom checkbox -->
             <td class="w-10 cursor-pointer" @click.capture.stop="emit('toggleSelect', entry.path, $event.shiftKey)">

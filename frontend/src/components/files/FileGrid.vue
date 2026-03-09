@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { FileEntry } from '@/types'
-import { fileCategory, entryCategory, catBg, catIconColor, catIconName, formatSize, setMoveDragImage } from '@/utils/formatters'
+import { entryCategory, catBg, catIconColor, catIconName, formatSize } from '@/utils/formatters'
+import { useFileInteraction } from '@/composables/useFileInteraction'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -106,59 +107,9 @@ watch(() => props.entries, () => {
   if (containerRef.value) containerRef.value.scrollTop = 0
 })
 
-// ── Click handlers ───────────────────────────────────────────────────────────
-function handleClick(entry: FileEntry, e: MouseEvent) {
-  if (props.selected.length > 0 || e.shiftKey) {
-    emit('toggleSelect', entry.path, e.shiftKey)
-    return
-  }
-  if (entry.is_dir) emit('navigate', entry.path)
-  else if (fileCategory(entry.mime, entry.name) === 'archive') emit('archivePreview', entry)
-  else emit('preview', entry)
-}
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop } =
+  useFileInteraction(props, emit)
 
-// ── Drag & drop ──────────────────────────────────────────────────────────────
-const dragOverPath = ref<string | null>(null)
-
-function onCardDragStart(e: DragEvent, entry: FileEntry) {
-  const paths = props.selected.includes(entry.path) ? [...props.selected] : [entry.path]
-  e.dataTransfer!.setData('application/x-files-internal', JSON.stringify(paths))
-  e.dataTransfer!.effectAllowed = 'move'
-  setMoveDragImage(e, paths.length)
-}
-
-function onCardDragEnd() {
-  dragOverPath.value = null
-}
-
-function onCardDragOver(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  if (!e.dataTransfer?.types.includes('application/x-files-internal')) return
-  e.preventDefault()
-  e.dataTransfer.dropEffect = 'move'
-  dragOverPath.value = entry.path
-}
-
-function onCardDragLeave(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  const related = e.relatedTarget as Node | null
-  const card = e.currentTarget as HTMLElement
-  if (!related || !card.contains(related)) {
-    if (dragOverPath.value === entry.path) dragOverPath.value = null
-  }
-}
-
-function onCardDrop(e: DragEvent, entry: FileEntry) {
-  if (!entry.is_dir) return
-  e.preventDefault()
-  dragOverPath.value = null
-  const raw = e.dataTransfer?.getData('application/x-files-internal')
-  if (!raw) return
-  const paths: string[] = JSON.parse(raw)
-  emit('dropToFolder', entry.path, paths)
-}
-
-// ── Category helpers (icon colours) ─────────────────────────────────────────
 </script>
 
 <template>
@@ -208,11 +159,11 @@ function onCardDrop(e: DragEvent, entry: FileEntry) {
         ]"
         @click="handleClick(item.entry, $event)"
         @contextmenu.prevent="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
-        @dragstart="onCardDragStart($event, item.entry)"
-        @dragend="onCardDragEnd"
-        @dragover="onCardDragOver($event, item.entry)"
-        @dragleave="onCardDragLeave($event, item.entry)"
-        @drop="onCardDrop($event, item.entry)"
+        @dragstart="onDragStart($event, item.entry)"
+        @dragend="onDragEnd"
+        @dragover="onDragOver($event, item.entry)"
+        @dragleave="onDragLeave($event, item.entry)"
+        @drop="onDrop($event, item.entry)"
       >
         <!-- Thumbnail area (square) -->
         <div
