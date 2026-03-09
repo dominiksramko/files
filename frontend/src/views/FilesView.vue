@@ -641,11 +641,13 @@ const compressExtMap: Record<string, string> = {
 
 function openCompressDialog(paths: string[]) {
   compressPaths.value = paths
-  const folderName = filesStore.currentPath
-    ? filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'archive'
-    : 'archive'
+  const baseName = paths.length === 1
+    ? paths[0].split('/').filter(Boolean).pop() ?? 'archive'
+    : filesStore.currentPath
+      ? filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'archive'
+      : 'archive'
   compressFormat.value = 'zip'
-  compressName.value = folderName + '.zip'
+  compressName.value = baseName + '.zip'
   compressPassword.value = ''
   compressProtectFilenames.value = false
   compressDialog.value = true
