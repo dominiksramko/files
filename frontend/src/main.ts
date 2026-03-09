@@ -5,6 +5,10 @@ import App from './App.vue'
 import router from './router'
 import './style.css'
 
+// When a new build deploys while users are on the page, lazy-loaded chunks from
+// the previous build will 404. Reload so they get the fresh index.html + chunks.
+window.addEventListener('vite:preloadError', () => window.location.reload())
+
 const app = createApp(App)
 
 app.use(createPinia())
