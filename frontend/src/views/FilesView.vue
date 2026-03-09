@@ -203,6 +203,7 @@ async function navigate(path: string) {
   const actualPath = await filesStore.navigate(path)
   fetchFolderPref(actualPath)
   selectedPaths.value = []
+  lastAnchorPath.value = null
   router.push({ query: actualPath ? { path: actualPath } : {} })
 }
 
@@ -220,6 +221,7 @@ watch(
       const actualPath = await filesStore.navigate(p)
       fetchFolderPref(actualPath)
       selectedPaths.value = []
+      lastAnchorPath.value = null
       if (actualPath !== p) {
         router.replace({ query: actualPath ? { path: actualPath } : {} })
         return
@@ -249,8 +251,25 @@ function onExtracted() {
 
 // ── Selection ──────────────────────────────────────────────────────────────
 const selectedPaths = ref<string[]>([])
+const lastAnchorPath = ref<string | null>(null)
 
-function toggleSelect(path: string) {
+function toggleSelect(path: string, shift: boolean) {
+  const list = visibleEntries.value.map((e) => e.path)
+  if (shift && lastAnchorPath.value && list.includes(lastAnchorPath.value)) {
+    const a = list.indexOf(lastAnchorPath.value)
+    const b = list.indexOf(path)
+    const [lo, hi] = a < b ? [a, b] : [b, a]
+    const range = list.slice(lo, hi + 1)
+    const alreadySelected = range.every((p) => selectedPaths.value.includes(p))
+    if (alreadySelected) {
+      selectedPaths.value = selectedPaths.value.filter((p) => !range.includes(p))
+    } else {
+      const merged = new Set([...selectedPaths.value, ...range])
+      selectedPaths.value = list.filter((p) => merged.has(p))
+    }
+    return
+  }
+  lastAnchorPath.value = path
   const idx = selectedPaths.value.indexOf(path)
   if (idx >= 0) selectedPaths.value = selectedPaths.value.filter((_, i) => i !== idx)
   else selectedPaths.value = [...selectedPaths.value, path]
@@ -262,6 +281,7 @@ function selectAll() {
 
 function deselectAll() {
   selectedPaths.value = []
+  lastAnchorPath.value = null
 }
 
 // ── Clipboard ──────────────────────────────────────────────────────────────
@@ -641,11 +661,10 @@ const compressExtMap: Record<string, string> = {
 
 function openCompressDialog(paths: string[]) {
   compressPaths.value = paths
-  const baseName = paths.length === 1
-    ? paths[0].split('/').filter(Boolean).pop() ?? 'archive'
-    : filesStore.currentPath
-      ? filesStore.currentPath.split('/').filter(Boolean).pop() ?? 'archive'
-      : 'archive'
+  const parts0 = paths.length === 1 ? (paths[0] as string).split('/').filter(Boolean) : []
+  const singleName = parts0.length ? parts0[parts0.length - 1] : undefined
+  const cwdParts = filesStore.currentPath.split('/').filter(Boolean)
+  const baseName = singleName ?? (cwdParts.length ? cwdParts[cwdParts.length - 1] : 'archive')
   compressFormat.value = 'zip'
   compressName.value = baseName + '.zip'
   compressPassword.value = ''

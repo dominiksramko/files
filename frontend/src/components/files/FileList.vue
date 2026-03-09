@@ -21,7 +21,7 @@ const emit = defineEmits<{
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
   toggleSort: [key: string]
-  toggleSelect: [path: string]
+  toggleSelect: [path: string, shift: boolean]
   selectAll: []
   deselectAll: []
   contextMenu: [entry: FileEntry, x: number, y: number]
@@ -41,9 +41,9 @@ function onHeaderCheckbox() {
   else emit('selectAll')
 }
 
-function handleClick(entry: FileEntry) {
-  if (props.selected.length > 0) {
-    emit('toggleSelect', entry.path)
+function handleClick(entry: FileEntry, e: MouseEvent) {
+  if (props.selected.length > 0 || e.shiftKey) {
+    emit('toggleSelect', entry.path, e.shiftKey)
     return
   }
   if (entry.is_dir) emit('navigate', entry.path)
@@ -161,7 +161,7 @@ function onRowDrop(e: DragEvent, entry: FileEntry) {
                   ? 'bg-blue-950/40 hover:bg-blue-950/60'
                   : 'hover:bg-zinc-800/50',
             ]"
-            @click="handleClick(entry)"
+            @click="handleClick(entry, $event)"
             @contextmenu.prevent="emit('contextMenu', entry, $event.clientX, $event.clientY)"
             @dragstart="onRowDragStart($event, entry)"
             @dragend="onRowDragEnd"
@@ -170,12 +170,9 @@ function onRowDrop(e: DragEvent, entry: FileEntry) {
             @drop="onRowDrop($event, entry)"
           >
             <!-- Custom checkbox -->
-            <td class="w-10 cursor-pointer" @click.stop="emit('toggleSelect', entry.path)">
+            <td class="w-10 cursor-pointer" @click.capture.stop="emit('toggleSelect', entry.path, $event.shiftKey)">
               <div class="flex items-center justify-center h-10">
-                <AppCheckbox
-                  :model-value="selected.includes(entry.path)"
-                  @update:model-value="emit('toggleSelect', entry.path)"
-                />
+                <AppCheckbox :model-value="selected.includes(entry.path)" />
               </div>
             </td>
 

@@ -15,7 +15,7 @@ const emit = defineEmits<{
   navigate: [path: string]
   preview: [entry: FileEntry]
   archivePreview: [entry: FileEntry]
-  toggleSelect: [path: string]
+  toggleSelect: [path: string, shift: boolean]
   contextMenu: [entry: FileEntry, x: number, y: number]
   dropToFolder: [destPath: string, paths: string[]]
 }>()
@@ -107,9 +107,9 @@ watch(() => props.entries, () => {
 })
 
 // ── Click handlers ───────────────────────────────────────────────────────────
-function handleClick(entry: FileEntry) {
-  if (props.selected.length > 0) {
-    emit('toggleSelect', entry.path)
+function handleClick(entry: FileEntry, e: MouseEvent) {
+  if (props.selected.length > 0 || e.shiftKey) {
+    emit('toggleSelect', entry.path, e.shiftKey)
     return
   }
   if (entry.is_dir) emit('navigate', entry.path)
@@ -206,7 +206,7 @@ function onCardDrop(e: DragEvent, entry: FileEntry) {
               ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/40'
               : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
         ]"
-        @click="handleClick(item.entry)"
+        @click="handleClick(item.entry, $event)"
         @contextmenu.prevent="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
         @dragstart="onCardDragStart($event, item.entry)"
         @dragend="onCardDragEnd"
@@ -251,7 +251,7 @@ function onCardDrop(e: DragEvent, entry: FileEntry) {
             class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
             :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
             :title="selected.includes(item.entry.path) ? 'Deselect' : 'Select'"
-            @click.stop="emit('toggleSelect', item.entry.path)"
+            @click.stop="emit('toggleSelect', item.entry.path, $event.shiftKey)"
           >
             <span
               class="size-5 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
