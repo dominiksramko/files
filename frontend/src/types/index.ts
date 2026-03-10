@@ -40,6 +40,16 @@ export interface ArchiveEntry {
   is_dir: boolean
 }
 
+export interface FileOp {
+  key: string
+  label: string
+  icon: string
+  danger?: boolean
+  visible?: boolean
+  disabled?: boolean
+  action: () => void
+}
+
 export type FileCategory =
   | 'image'
   | 'video'

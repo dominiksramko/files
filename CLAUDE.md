@@ -7,6 +7,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **No duplication.** Before writing new logic, check if it already exists. If the same logic appears in more than one place, extract it — composable, utility function, helper, middleware, shared component, whatever fits.
 - **Refactor proactively.** If a user mentions that something is used elsewhere, or if you notice while implementing that near-identical code already exists, do the refactor as part of the task — don't just copy-paste and move on.
 - **Shared logic belongs in one place.** Event handlers, formatters, API calls, drag-and-drop, conflict resolution, Go helper functions — if two places do the same thing, they should call the same function.
+- **Descriptive variable names.** No single-letter variables or unclear abbreviations (`e`, `p`, `m`, `val`, `tmp`, etc.). Names should convey meaning at a glance.
 
 ## Key Paths
 - `backend/` — Go + Gin + SQLite API server
@@ -58,9 +59,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
 ## File Operations Convention (IMPORTANT)
-When adding a new file operation, ALWAYS add it to BOTH:
-1. The context menu — `contextMenuItems` computed in `FilesView.vue`
-2. The FileOpsBar — `frontend/src/components/files/FileOpsBar.vue` (add emit + button), then wire the emit in the `<FileOpsBar>` usage in `FilesView.vue`
+When adding a new file operation, add it ONLY to `buildFileOps()` in `FilesView.vue` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
 
 ## Implemented Features
 - JWT auth (login, guards, auto-restore on reload, password change, display name)
