@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { marked, Renderer, type Tokens } from 'marked'
 import hljs from 'highlight.js/lib/common'
 import type { FileEntry } from '@/types'
@@ -7,7 +7,7 @@ import { files as filesApi } from '@/utils/api'
 import { useFilesStore } from '@/stores/files'
 import { formatSize, isMarkdownFile } from '@/utils/formatters'
 
-const props = defineProps<{ entry: FileEntry }>()
+const props = defineProps<{ entry: FileEntry; initialEdit?: boolean }>()
 
 const filesStore = useFilesStore()
 
@@ -23,11 +23,14 @@ const editing     = ref(false)
 const editContent = ref('')
 const saving      = ref(false)
 const saveError   = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-function startEdit() {
+async function startEdit() {
   editContent.value = textContent.value ?? ''
   saveError.value = ''
   editing.value = true
+  await nextTick()
+  textareaRef.value?.focus()
 }
 
 function cancelEdit() {
@@ -98,6 +101,7 @@ onMounted(async () => {
     const res = await fetch(filesApi.streamUrl(props.entry.path, props.entry.mod_time), { signal: fetchController.signal })
     if (!res.ok) throw new Error()
     textContent.value = await res.text()
+    if (props.initialEdit) startEdit()
   } catch (e) {
     if ((e as Error).name !== 'AbortError') textError.value = true
   } finally {
@@ -159,6 +163,7 @@ onBeforeUnmount(() => {
       </div>
       <textarea
         v-else-if="editing"
+        ref="textareaRef"
         v-model="editContent"
         class="flex-1 w-full bg-zinc-900 text-zinc-100 font-mono text-sm leading-relaxed p-6 resize-none focus:outline-none"
         spellcheck="false"

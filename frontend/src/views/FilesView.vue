@@ -169,8 +169,9 @@ const visibleEntries = computed(() =>
 )
 
 // ── Preview navigation ─────────────────────────────────────────────────────
-const previewFilePath = ref<string | null>(null)
-const archiveEntry    = ref<FileEntry | null>(null)
+const previewFilePath    = ref<string | null>(null)
+const previewTextEditMode = ref(false)
+const archiveEntry       = ref<FileEntry | null>(null)
 
 const previewableEntries = computed(() => {
   const pool = searchQuery.value ? searchResults.value : visibleEntries.value
@@ -189,16 +190,19 @@ const previewEntry = computed<FileEntry | null>(
   () => previewableEntries.value[previewIndex.value] ?? null,
 )
 
-function openPreview(entry: FileEntry) { previewFilePath.value = entry.path }
-function closePreview()                { previewFilePath.value = null }
+function openPreview(entry: FileEntry) {
+  previewTextEditMode.value = false
+  previewFilePath.value = entry.path
+}
+function closePreview() { previewFilePath.value = null }
 
 function prevPreview() {
   const previousEntry = previewableEntries.value[previewIndex.value - 1]
-  if (previousEntry) previewFilePath.value = previousEntry.path
+  if (previousEntry) { previewTextEditMode.value = false; previewFilePath.value = previousEntry.path }
 }
 function nextPreview() {
   const nextEntry = previewableEntries.value[previewIndex.value + 1]
-  if (nextEntry) previewFilePath.value = nextEntry.path
+  if (nextEntry) { previewTextEditMode.value = false; previewFilePath.value = nextEntry.path }
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
@@ -623,6 +627,33 @@ async function confirmNewFolder() {
   }
 }
 
+// ── New text file ─────────────────────────────────────────────────────────
+const newTextFileDialog = ref(false)
+const newTextFileName = ref('')
+const newTextFileInput = ref<HTMLInputElement | null>(null)
+
+async function openNewTextFile() {
+  newTextFileName.value = ''
+  newTextFileDialog.value = true
+  await nextTick()
+  newTextFileInput.value?.focus()
+}
+
+async function confirmNewTextFile() {
+  const name = newTextFileName.value.trim()
+  if (!name) return
+  newTextFileDialog.value = false
+  const filename = name.endsWith('.txt') ? name : `${name}.txt`
+  const path = filesStore.currentPath ? `${filesStore.currentPath}/${filename}` : filename
+  try {
+    await filesApi.writeContent(path, '')
+    previewTextEditMode.value = true
+    previewFilePath.value = path
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
+
 // ── Rename ────────────────────────────────────────────────────────────────
 const renameDialog = ref(false)
 const renameDialogEntry = ref<{ path: string; name: string } | null>(null)
@@ -1040,6 +1071,11 @@ onMounted(async () => {
             <AppIcon name="search" class="size-4" />
           </button>
 
+          <!-- New text file -->
+          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New text file" @click="openNewTextFile">
+            <AppIcon name="newFile" class="size-4" />
+          </button>
+
           <!-- New folder -->
           <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
             <AppIcon name="newFolder" class="size-4" />
@@ -1143,6 +1179,7 @@ onMounted(async () => {
       :has-next="previewIndex < previewableEntries.length - 1"
       :index="previewIndex"
       :total="previewableEntries.length"
+      :text-edit-mode="previewTextEditMode"
       @close="closePreview"
       @prev="prevPreview"
       @next="nextPreview"
@@ -1178,6 +1215,32 @@ onMounted(async () => {
           <div class="flex gap-2 mt-3 justify-end">
             <AppButton @click="newFolderDialog = false">Cancel</AppButton>
             <AppButton variant="primary" @click="confirmNewFolder">Create</AppButton>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- New text file dialog -->
+    <Transition name="fade">
+      <div
+        v-if="newTextFileDialog"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        @click.self="newTextFileDialog = false"
+      >
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">New text file</h3>
+          <input
+            ref="newTextFileInput"
+            v-model="newTextFileName"
+            type="text"
+            placeholder="filename.txt"
+            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+            @keydown.enter="confirmNewTextFile"
+            @keydown.escape="newTextFileDialog = false"
+          />
+          <div class="flex gap-2 mt-3 justify-end">
+            <AppButton @click="newTextFileDialog = false">Cancel</AppButton>
+            <AppButton variant="primary" @click="confirmNewTextFile">Create</AppButton>
           </div>
         </div>
       </div>

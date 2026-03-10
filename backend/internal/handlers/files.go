@@ -193,9 +193,8 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		return
 	}
 
-	info, err := os.Stat(abs)
-	if err != nil || info.IsDir() {
-		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+	if info, err := os.Stat(abs); err == nil && info.IsDir() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is a directory"})
 		return
 	}
 
@@ -210,7 +209,7 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		return
 	}
 
-	if err := os.WriteFile(abs, body, info.Mode()); err != nil {
+	if err := os.WriteFile(abs, body, 0o644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

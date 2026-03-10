@@ -18,6 +18,7 @@ const props = defineProps<{
   hasNext: boolean
   index: number
   total: number
+  textEditMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -121,6 +122,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
               v-if="viewerComponent"
               :key="entry.path"
               :entry="entry"
+              v-bind="viewerComponent === TextViewer ? { initialEdit: textEditMode } : {}"
             />
           </div>
 
