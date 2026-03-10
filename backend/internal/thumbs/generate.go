@@ -89,6 +89,7 @@ func generateThumb(srcPath, dstPath string, size int) error {
 	}
 
 	src = applyOrientation(src, jpegOrientation(srcPath))
+	src = alphaCrop(src)
 	thumb := squareCrop(src, size)
 
 	out, err := os.Create(dstPath)
@@ -152,6 +153,7 @@ func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 		return fmt.Errorf("decode: %w", err)
 	}
 
+	src = alphaCrop(src)
 	composited := flattenOnCheckerboard(src)
 	thumb := squareCrop(composited, size)
 
@@ -285,6 +287,7 @@ func generateSVGThumb(srcPath, dstPath string, size int) error {
 		return fmt.Errorf("decode png: %w", err)
 	}
 
+	src = alphaCrop(src)
 	composited := flattenOnCheckerboard(src)
 	thumb := squareCrop(composited, size)
 
@@ -371,6 +374,63 @@ func videoDuration(path string) float64 {
 		return 0
 	}
 	return d
+}
+
+// alphaCrop returns src cropped to the bounding box of non-transparent pixels.
+// Images with no alpha channel (YCbCr, CMYK, Gray) are returned unchanged.
+// If all pixels are transparent or the content already fills the canvas, src
+// is also returned unchanged.
+func alphaCrop(src image.Image) image.Image {
+	switch src.ColorModel() {
+	case color.YCbCrModel, color.CMYKModel, color.GrayModel, color.Gray16Model:
+		return src
+	}
+
+	b := src.Bounds()
+	minX, minY := b.Max.X, b.Max.Y
+	maxX, maxY := b.Min.X-1, b.Min.Y-1
+
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			_, _, _, a := src.At(x, y).RGBA()
+			if a > 0 {
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	// No visible pixels at all.
+	if maxX < minX {
+		return src
+	}
+	// Content already fills the canvas.
+	if minX == b.Min.X && minY == b.Min.Y && maxX == b.Max.X-1 && maxY == b.Max.Y-1 {
+		return src
+	}
+
+	rect := image.Rect(minX, minY, maxX+1, maxY+1)
+	type subImager interface {
+		SubImage(image.Rectangle) image.Image
+	}
+	if si, ok := src.(subImager); ok {
+		return si.SubImage(rect)
+	}
+
+	// Fallback for image types that don't support SubImage.
+	cropped := image.NewNRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+	stdraw.Draw(cropped, cropped.Bounds(), src, rect.Min, stdraw.Src)
+	return cropped
 }
 
 // squareCrop takes a top-center square crop of src and scales it to size×size.
