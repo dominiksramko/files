@@ -55,6 +55,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl
 - **AppIcon.vue** — ALWAYS use for icons; NEVER write inline SVGs. Registry: `frontend/src/utils/icons.ts`. Usage: `<AppIcon name="trash" class="size-4" />`. Optional `stroke-width` prop. To add a new icon, add it to `icons.ts` first.
 - **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted globally in `AppLayout` — no need to add it per-view.
+- **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
 ## File Operations Convention (IMPORTANT)
 When adding a new file operation, ALWAYS add it to BOTH:
@@ -87,11 +88,6 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
 - Body text/description: `<p class="text-xs text-zinc-400 mb-3">`
 - Text input: `w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors`
 - Key handlers on inputs: `@keydown.enter` to confirm, `@keydown.escape` to close
-- Footer buttons: `<div class="flex gap-2 mt-3 justify-end">`
-  - Cancel: `px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800`
-  - Primary: `px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors`
-  - Destructive: `px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors`
-  - Secondary/neutral: `px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors`
 
 ## File Conflict Resolution Convention
 When a file operation (move, copy, upload, extract, compress) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The frontend then presents the user with a resolution modal offering:

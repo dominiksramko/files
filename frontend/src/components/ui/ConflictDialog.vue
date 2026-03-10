@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useConflictDialog } from '@/composables/useConflictDialog'
+import AppButton from '@/components/ui/AppButton.vue'
 
 const { visible, title, conflicts, choose } = useConflictDialog()
 </script>
@@ -24,18 +25,9 @@ const { visible, title, conflicts, choose } = useConflictDialog()
           >{{ name }}</li>
         </ul>
         <div class="flex gap-2 justify-end">
-          <button
-            class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-            @click="choose(null)"
-          >Cancel</button>
-          <button
-            class="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
-            @click="choose('replace')"
-          >Replace</button>
-          <button
-            class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-            @click="choose('rename')"
-          >Keep all</button>
+          <AppButton @click="choose(null)">Cancel</AppButton>
+          <AppButton variant="secondary" @click="choose('replace')">Replace</AppButton>
+          <AppButton variant="primary" @click="choose('rename')">Keep all</AppButton>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { useToast } from '@/composables/useToast'
 import UserFormModal from '@/components/admin/UserFormModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -233,14 +234,8 @@ onMounted(fetchUsers)
             All generated thumbnails, image previews and HLS video segments will be deleted.
           </p>
           <div class="flex gap-2 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="showClearDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors"
-              @click="confirmClearCache"
-            >Clear cache</button>
+            <AppButton @click="showClearDialog = false">Cancel</AppButton>
+            <AppButton variant="destructive" @click="confirmClearCache">Clear cache</AppButton>
           </div>
         </div>
       </div>

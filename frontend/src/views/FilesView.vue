@@ -19,6 +19,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import ConflictDialog from '@/components/ui/ConflictDialog.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 
 const filesStore = useFilesStore()
@@ -1161,14 +1162,8 @@ onMounted(async () => {
             @keydown.escape="newFolderDialog = false"
           />
           <div class="flex gap-2 mt-3 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="newFolderDialog = false"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="confirmNewFolder"
-            >Create</button>
+            <AppButton @click="newFolderDialog = false">Cancel</AppButton>
+            <AppButton variant="primary" @click="confirmNewFolder">Create</AppButton>
           </div>
         </div>
       </div>
@@ -1193,14 +1188,8 @@ onMounted(async () => {
             @keydown.escape="cancelRename"
           />
           <div class="flex gap-2 mt-3 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="cancelRename"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              @click="confirmRename"
-            >Rename</button>
+            <AppButton @click="cancelRename">Cancel</AppButton>
+            <AppButton variant="primary" @click="confirmRename">Rename</AppButton>
           </div>
         </div>
       </div>
@@ -1226,14 +1215,8 @@ onMounted(async () => {
             </template>
           </p>
           <div class="flex gap-2 mt-3 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="cancelDelete"
-            >Cancel</button>
-            <button
-              class="px-3 py-1.5 text-sm bg-red-700 hover:bg-red-600 text-white rounded-lg transition-colors"
-              @click="confirmDelete"
-            >Delete</button>
+            <AppButton @click="cancelDelete">Cancel</AppButton>
+            <AppButton variant="destructive" @click="confirmDelete">Delete</AppButton>
           </div>
         </div>
       </div>
@@ -1284,15 +1267,8 @@ onMounted(async () => {
           </div>
 
           <div class="flex gap-2 mt-3 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="compressDialog = false"
-            >Cancel</button>
-            <button
-              :disabled="!compressName.trim()"
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
-              @click="confirmCompress"
-            >Create</button>
+            <AppButton @click="compressDialog = false">Cancel</AppButton>
+            <AppButton variant="primary" :disabled="!compressName.trim()" @click="confirmCompress">Create</AppButton>
           </div>
         </div>
       </div>
@@ -1318,15 +1294,8 @@ onMounted(async () => {
           />
           <p v-if="extractError" class="text-xs text-red-400 mt-2">{{ extractError }}</p>
           <div class="flex gap-2 mt-3 justify-end">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="extractPasswordDialog = false"
-            >Cancel</button>
-            <button
-              :disabled="extracting || !extractPasswordInput"
-              class="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50"
-              @click="confirmExtract"
-            >{{ extracting ? 'Extracting…' : 'Extract' }}</button>
+            <AppButton @click="extractPasswordDialog = false">Cancel</AppButton>
+            <AppButton variant="primary" :disabled="extracting || !extractPasswordInput" @click="confirmExtract">{{ extracting ? 'Extracting…' : 'Extract' }}</AppButton>
           </div>
         </div>
       </div>
@@ -1479,10 +1448,7 @@ onMounted(async () => {
           </dl>
 
           <div class="flex justify-end mt-4">
-            <button
-              class="px-3 py-1.5 text-sm text-zinc-400 hover:text-white transition-colors rounded-lg hover:bg-zinc-800"
-              @click="closeDetails"
-            >Close</button>
+            <AppButton @click="closeDetails">Close</AppButton>
           </div>
         </div>
       </div>
