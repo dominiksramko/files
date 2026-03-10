@@ -80,6 +80,7 @@ onMounted(() => load())
         <input
           v-model="password"
           type="password"
+          autocomplete="off"
           placeholder="Enter password"
           class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           @keydown.enter="unlock"
@@ -111,6 +112,7 @@ onMounted(() => load())
         <input
           v-model="search"
           type="text"
+          autocomplete="off"
           placeholder="Filter files…"
           class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg pl-8 pr-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
           @keydown.escape="search = ''"
@@ -176,6 +178,7 @@ onMounted(() => load())
           <input
             v-model="extractPassword"
             type="password"
+            autocomplete="off"
             placeholder="Password (optional)"
             class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
             @keydown.enter="extract"
