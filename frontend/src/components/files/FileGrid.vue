@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { FileEntry } from '@/types'
-import { entryCategory, catBg, catIconColor, catIconName, formatSize } from '@/utils/formatters'
+import { entryCategory, catBg, catIconColor, catIconName, fileExtension, formatSize } from '@/utils/formatters'
 import { useFileInteraction } from '@/composables/useFileInteraction'
 import { files as filesApi } from '@/utils/api'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -222,8 +222,12 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
         <!-- Name + meta (fixed META_H height) -->
         <div class="px-2 py-2 overflow-hidden">
           <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
-          <p class="text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
-            {{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}
+          <p class="flex gap-1 text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
+            <template v-if="!item.entry.is_dir">
+              <span>{{ fileExtension(item.entry.name) }}</span>
+              <span>&#x2022;</span>
+            </template>
+            <span>{{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}</span>
           </p>
         </div>
       </div>
