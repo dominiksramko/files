@@ -16,11 +16,15 @@ function buildCss(p: SubtitlePrefs): string {
   const bg     = p.bg_opacity > 0 ? `rgba(0,0,0,${p.bg_opacity})` : 'transparent'
   const shadow = SHADOW_MAP[p.text_style] ?? 'none'
   const font   = p.font_family || 'sans-serif'
+  // Base scales with viewport width, clamped to sensible min/max.
+  // User's font_size preference (default 100) acts as a multiplier on top.
+  const scale    = p.font_size / 100
+  const fontSize = `calc(clamp(0.6rem, 2vw, 1rem) * ${scale})`
   // ::cue targets native browser track rendering
   // .plyr__caption targets Plyr's own JS-rendered captions
   return (
-    `::cue{color:${p.color};background-color:${bg};font-size:${p.font_size}%;text-shadow:${shadow};font-family:${font}}` +
-    `.plyr__caption{color:${p.color}!important;background-color:${bg}!important;font-size:${p.font_size}%!important;text-shadow:${shadow}!important;font-family:${font}!important}`
+    `::cue{color:${p.color};background-color:${bg};font-size:${fontSize};text-shadow:${shadow};font-family:${font}}` +
+    `.plyr__caption{color:${p.color}!important;background-color:${bg}!important;font-size:${fontSize}!important;text-shadow:${shadow}!important;font-family:${font}!important}`
   )
 }
 
