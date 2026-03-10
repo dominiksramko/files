@@ -60,6 +60,7 @@ func main() {
 	progressH := handlers.NewProgressHandler(db)
 	systemH := handlers.NewSystemHandler(cfg.UsersRoot)
 	officeH := handlers.NewOfficeHandler(cfg.JWTSecret)
+	screenshotH := handlers.NewScreenshotHandler()
 
 	// Auth middleware (applied per group)
 	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
@@ -97,6 +98,7 @@ func main() {
 			authed.POST("/files/upload", opsH.Upload)
 			authed.POST("/files/mkdir", opsH.Mkdir)
 			authed.POST("/files/rename", opsH.Rename)
+			authed.POST("/files/screenshot", screenshotH.Take)
 			authed.GET("/files/subtitles", subsH.List)
 			authed.GET("/files/subtitle", subsH.Stream)
 			authed.GET("/files/size", infoH.SizeStream)

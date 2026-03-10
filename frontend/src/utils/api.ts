@@ -153,6 +153,9 @@ export const files = {
   officeToken: (path: string) =>
     request<{ token: string }>('POST', '/files/office-token', { path }),
 
+  screenshot: (path: string, timestamp: number) =>
+    request<{ filename: string }>('POST', '/files/screenshot', { path, timestamp }),
+
   // Image resolution or video duration/resolution/codec for a single file.
   fileMeta: (path: string) =>
     request<{ image?: { width: number; height: number }; video?: { duration: number; width: number; height: number; codec?: string } }>(

@@ -4,6 +4,9 @@ import Plyr from 'plyr'
 import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
 import { files as filesApi, progress as progressApi } from '@/utils/api'
+import { useToast } from '@/composables/useToast'
+import AppIcon from '@/components/ui/AppIcon.vue'
+import AppSpinner from '@/components/ui/AppSpinner.vue'
 
 const props = defineProps<{ entry: FileEntry }>()
 
@@ -25,11 +28,31 @@ interface SubtitleTrack {
   srclang: string
 }
 
-const videoEl   = ref<HTMLVideoElement | null>(null)
-const subtitles = ref<SubtitleTrack[]>([])
+const videoEl        = ref<HTMLVideoElement | null>(null)
+const subtitles      = ref<SubtitleTrack[]>([])
+const plyrControlsEl = ref<Element | null>(null)
 let plyrInstance: Plyr | null = null
 let hlsInstance: any = null
 let alive = true
+
+const { show: showToast } = useToast()
+
+// --- Screenshot ---
+const takingScreenshot = ref(false)
+
+async function takeScreenshot() {
+  if (!videoEl.value || takingScreenshot.value) return
+  const timestamp = Math.floor(videoEl.value.currentTime)
+  takingScreenshot.value = true
+  try {
+    const { filename } = await filesApi.screenshot(props.entry.path, timestamp)
+    showToast(`Screenshot saved as ${filename}`, 'success')
+  } catch {
+    showToast('Screenshot failed', 'error')
+  } finally {
+    takingScreenshot.value = false
+  }
+}
 
 // --- Resume prompt ---
 const showResumePrompt = ref(false)
@@ -87,6 +110,15 @@ function setupPlyr(el: HTMLVideoElement) {
   }
 
   plyrInstance = new Plyr(el, plyrOptions)
+
+  // Insert a placeholder span before the captions button and teleport the
+  // screenshot button into it, so it appears in the native Plyr control bar.
+  const captionsBtn = el.closest('.plyr')?.querySelector('[data-plyr="captions"]')
+  if (captionsBtn?.parentElement) {
+    const screenshotSlot = document.createElement('span')
+    captionsBtn.parentElement.insertBefore(screenshotSlot, captionsBtn)
+    plyrControlsEl.value = screenshotSlot
+  }
 
   // Fetch saved progress once the player is ready
   plyrInstance.on('ready', async () => {
@@ -210,6 +242,21 @@ onBeforeUnmount(() => {
       />
     </video>
 
+    <!-- Screenshot button — teleported into Plyr's control bar -->
+    <Teleport v-if="plyrControlsEl" :to="plyrControlsEl">
+      <button
+        class="plyr__controls__item plyr__control"
+        type="button"
+        data-screenshot
+        title="Take screenshot"
+        :disabled="takingScreenshot"
+        @click.stop="takeScreenshot"
+      >
+        <AppSpinner v-if="takingScreenshot" size="sm" />
+        <AppIcon v-else name="camera" class="size-4" />
+      </button>
+    </Teleport>
+
     <!-- Resume prompt -->
     <Transition name="fade">
       <div
@@ -243,6 +290,13 @@ onBeforeUnmount(() => {
 :deep(.plyr video) {
   max-height: calc(100vh - 120px);
   object-fit: contain;
+}
+:deep([data-screenshot] svg) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .fade-enter-active,
