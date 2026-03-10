@@ -111,7 +111,7 @@ onUnmounted(() => {
           transition: isPanning ? 'none' : 'transform 0.1s ease',
           willChange: 'transform',
         }"
-        :class="['w-full max-h-full object-contain select-none', hasAlpha && 'checkerboard']"
+        :class="['max-h-full object-contain select-none', hasAlpha && 'checkerboard']"
         draggable="false"
         @error="imageError = true"
       />
