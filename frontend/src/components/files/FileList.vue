@@ -38,7 +38,7 @@ const someSelected = computed(
 )
 
 function onHeaderCheckbox() {
-  if (allSelected.value) emit('deselectAll')
+  if (props.selected.length > 0) emit('deselectAll')
   else emit('selectAll')
 }
 
