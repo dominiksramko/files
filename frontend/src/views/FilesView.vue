@@ -169,26 +169,36 @@ const visibleEntries = computed(() =>
 )
 
 // ── Preview navigation ─────────────────────────────────────────────────────
-const previewIndex = ref(-1)
-const archiveEntry = ref<FileEntry | null>(null)
+const previewFilePath = ref<string | null>(null)
+const archiveEntry    = ref<FileEntry | null>(null)
 
 const previewableEntries = computed(() => {
   const pool = searchQuery.value ? searchResults.value : visibleEntries.value
   return pool.filter((e) => !e.is_dir && fileCategory(e.mime, e.name) !== 'archive')
 })
 
+// Derived from previewFilePath so it auto-corrects whenever the list changes
+// (e.g. a new file added by SSE shifts positions).
+const previewIndex = computed(() =>
+  previewFilePath.value !== null
+    ? previewableEntries.value.findIndex((entry) => entry.path === previewFilePath.value)
+    : -1
+)
+
 const previewEntry = computed<FileEntry | null>(
   () => previewableEntries.value[previewIndex.value] ?? null,
 )
 
-function openPreview(entry: FileEntry) {
-  previewIndex.value = previewableEntries.value.findIndex((e) => e.path === entry.path)
-}
+function openPreview(entry: FileEntry) { previewFilePath.value = entry.path }
+function closePreview()                { previewFilePath.value = null }
 
-function closePreview() { previewIndex.value = -1 }
-function prevPreview() { if (previewIndex.value > 0) previewIndex.value-- }
+function prevPreview() {
+  const previousEntry = previewableEntries.value[previewIndex.value - 1]
+  if (previousEntry) previewFilePath.value = previousEntry.path
+}
 function nextPreview() {
-  if (previewIndex.value < previewableEntries.value.length - 1) previewIndex.value++
+  const nextEntry = previewableEntries.value[previewIndex.value + 1]
+  if (nextEntry) previewFilePath.value = nextEntry.path
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
@@ -231,19 +241,11 @@ watch(
     const qParam = (q.q as string) ?? ''
     if (searchQuery.value !== qParam) searchQuery.value = qParam
 
-    const previewPath = q.preview as string | undefined
-    if (previewEntry.value?.path === previewPath) return
-    if (!previewPath) { previewIndex.value = -1; return }
-    const idx = previewableEntries.value.findIndex((e) => e.path === previewPath)
-    previewIndex.value = idx >= 0 ? idx : -1
+    const urlPreviewPath = q.preview as string | undefined
+    if (previewFilePath.value === (urlPreviewPath ?? null)) return
+    previewFilePath.value = urlPreviewPath ?? null
   },
 )
-
-watch(previewableEntries, (entries) => {
-  const previewPath = route.query.preview as string | undefined
-  if (!previewPath || previewIndex.value >= 0) return
-  previewIndex.value = entries.findIndex((e) => e.path === previewPath)
-})
 
 // ── Archive ────────────────────────────────────────────────────────────────
 function onExtracted() {
@@ -641,7 +643,7 @@ async function confirmRename() {
   const trimmed = renameDialogName.value.trim()
   renameDialog.value = false
   if (!trimmed || trimmed === (entry.path.split('/').pop() ?? '')) return
-  const wasPreviewingThis = previewIndex.value >= 0 && previewEntry.value?.path === entry.path
+  const wasPreviewingThis = previewFilePath.value === entry.path
   try {
     await fileops.rename(entry.path, trimmed)
     selectedPaths.value = []
@@ -655,8 +657,7 @@ async function confirmRename() {
       filesStore.entries[idx] = { ...existing, name: trimmed, path: newPath }
     }
     if (wasPreviewingThis) {
-      const newIdx = previewableEntries.value.findIndex((e) => e.path === newPath)
-      previewIndex.value = newIdx >= 0 ? newIdx : -1
+      previewFilePath.value = newPath
     }
   } catch (err) {
     showToast((err as Error).message, 'error')
@@ -939,6 +940,7 @@ onMounted(async () => {
   if (actualPath !== initialPath) {
     router.replace({ query: actualPath ? { path: actualPath } : {} })
   }
+  if (route.query.preview) previewFilePath.value = route.query.preview as string
   if (route.query.q) searchQuery.value = route.query.q as string
 })
 </script>
