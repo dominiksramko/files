@@ -107,8 +107,12 @@ All conflict flows use a single shared composable + component — do NOT create 
 Any new CLI tool used by the backend must be added to the `apk add` line in `backend/Dockerfile` runtime stage (Alpine). Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
-- `rsvg-convert` (Alpine package) — SVG rasterisation for thumbnails
-- `imagemagick` — thumbnails for AVIF, HEIC, HEIF, JXL, ICO, PSD, TGA, XCF, HDR, EXR, DDS
+- `rsvg-convert` (Alpine package `rsvg-convert`) — SVG rasterisation for thumbnails
+- `imagemagick` + `imagemagick-heic` — thumbnails for AVIF, HEIC, HEIF, JXL, ICO, PSD, TGA, XCF, HDR, EXR, DDS
+- `poppler-utils` — PDF utilities (e.g. `pdftoppm` for PDF thumbnails)
+- `unrar` — RAR extraction; copied from `linuxserver/unrar:7.2.4` image as `/usr/bin/unrar-alpine → /usr/bin/unrar` (not an apk package)
+- `ca-certificates` — TLS root certificates
+- `tzdata` — timezone data
 
 ## Dev Commands
 ```bash
