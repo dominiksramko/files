@@ -45,8 +45,8 @@ async function takeScreenshot() {
   const timestamp = Math.floor(videoEl.value.currentTime)
   takingScreenshot.value = true
   try {
-    const { filename } = await filesApi.screenshot(props.entry.path, timestamp)
-    showToast(`Screenshot saved as ${filename}`, 'success')
+    await filesApi.screenshot(props.entry.path, timestamp)
+    showToast('Screenshot taken', 'success')
   } catch {
     showToast('Screenshot failed', 'error')
   } finally {
