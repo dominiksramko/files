@@ -112,37 +112,36 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    class="flex-1 min-w-0 flex flex-col"
-    style="max-height: calc(100vh - 120px)"
+    class="self-stretch w-full min-w-0 flex flex-col"
     @click.stop
   >
     <!-- Toolbar: only shown when content is ready -->
     <div
       v-if="textContent !== null && !textTooLarge"
-      class="shrink-0 flex items-center justify-end gap-2 px-4 py-1.5 border-b border-zinc-800/60"
+      class="shrink-0 flex items-center flex-wrap gap-x-2 gap-y-1 px-4 py-1.5 border-b border-zinc-800/60"
       @click.stop
     >
-      <span v-if="saveError" class="text-xs text-red-400 mr-auto">{{ saveError }}</span>
       <template v-if="editing">
         <button
-          class="px-3 py-1 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
-          @click="cancelEdit"
-        >Cancel</button>
-        <button
           :disabled="saving"
-          class="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+          class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg transition-colors"
           @click="save"
         >{{ saving ? 'Saving…' : 'Save' }}</button>
+        <button
+          class="px-3 py-1.5 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+          @click="cancelEdit"
+        >Cancel</button>
       </template>
       <button
         v-else
-        class="px-3 py-1 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
+        class="px-3 py-1.5 text-xs text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
         @click="startEdit"
       >Edit</button>
+      <span v-if="saveError" class="text-xs text-red-400">{{ saveError }}</span>
     </div>
 
     <!-- Content area -->
-    <div class="flex-1 overflow-y-auto min-h-0">
+    <div class="flex-1 min-h-0 flex flex-col">
       <div v-if="textLoading" class="flex items-center justify-center h-32 text-zinc-400 text-sm">
         Loading…
       </div>
@@ -161,24 +160,26 @@ onBeforeUnmount(() => {
       <textarea
         v-else-if="editing"
         v-model="editContent"
-        class="w-full h-full min-h-[400px] bg-transparent text-zinc-100 font-mono text-sm leading-relaxed p-6 resize-none focus:outline-none"
+        class="flex-1 w-full bg-zinc-900 text-zinc-100 font-mono text-sm leading-relaxed p-6 resize-none focus:outline-none"
         spellcheck="false"
       />
       <article
         v-else-if="isMarkdown && textContent !== null"
-        class="markdown-body px-8 py-6 mx-auto max-w-4xl w-full"
+        class="flex-1 overflow-y-auto min-h-0 markdown-body px-8 py-6 w-full bg-zinc-900"
         v-html="renderedMarkdown"
       />
       <pre
         v-else-if="textContent !== null"
-        class="text-sm leading-relaxed p-6"
-      ><code class="hljs block rounded-lg" v-html="highlightCode(textContent)" /></pre>
+        class="flex-1 overflow-auto min-h-0 text-sm leading-relaxed p-6 bg-zinc-900"
+      ><code class="hljs block" v-html="highlightCode(textContent)" /></pre>
     </div>
   </div>
 </template>
 
 <!-- Global: targets v-html rendered markdown and hljs blocks -->
 <style>
+/* Let the <pre> background fill the full height; theme bg only on code blocks */
+.hljs { background: transparent !important; }
 .markdown-body {
   color: #e4e4e7;
   font-size: 0.9375rem;
