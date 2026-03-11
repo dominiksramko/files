@@ -874,7 +874,21 @@ function closeDetails() {
   detailsMedia.value = null
 }
 
-onUnmounted(() => { sizeEventSource?.close() })
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (!event.ctrlKey && !event.metaKey) return
+  if (event.key !== 'a' && event.key !== 'A') return
+  const target = event.target as HTMLElement
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+  event.preventDefault()
+  if (selectedPaths.value.length === visibleEntries.value.length && visibleEntries.value.length > 0) {
+    deselectAll()
+  } else {
+    selectAll()
+  }
+}
+
+onMounted(() => { window.addEventListener('keydown', onGlobalKeydown) })
+onUnmounted(() => { window.removeEventListener('keydown', onGlobalKeydown); sizeEventSource?.close() })
 
 // ── Folder context menu (right-click on empty space) ──────────────────────
 const folderContextMenuState = ref<{ x: number; y: number } | null>(null)
