@@ -182,8 +182,8 @@ export function fileExtension(name: string): string {
   if (parts.length >= 3 && parts[parts.length - 2]?.toLowerCase() === 'tar') {
     return `TAR.${parts[parts.length - 1]!.toUpperCase()}`
   }
-  const ext = parts.length >= 2 ? parts[parts.length - 1] : ''
-  return ext.toUpperCase()
+  const ext = parts.length >= 2 ? parts[parts.length - 1] : undefined
+  return (ext ?? '').toUpperCase()
 }
 
 export function isPreviewable(mime: string): boolean {

@@ -40,10 +40,12 @@ export interface ArchiveEntry {
   is_dir: boolean
 }
 
+import type { IconName } from '@/utils/icons'
+
 export interface FileOp {
   key: string
   label: string
-  icon: string
+  icon: IconName
   danger?: boolean
   visible?: boolean
   disabled?: boolean
