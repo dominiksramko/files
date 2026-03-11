@@ -139,6 +139,46 @@ func (h *FilesHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, files)
 }
 
+// GET /api/v1/files/stat?path=
+// Returns a single FileEntry for the given path (file or directory).
+func (h *FilesHandler) Stat(c *gin.Context) {
+	root, rel := userRoot(c), c.Query("path")
+
+	abs, err := safePath(root, rel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	mime := ""
+	if !info.IsDir() {
+		mime = mimeByExt(filepath.Ext(info.Name()))
+	}
+
+	fe := FileEntry{
+		Name:       filepath.Base(abs),
+		Path:       rel,
+		IsDir:      info.IsDir(),
+		Size:       info.Size(),
+		ModTime:    info.ModTime(),
+		CreatedAt:  getBirthTime(abs),
+		Mime:       mime,
+		CanExtract: CanExtract(info.Name()),
+	}
+
+	c.JSON(http.StatusOK, fe)
+}
+
 // GET /api/v1/files/download?path=
 func (h *FilesHandler) Download(c *gin.Context) {
 	root, rel := userRoot(c), c.Query("path")

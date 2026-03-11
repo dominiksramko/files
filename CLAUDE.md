@@ -63,7 +63,7 @@ When adding a new file operation, add it ONLY to `buildFileOps()` in `FilesView.
 
 ## Implemented Features
 - JWT auth (login, guards, auto-restore on reload, password change, display name)
-- File browser (list, navigate, sort, download)
+- File browser (list, navigate, sort, download, new folder, new text file)
 - File preview: images (with checkerboard for transparent formats), video, audio, PDF (inline)
 - Thumbnails: images, video (ffmpeg), SVG (resvg with checkerboard compositing)
 - Archive preview + extraction: ZIP/TAR (pure Go) + 7z CLI fallback for RAR/7z/password-protected

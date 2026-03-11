@@ -26,6 +26,7 @@ const emit = defineEmits<{
   selectAll: []
   deselectAll: []
   contextMenu: [entry: FileEntry, x: number, y: number]
+  folderContextMenu: [x: number, y: number]
   dropToFolder: [destPath: string, paths: string[]]
 }>()
 
@@ -47,7 +48,7 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
+  <div class="h-full flex flex-col" @contextmenu.prevent="emit('folderContextMenu', $event.clientX, $event.clientY)">
     <div v-if="loading" class="flex-1 flex items-center justify-center">
       <AppSpinner size="lg" class="text-blue-500" />
     </div>
@@ -115,7 +116,7 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
                   : 'hover:bg-zinc-800/50',
             ]"
             @click="handleClick(entry, $event)"
-            @contextmenu.prevent="emit('contextMenu', entry, $event.clientX, $event.clientY)"
+            @contextmenu.prevent.stop="emit('contextMenu', entry, $event.clientX, $event.clientY)"
             @dragstart="onDragStart($event, entry)"
             @dragend="onDragEnd"
             @dragover="onDragOver($event, entry)"

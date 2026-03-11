@@ -18,6 +18,7 @@ const emit = defineEmits<{
   archivePreview: [entry: FileEntry]
   toggleSelect: [path: string, shift: boolean]
   contextMenu: [entry: FileEntry, x: number, y: number]
+  folderContextMenu: [x: number, y: number]
   dropToFolder: [destPath: string, paths: string[]]
 }>()
 
@@ -113,122 +114,124 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
 </script>
 
 <template>
-  <!-- Loading -->
-  <div v-if="loading" class="flex items-center justify-center h-full">
-    <AppSpinner size="lg" class="text-blue-500" />
-  </div>
+  <div class="h-full flex flex-col" @contextmenu.prevent="emit('folderContextMenu', $event.clientX, $event.clientY)">
+    <!-- Loading -->
+    <div v-if="loading" class="flex items-center justify-center h-full">
+      <AppSpinner size="lg" class="text-blue-500" />
+    </div>
 
-  <!-- Empty -->
-  <div
-    v-else-if="entries.length === 0"
-    class="flex flex-col items-center justify-center h-full gap-2 text-zinc-500"
-  >
-    <AppIcon name="folderOutline" class="size-12" :stroke-width="1" />
-    <span class="text-sm">This folder is empty</span>
-  </div>
+    <!-- Empty -->
+    <div
+      v-else-if="entries.length === 0"
+      class="flex flex-col items-center justify-center h-full gap-2 text-zinc-500"
+    >
+      <AppIcon name="folderOutline" class="size-12" :stroke-width="1" />
+      <span class="text-sm">This folder is empty</span>
+    </div>
 
-  <!-- Virtual grid -->
-  <div
-    v-else
-    ref="containerRef"
-    class="h-full overflow-y-auto"
-    @scroll.passive="onScroll"
-  >
-    <!-- Spacer sized to the full virtual height -->
-    <div :style="{ height: totalH + 'px', position: 'relative' }">
-      <!-- Only visible cards are in the DOM -->
-      <div
-        v-for="item in visibleItems"
-        :key="item.entry.path"
-        :style="{
-          position: 'absolute',
-          top: item.top + 'px',
-          left: item.left + 'px',
-          width: item.w + 'px',
-          height: item.h + 'px',
-          willChange: 'transform',
-        }"
-        draggable="true"
-        :class="[
-          'group border rounded-xl overflow-hidden cursor-pointer transition-all select-none',
-          item.entry.is_dir && dragOverPath === item.entry.path
-            ? 'bg-blue-900/40 border-blue-500 ring-2 ring-blue-500/40'
-            : selected.includes(item.entry.path)
-              ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/40'
-              : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
-        ]"
-        @click="handleClick(item.entry, $event)"
-        @contextmenu.prevent="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
-        @dragstart="onDragStart($event, item.entry)"
-        @dragend="onDragEnd"
-        @dragover="onDragOver($event, item.entry)"
-        @dragleave="onDragLeave($event, item.entry)"
-        @drop="onDrop($event, item.entry)"
-      >
-        <!-- Thumbnail area (square) -->
+    <!-- Virtual grid -->
+    <div
+      v-else
+      ref="containerRef"
+      class="h-full overflow-y-auto"
+      @scroll.passive="onScroll"
+    >
+      <!-- Spacer sized to the full virtual height -->
+      <div :style="{ height: totalH + 'px', position: 'relative' }">
+        <!-- Only visible cards are in the DOM -->
         <div
-          :style="{ height: item.thumbH + 'px' }"
-          class="overflow-hidden relative"
+          v-for="item in visibleItems"
+          :key="item.entry.path"
+          :style="{
+            position: 'absolute',
+            top: item.top + 'px',
+            left: item.left + 'px',
+            width: item.w + 'px',
+            height: item.h + 'px',
+            willChange: 'transform',
+          }"
+          draggable="true"
+          :class="[
+            'group border rounded-xl overflow-hidden cursor-pointer transition-all select-none',
+            item.entry.is_dir && dragOverPath === item.entry.path
+              ? 'bg-blue-900/40 border-blue-500 ring-2 ring-blue-500/40'
+              : selected.includes(item.entry.path)
+                ? 'bg-blue-950/60 border-blue-500 ring-2 ring-blue-500/40'
+                : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/80',
+          ]"
+          @click="handleClick(item.entry, $event)"
+          @contextmenu.prevent.stop="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
+          @dragstart="onDragStart($event, item.entry)"
+          @dragend="onDragEnd"
+          @dragover="onDragOver($event, item.entry)"
+          @dragleave="onDragLeave($event, item.entry)"
+          @drop="onDrop($event, item.entry)"
         >
-          <!-- Thumbnail -->
-          <img
-            v-if="item.entry.has_thumb && item.entry.thumb_hash"
-            :src="filesApi.thumbUrl(item.entry.path, item.entry.thumb_hash)"
-            :alt="item.entry.name"
-            draggable="false"
-            class="w-full h-full object-cover"
-          />
-          <!-- Folder -->
+          <!-- Thumbnail area (square) -->
           <div
-            v-else-if="item.entry.is_dir"
-            class="w-full h-full flex items-center justify-center bg-yellow-950/60"
+            :style="{ height: item.thumbH + 'px' }"
+            class="overflow-hidden relative"
           >
-            <AppIcon name="folder" class="size-14 text-yellow-400" />
-          </div>
-          <!-- File placeholder icon -->
-          <div
-            v-else
-            :class="['w-full h-full flex items-center justify-center', catBg[entryCategory(item.entry.mime, item.entry.name, false)]]"
-          >
-            <AppIcon
-              :name="catIconName[entryCategory(item.entry.mime, item.entry.name, false)]"
-              :class="['size-12', catIconColor[entryCategory(item.entry.mime, item.entry.name, false)]]"
-              :stroke-width="1.5"
+            <!-- Thumbnail -->
+            <img
+              v-if="item.entry.has_thumb && item.entry.thumb_hash"
+              :src="filesApi.thumbUrl(item.entry.path, item.entry.thumb_hash)"
+              :alt="item.entry.name"
+              draggable="false"
+              class="w-full h-full object-cover"
             />
+            <!-- Folder -->
+            <div
+              v-else-if="item.entry.is_dir"
+              class="w-full h-full flex items-center justify-center bg-yellow-950/60"
+            >
+              <AppIcon name="folder" class="size-14 text-yellow-400" />
+            </div>
+            <!-- File placeholder icon -->
+            <div
+              v-else
+              :class="['w-full h-full flex items-center justify-center', catBg[entryCategory(item.entry.mime, item.entry.name, false)]]"
+            >
+              <AppIcon
+                :name="catIconName[entryCategory(item.entry.mime, item.entry.name, false)]"
+                :class="['size-12', catIconColor[entryCategory(item.entry.mime, item.entry.name, false)]]"
+                :stroke-width="1.5"
+              />
+            </div>
+
+            <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
+            <button
+              class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
+              :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+              :title="selected.includes(item.entry.path) ? 'Deselect' : 'Select'"
+              @click.stop="emit('toggleSelect', item.entry.path, $event.shiftKey)"
+            >
+              <span
+                class="size-5 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+                :class="selected.includes(item.entry.path) ? 'bg-blue-500' : 'bg-black/60'"
+              >
+                <svg v-if="selected.includes(item.entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
+                  <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <svg v-else class="size-3 text-white/70" viewBox="0 0 10 10" fill="none">
+                  <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.5" />
+                </svg>
+              </span>
+            </button>
+
           </div>
 
-          <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
-          <button
-            class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
-            :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-            :title="selected.includes(item.entry.path) ? 'Deselect' : 'Select'"
-            @click.stop="emit('toggleSelect', item.entry.path, $event.shiftKey)"
-          >
-            <span
-              class="size-5 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
-              :class="selected.includes(item.entry.path) ? 'bg-blue-500' : 'bg-black/60'"
-            >
-              <svg v-if="selected.includes(item.entry.path)" class="size-2.5 text-white" viewBox="0 0 10 8" fill="none">
-                <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <svg v-else class="size-3 text-white/70" viewBox="0 0 10 10" fill="none">
-                <circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.5" />
-              </svg>
-            </span>
-          </button>
-
-        </div>
-
-        <!-- Name + meta (fixed META_H height) -->
-        <div class="px-2 py-2 overflow-hidden">
-          <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
-          <p class="flex gap-1 text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
-            <template v-if="!item.entry.is_dir">
-              <span>{{ fileExtension(item.entry.name) }}</span>
-              <span>&#x2022;</span>
-            </template>
-            <span>{{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}</span>
-          </p>
+          <!-- Name + meta (fixed META_H height) -->
+          <div class="px-2 py-2 overflow-hidden">
+            <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
+            <p class="flex gap-1 text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
+              <template v-if="!item.entry.is_dir">
+                <span>{{ fileExtension(item.entry.name) }}</span>
+                <span>&#x2022;</span>
+              </template>
+              <span>{{ item.entry.is_dir ? 'Folder' : formatSize(item.entry.size) }}</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>

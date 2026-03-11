@@ -958,6 +958,55 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
   return items
 })
 
+// ── Folder context menu (right-click on empty space) ──────────────────────
+const folderContextMenuState = ref<{ x: number; y: number } | null>(null)
+
+function onFolderContextMenu(x: number, y: number) {
+  folderContextMenuState.value = { x, y }
+}
+
+const folderContextMenuItems = computed((): ContextMenuItem[] => {
+  const close = () => { folderContextMenuState.value = null }
+  return [
+    {
+      label: 'New text file',
+      icon: 'newFile',
+      action: () => { close(); openNewTextFile() },
+    },
+    {
+      label: 'New folder',
+      icon: 'newFolder',
+      action: () => { close(); openNewFolder() },
+    },
+    { separator: true },
+    ...(clipboard.value ? [{
+      label: 'Paste',
+      icon: 'clipboard',
+      action: () => { close(); onPaste() },
+    } satisfies ContextMenuItem] : []),
+    {
+      label: 'Upload files',
+      icon: 'upload',
+      action: () => { close(); openFilePicker() },
+    },
+    { separator: true },
+    {
+      label: 'Refresh',
+      icon: 'refresh',
+      action: () => { close(); filesStore.refresh() },
+    },
+    {
+      label: 'Details',
+      icon: 'info',
+      action: async () => {
+        close()
+        const entry = await filesApi.stat(filesStore.currentPath)
+        openDetails([entry])
+      },
+    },
+  ]
+})
+
 // ── Toast ──────────────────────────────────────────────────────────────────
 const { show: showToast } = useToast()
 
@@ -1151,6 +1200,7 @@ onMounted(async () => {
         @archive-preview="archiveEntry = $event"
         @toggle-select="toggleSelect"
         @context-menu="onContextMenu"
+        @folder-context-menu="onFolderContextMenu"
         @drop-to-folder="onDropToFolder"
       />
       <FileList
@@ -1169,6 +1219,7 @@ onMounted(async () => {
         @select-all="selectAll"
         @deselect-all="deselectAll"
         @context-menu="onContextMenu"
+        @folder-context-menu="onFolderContextMenu"
         @drop-to-folder="onDropToFolder"
       />
     </div>
@@ -1429,13 +1480,22 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- Context menu -->
+    <!-- Context menu (file/folder entry) -->
     <ContextMenu
       v-if="contextMenuState"
       :x="contextMenuState.x"
       :y="contextMenuState.y"
       :items="contextMenuItems"
       @close="contextMenuState = null"
+    />
+
+    <!-- Context menu (empty folder space) -->
+    <ContextMenu
+      v-if="folderContextMenuState"
+      :x="folderContextMenuState.x"
+      :y="folderContextMenuState.y"
+      :items="folderContextMenuItems"
+      @close="folderContextMenuState = null"
     />
 
     <!-- Details modal -->
