@@ -60,7 +60,9 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
 ## File Operations Convention (IMPORTANT)
-When adding a new file operation, add it ONLY to `buildFileOps()` in `FilesView.vue` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
+When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/src/composables/useFileOps.ts` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
+
+`FilesView.vue` uses `useFileOps()` to get `clipboard`, `fileOps`, `contextMenuItems`, `onContextMenu`, `onPaste`, and `performMove`. New action callbacks (e.g. opening a dialog) must be passed via `actionCallbacks` when calling `useFileOps`.
 
 ## Implemented Features
 - JWT auth (login, guards, auto-restore on reload, password change, display name)
