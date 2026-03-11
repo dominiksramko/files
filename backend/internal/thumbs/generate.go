@@ -171,40 +171,88 @@ func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 }
 
 // icoConvertArgs builds the ImageMagick convert argument list for an ICO file.
-// It places the largest frame first (so it becomes the base canvas) then
-// appends all remaining frames; -flatten composites them in order.
-// This handles both the common case (multiple size variants of the same image)
-// and the less common case (complementary layers that must be composited).
+//
+// Strategy depends on whether the ICO is a "variations" file (same image at
+// multiple sizes — pick only the largest frame) or a "composite" file
+// (distinct images per layer — composite all frames together):
+//   - Variations: all frames share the same aspect ratio; use only the largest.
+//   - Composite: frames have different aspect ratios; place the largest first
+//     as the base canvas then append all others and flatten.
 func icoConvertArgs(srcPath, rasterSize, tmpPath string) []string {
-	largest, count := LargestICOFrame(srcPath)
+	largestIdx, frames := ICOFrameDimensions(srcPath)
 
-	args := []string{"-background", "none", fmt.Sprintf("%s[%d]", srcPath, largest)}
-	for i := 0; i < count; i++ {
-		if i != largest {
-			args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+	if ICOIsComposite(frames) {
+		args := []string{"-background", "none", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}
+		for i := range frames {
+			if i != largestIdx {
+				args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+			}
 		}
+		return append(args, "-flatten", "-resize", rasterSize+"x"+rasterSize+">", tmpPath)
 	}
-	args = append(args, "-flatten", "-resize", rasterSize+"x"+rasterSize+">", tmpPath)
-	return args
+
+	// Variations: single best frame is sufficient.
+	return []string{
+		"-background", "none",
+		fmt.Sprintf("%s[%d]", srcPath, largestIdx),
+		"-resize", rasterSize + "x" + rasterSize + ">",
+		tmpPath,
+	}
 }
 
-// LargestICOFrame returns the index of the frame with the greatest pixel area
-// and the total frame count. Falls back to (0, 1) on any error.
-func LargestICOFrame(srcPath string) (idx, count int) {
+// ICOFrameDimensions returns the dimensions of every frame in the ICO file and
+// the index of the largest frame by pixel area. Falls back to (0, nil) on error.
+func ICOFrameDimensions(srcPath string) (largestIdx int, frames []image.Point) {
 	out, err := exec.Command("identify", "-format", "%w %h\n", srcPath).Output()
 	if err != nil {
-		return 0, 1
+		return 0, nil
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	bestArea := 0
-	for i, line := range lines {
+	for i, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		var w, h int
-		if _, err := fmt.Sscan(line, &w, &h); err == nil && w*h > bestArea {
-			idx = i
-			bestArea = w * h
+		if _, err := fmt.Sscan(line, &w, &h); err == nil {
+			frames = append(frames, image.Point{X: w, Y: h})
+			if w*h > bestArea {
+				largestIdx = i
+				bestArea = w * h
+			}
 		}
 	}
-	return idx, len(lines)
+	return largestIdx, frames
+}
+
+// ICOIsComposite returns true when the ICO frames have meaningfully different
+// aspect ratios, indicating each layer is a distinct image. Returns false when
+// all frames share the same aspect ratio (same image at different sizes).
+func ICOIsComposite(frames []image.Point) bool {
+	if len(frames) <= 1 {
+		return false
+	}
+	refW, refH := reducedRatio(frames[0].X, frames[0].Y)
+	for _, frame := range frames[1:] {
+		rw, rh := reducedRatio(frame.X, frame.Y)
+		if rw != refW || rh != refH {
+			return true
+		}
+	}
+	return false
+}
+
+// reducedRatio returns w and h divided by their GCD, giving a canonical aspect
+// ratio representation (e.g. 256×256 and 32×32 both reduce to 1×1).
+func reducedRatio(w, h int) (int, int) {
+	if w == 0 || h == 0 {
+		return w, h
+	}
+	g := gcd(w, h)
+	return w / g, h / g
+}
+
+func gcd(a, b int) int {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
 }
 
 // generatePDFThumb rasterises the first page of the PDF at srcPath via

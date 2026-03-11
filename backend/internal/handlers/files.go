@@ -351,19 +351,24 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 }
 
 // buildConvertArgs returns the ImageMagick convert arguments for previewing
-// srcPath as a JPEG. ICO files are composited largest-frame-first so all
-// layers appear correctly (same logic as thumbnail generation).
+// srcPath as a JPEG. ICO handling mirrors thumbnail generation:
+//   - Composite ICO (frames have different aspect ratios): composite all layers.
+//   - Variations ICO (same aspect ratio at different sizes): use only the largest frame.
 func buildConvertArgs(srcPath, mime string) []string {
 	tail := []string{"-flatten", "-quality", "90", "jpeg:-"}
 	if mime == "image/x-icon" {
-		largest, count := thumbs.LargestICOFrame(srcPath)
-		args := []string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largest)}
-		for i := 0; i < count; i++ {
-			if i != largest {
-				args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+		largestIdx, frames := thumbs.ICOFrameDimensions(srcPath)
+		if thumbs.ICOIsComposite(frames) {
+			args := []string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}
+			for i := range frames {
+				if i != largestIdx {
+					args = append(args, fmt.Sprintf("%s[%d]", srcPath, i))
+				}
 			}
+			return append(args, tail...)
 		}
-		return append(args, tail...)
+		// Variations: single best frame is sufficient.
+		return append([]string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}, tail...)
 	}
 	return append([]string{"-background", "white", srcPath + "[0]"}, tail...)
 }
