@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="plyr-wrapper w-full max-w-5xl relative" @click.stop>
+  <div class="plyr-wrapper w-full relative" @click.stop>
     <video ref="videoEl" preload="metadata" playsinline :poster="poster">
       <source v-if="src" :src="src" :type="sourceType" />
       <track
@@ -284,11 +284,11 @@ onBeforeUnmount(() => {
   --plyr-font-family: inherit;
   border-radius: 0.5rem;
   overflow: hidden;
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 80px);
   width: 100%;
 }
 :deep(.plyr video) {
-  max-height: calc(100vh - 120px);
+  max-height: calc(100vh - 80px);
   object-fit: contain;
 }
 :deep([data-screenshot] svg) {
