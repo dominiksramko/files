@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -54,22 +55,9 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 	cacheDir := filepath.Join(h.cacheDir, hashHex)
 	_ = os.Chtimes(filepath.Join(cacheDir, "last_accessed"), time.Now(), time.Now())
 
-	cmd := exec.CommandContext(c.Request.Context(), "ffprobe",
-		"-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		abs,
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to probe video"})
-		return
-	}
-	durationStr := strings.TrimSpace(string(out))
-	durationStr = strings.Split(durationStr, "\n")[0]
-	duration, err := strconv.ParseFloat(durationStr, 64)
+	duration, err := probeDuration(c.Request.Context(), abs)
 	if err != nil || duration <= 0 {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse video duration"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to probe video duration"})
 		return
 	}
 
@@ -179,8 +167,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		_ = os.Chtimes(accessFile, time.Now(), time.Now())
 	}
 
-	// Use the source audio codec directly if it's already TS-compatible,
-	// otherwise transcode to AAC.
+	// Copy audio only if it's already TS-compatible, otherwise transcode to AAC.
 	audioCodec := "aac"
 	if probe, err := exec.Command("ffprobe",
 		"-v", "error",
@@ -195,16 +182,36 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		}
 	}
 
+	// Copy video only if the codec can be muxed directly into MPEG-TS.
+	// MPEG-4 Part 2 (DivX/Xvid) and other codecs found in AVI cannot be
+	// copied into TS — they must be transcoded to H.264.
+	videoCodec := "libx264"
+	if probe, err := exec.Command("ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=codec_name",
+		"-of", "default=noprint_wrappers=1:nokey=1",
+		absPath,
+	).Output(); err == nil {
+		switch strings.TrimSpace(string(probe)) {
+		case "h264", "hevc", "mpeg2video":
+			videoCodec = "copy"
+		}
+	}
+
 	startAt := float64(seq) * 10.0
 
 	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
+	// -fflags +genpts: regenerate missing presentation timestamps, required for
+	// AVI files where pre-input seeking leaves the first packets without PTS/DTS.
 	cmd := exec.Command("nice", "-n", "10",
 		"ffmpeg",
 		"-y",
+		"-fflags", "+genpts",
 		"-ss", fmt.Sprintf("%.3f", startAt),
 		"-i", absPath,
 		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
-		"-c:v", "copy",
+		"-c:v", videoCodec,
 		"-c:a", audioCodec,
 		"-f", "hls",
 		"-hls_time", "10",
@@ -231,6 +238,33 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 	}()
 
 	return nil
+}
+
+// probeDuration returns the duration of a video file in seconds.
+// It tries the container format first, then falls back to the video stream,
+// then the audio stream — necessary for AVI files whose container header
+// reports "N/A" but whose streams carry accurate duration metadata.
+func probeDuration(ctx context.Context, absPath string) (float64, error) {
+	strategies := [][]string{
+		{"-show_entries", "format=duration"},
+		{"-select_streams", "v:0", "-show_entries", "stream=duration"},
+		{"-select_streams", "a:0", "-show_entries", "stream=duration"},
+	}
+	for _, args := range strategies {
+		baseArgs := []string{"-v", "error", "-of", "default=noprint_wrappers=1:nokey=1"}
+		out, err := exec.CommandContext(ctx, "ffprobe", append(baseArgs, append(args, absPath)...)...).Output()
+		if err != nil {
+			continue
+		}
+		line := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+		if line == "" || line == "N/A" {
+			continue
+		}
+		if d, err := strconv.ParseFloat(line, 64); err == nil && d > 0 {
+			return d, nil
+		}
+	}
+	return 0, fmt.Errorf("could not determine duration")
 }
 
 func fileExists(path string) bool {
