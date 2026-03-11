@@ -1,4 +1,4 @@
-import type { ArchiveEntry, FileEntry, LoginResponse, SubtitlePrefs, User } from '@/types'
+import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePreviewItem, SubtitlePrefs, User } from '@/types'
 
 const BASE = '/api/v1'
 
@@ -259,6 +259,35 @@ export const progress = {
 
   delete: (path: string) =>
     request<{ message: string }>('DELETE', `/progress${qs({ path })}`),
+}
+
+// --- Advanced renamer ---
+export const renamer = {
+  preview: (template: string, paths: string[]) =>
+    request<{ items: RenamePreviewItem[] }>('POST', '/rename/preview', { template, paths }),
+
+  apply: (
+    renames: { from: string; to: string }[],
+    folder: string,
+    template: string,
+    conflictMode?: 'replace' | 'rename',
+  ) =>
+    request<{ message: string }>('POST', '/rename/apply', {
+      renames,
+      folder,
+      template,
+      conflict_mode: conflictMode,
+    }),
+
+  listPresets: () => request<RenamePreset[]>('GET', '/rename/presets'),
+
+  savePreset: (name: string, template: string) =>
+    request<RenamePreset>('POST', '/rename/presets', { name, template }),
+
+  deletePreset: (id: number) => request<{ message: string }>('DELETE', `/rename/presets/${id}`),
+
+  getFolderTemplate: (folder: string) =>
+    request<{ template: string }>('GET', `/rename/folder-template${qs({ folder })}`),
 }
 
 // --- System ---

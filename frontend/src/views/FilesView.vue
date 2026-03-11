@@ -19,6 +19,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import ConflictDialog from '@/components/ui/ConflictDialog.vue'
+import AdvancedRenamer from '@/components/files/AdvancedRenamer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 
@@ -322,6 +323,10 @@ function buildFileOps(paths: string[], entry: FileEntry | null, after: () => voi
       key: 'rename', label: 'Rename', icon: 'pencil',
       visible: single,
       action: () => { after(); if (entry) startRename(entry) },
+    },
+    {
+      key: 'rename-advanced', label: 'Rename (advanced)', icon: 'pencilSquare',
+      action: () => { after(); openAdvancedRenamer(paths) },
     },
     {
       key: 'delete', label: 'Delete', icon: 'trash', danger: true,
@@ -654,6 +659,18 @@ async function confirmNewTextFile() {
   }
 }
 
+// ── Advanced rename ───────────────────────────────────────────────────────
+const advancedRenamerOpen = ref(false)
+const advancedRenamerFiles = ref<FileEntry[]>([])
+
+function openAdvancedRenamer(paths: string[]) {
+  const pool = [...visibleEntries.value, ...searchResults.value]
+  advancedRenamerFiles.value = paths
+    .map((path) => pool.find((entry) => entry.path === path))
+    .filter((entry): entry is FileEntry => entry !== undefined)
+  advancedRenamerOpen.value = true
+}
+
 // ── Rename ────────────────────────────────────────────────────────────────
 const renameDialog = ref(false)
 const renameDialogEntry = ref<{ path: string; name: string } | null>(null)
@@ -952,6 +969,7 @@ const contextMenuItems = computed((): ContextMenuItem[] => {
   ]
   if (get('extract').visible !== false) items.push(toItem(get('extract')))
   if (get('rename').visible !== false) items.push(toItem(get('rename')))
+  items.push(toItem(get('rename-advanced')))
   items.push(toItem(get('delete')))
   items.push({ separator: true })
   items.push(toItem(get('details')))
@@ -1351,6 +1369,13 @@ onMounted(async () => {
     </Transition>
 
     <ConflictDialog />
+
+    <AdvancedRenamer
+      v-if="advancedRenamerOpen"
+      :files="advancedRenamerFiles"
+      :folder="filesStore.currentPath"
+      @close="advancedRenamerOpen = false"
+    />
 
     <!-- Compress dialog -->
     <Transition name="fade">

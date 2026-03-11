@@ -3,7 +3,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 
 defineProps<{
   title?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -19,13 +19,7 @@ const emit = defineEmits<{ close: [] }>()
       <div
         :class="[
           'bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh] w-full',
-          size === 'sm'
-            ? 'max-w-sm'
-            : size === 'lg'
-              ? 'max-w-2xl'
-              : size === 'xl'
-                ? 'max-w-4xl'
-                : 'max-w-lg',
+          { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-7xl' }[size ?? 'md'],
         ]"
       >
         <!-- Header -->

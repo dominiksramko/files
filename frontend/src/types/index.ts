@@ -52,6 +52,19 @@ export interface FileOp {
   action: () => void
 }
 
+export interface RenamePreset {
+  id: number
+  name: string
+  template: string
+  created_at: string
+}
+
+export interface RenamePreviewItem {
+  original_name: string
+  new_name: string
+  error?: string
+}
+
 export type FileCategory =
   | 'image'
   | 'video'
