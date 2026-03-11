@@ -294,6 +294,11 @@ function deselectAll() {
   lastAnchorPath.value = null
 }
 
+function refresh() {
+  deselectAll()
+  refresh()
+}
+
 // ── Background jobs (upload progress, zip download) ────────────────────────
 interface UploadJob   { kind: 'upload';   id: number; count: number; pct: number; loaded: number; total: number; startedAt: number; abort: () => void }
 interface ZipJob      { kind: 'zip';      id: number }
@@ -925,7 +930,7 @@ const folderContextMenuItems = computed((): ContextMenuItem[] => {
     {
       label: 'Refresh',
       icon: 'refresh',
-      action: () => { close(); filesStore.refresh() },
+      action: () => { close(); refresh() },
     },
     {
       label: 'Details',
@@ -1082,7 +1087,7 @@ onMounted(async () => {
           </button>
 
           <!-- Refresh -->
-          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="Refresh" @click="filesStore.refresh()">
+          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="Refresh" @click="refresh()">
             <AppIcon name="refresh" class="size-4" />
           </button>
         </div>
