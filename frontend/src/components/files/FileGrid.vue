@@ -223,7 +223,7 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
 
           <!-- Name + meta (fixed META_H height) -->
           <div class="px-2 py-2 overflow-hidden">
-            <p class="text-xs font-medium text-zinc-100 truncate leading-tight">{{ item.entry.name }}</p>
+            <p class="text-xs font-medium text-zinc-100 truncate leading-tight" :title="item.entry.name">{{ item.entry.name }}</p>
             <p class="flex gap-1 text-xs text-zinc-500 mt-0.5 tabular-nums truncate">
               <template v-if="!item.entry.is_dir">
                 <span>{{ fileExtension(item.entry.name) }}</span>
