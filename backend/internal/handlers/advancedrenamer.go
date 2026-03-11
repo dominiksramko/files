@@ -277,12 +277,11 @@ func collectFileVars(absPath string, index int, referenced map[string]bool) temp
 		vars[name] = ""
 	}
 
-	ext := strings.TrimPrefix(filepath.Ext(absPath), ".")
 	baseName := filepath.Base(absPath)
-	nameWithoutExt := strings.TrimSuffix(baseName, filepath.Ext(baseName))
 
-	vars["name"] = nameWithoutExt
-	vars["ext"] = ext
+	// Default: derive name and ext from the path. Overridden below for directories.
+	vars["ext"] = strings.TrimPrefix(filepath.Ext(absPath), ".")
+	vars["name"] = strings.TrimSuffix(baseName, filepath.Ext(baseName))
 	vars["index"] = strconv.Itoa(index)
 
 	randomBytes := make([]byte, 3)
@@ -290,6 +289,10 @@ func collectFileVars(absPath string, index int, referenced map[string]bool) temp
 	vars["random"] = hex.EncodeToString(randomBytes)
 
 	if fi, err := os.Stat(absPath); err == nil {
+		if fi.IsDir() {
+			vars["name"] = baseName
+			vars["ext"] = ""
+		}
 		vars["size"] = strconv.FormatInt(fi.Size()/1024, 10)
 		vars["modified_date"] = fi.ModTime().Format("2006-01-02")
 		vars["modified_time"] = fi.ModTime().Format("15-04-05")
@@ -303,7 +306,7 @@ func collectFileVars(absPath string, index int, referenced map[string]bool) temp
 		vars["created_time"] = createdAt.Format("15-04-05")
 	}
 
-	mimeType := mimeByExt("." + strings.ToLower(ext))
+	mimeType := mimeByExt("." + strings.ToLower(vars["ext"]))
 	switch {
 	case strings.HasPrefix(mimeType, "image/") && needsAnyOf(referenced, imageVarNames):
 		collectImageVars(absPath, vars)
