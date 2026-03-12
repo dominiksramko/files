@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { isOfficeFile, isTextFile } from '@/utils/formatters'
@@ -42,13 +42,21 @@ const viewerComponent = computed(() => {
   return FileFallback
 })
 
+const viewerContainerRef = ref<HTMLElement | null>(null)
+
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
   const tag = (document.activeElement as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
-  if (e.key === 'Escape')                       emit('close')
-  if (e.key === 'ArrowLeft'  && props.hasPrev)  emit('prev')
-  if (e.key === 'ArrowRight' && props.hasNext)  emit('next')
+  if (e.key === 'Escape') { emit('close'); return }
+  const mediaEl = viewerContainerRef.value?.querySelector<HTMLVideoElement | HTMLAudioElement>('video, audio')
+  if (mediaEl && !mediaEl.paused) {
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); mediaEl.currentTime = Math.max(0, mediaEl.currentTime - 5) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); mediaEl.currentTime = Math.min(mediaEl.duration, mediaEl.currentTime + 5) }
+    return
+  }
+  if (e.key === 'ArrowLeft'  && props.hasPrev) emit('prev')
+  if (e.key === 'ArrowRight' && props.hasNext) emit('next')
 }
 
 onMounted(()  => window.addEventListener('keydown', onKey))
@@ -116,7 +124,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           </button>
 
           <!-- Dynamic viewer -->
-          <div class="flex-1 flex items-center justify-center min-h-0 min-w-0" @click.stop>
+          <div ref="viewerContainerRef" class="flex-1 flex items-center justify-center min-h-0 min-w-0" @click.stop>
             <component
               :is="viewerComponent"
               v-if="viewerComponent"
