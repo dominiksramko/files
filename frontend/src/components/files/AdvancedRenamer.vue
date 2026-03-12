@@ -266,7 +266,7 @@ const templateParts = computed((): TemplatePart[] => {
     if (match.index > lastIndex) {
       parts.push({ type: 'text', value: template.value.slice(lastIndex, match.index), color: '', valid: true })
     }
-    const varName = match[1].split('|')[0].trim()
+    const varName = match[1]!.split('|')[0]!.trim()
     const isValid = ALL_VAR_NAMES.has(varName)
     parts.push({
       type: 'var',
