@@ -10,7 +10,7 @@ const { visible, title, conflicts, choose } = useConflictDialog()
     <div
       v-if="visible"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      @click.self="choose(null)"
+      @mousedown.self="choose(null)"
     >
       <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
         <h3 class="text-sm font-semibold text-zinc-100 mb-1">{{ title }}</h3>

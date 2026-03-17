@@ -1185,7 +1185,7 @@ onMounted(async () => {
       <div
         v-if="newFolderDialog"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="newFolderDialog = false"
+        @mousedown.self="newFolderDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-3">New folder</h3>
@@ -1211,7 +1211,7 @@ onMounted(async () => {
       <div
         v-if="newTextFileDialog"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @click.self="newTextFileDialog = false"
+        @mousedown.self="newTextFileDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-3">New text file</h3>
@@ -1237,7 +1237,7 @@ onMounted(async () => {
       <div
         v-if="renameDialog"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @click.self="cancelRename"
+        @mousedown.self="cancelRename"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-3">Rename</h3>
@@ -1263,7 +1263,7 @@ onMounted(async () => {
       <div
         v-if="deleteDialog"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @click.self="cancelDelete"
+        @mousedown.self="cancelDelete"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-1">
@@ -1299,7 +1299,7 @@ onMounted(async () => {
       <div
         v-if="compressDialog"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @click.self="compressDialog = false"
+        @mousedown.self="compressDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-3">Compress</h3>
@@ -1349,7 +1349,7 @@ onMounted(async () => {
       <div
         v-if="extractPasswordDialog"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @click.self="extractPasswordDialog = false"
+        @mousedown.self="extractPasswordDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
@@ -1445,7 +1445,7 @@ onMounted(async () => {
       <div
         v-if="detailsItems.length > 0"
         class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
-        @click.self="closeDetails"
+        @mousedown.self="closeDetails"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-96 shadow-2xl">
           <!-- Header -->

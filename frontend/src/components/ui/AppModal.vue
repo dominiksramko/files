@@ -14,7 +14,7 @@ const emit = defineEmits<{ close: [] }>()
   <Teleport to="body">
     <div
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      @click.self="emit('close')"
+      @mousedown.self="emit('close')"
     >
       <div
         :class="[
