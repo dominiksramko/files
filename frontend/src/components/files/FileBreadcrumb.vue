@@ -17,6 +17,7 @@ function crumbHref(path: string): string {
 
 const navRef = ref<HTMLElement | null>(null)
 const dotsBtnRef = ref<HTMLButtonElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
 const hiddenCount = ref(0)
 const dropdownOpen = ref(false)
 const dropdownTop = ref(0)
@@ -132,6 +133,7 @@ function closeDropdown() {
 function handleOutside(e: MouseEvent) {
   const target = e.target as Node
   if (dotsBtnRef.value?.contains(target)) return
+  if (dropdownRef.value?.contains(target)) return
   closeDropdown()
 }
 
@@ -224,6 +226,7 @@ onUnmounted(() => {
       <Teleport to="body">
         <div
           v-if="dropdownOpen"
+          ref="dropdownRef"
           class="fixed z-[200] min-w-[10rem] max-h-60 overflow-y-auto bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1"
           :style="{ top: dropdownTop + 'px', left: dropdownLeft + 'px' }"
         >
