@@ -61,9 +61,7 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// The URL encodes the content hash so it changes whenever the file changes —
-	// safe to cache indefinitely.
-	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	c.Header("Cache-Control", "no-cache")
 	c.File(thumbPath)
 }
 
