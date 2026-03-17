@@ -35,7 +35,11 @@ async function enterEdit() {
   editValue.value = props.path
   editing.value = true
   await nextTick()
-  editInput.value?.select()
+  const input = editInput.value
+  if (input) {
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }
 }
 
 function confirmEdit() {
