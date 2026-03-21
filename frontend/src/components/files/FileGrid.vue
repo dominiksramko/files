@@ -108,7 +108,7 @@ watch(() => props.entries, () => {
   if (containerRef.value) containerRef.value.scrollTop = 0
 })
 
-const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd } =
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd, longPressTargetPath } =
   useFileInteraction(props, emit)
 
 </script>
@@ -153,6 +153,7 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
           draggable="true"
           :class="[
             'group border rounded-xl overflow-hidden cursor-pointer transition-all select-none',
+            longPressTargetPath === item.entry.path ? 'scale-95 bg-zinc-700/80 border-zinc-600' : '',
             item.entry.is_dir && dragOverPath === item.entry.path
               ? 'bg-blue-900/40 border-blue-500 ring-2 ring-blue-500/40'
               : selected.includes(item.entry.path)

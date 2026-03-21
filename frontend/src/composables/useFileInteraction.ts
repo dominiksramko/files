@@ -18,22 +18,26 @@ export function useFileInteraction(props: { selected: string[] }, emit: Emit) {
   let longPressTimer: ReturnType<typeof setTimeout> | null = null
   let longPressFired = false
   let touchActive = false
+  const longPressTargetPath = ref<string | null>(null)
 
   function onLongPressStart(entry: FileEntry, e: TouchEvent) {
     longPressFired = false
     touchActive = true
+    longPressTargetPath.value = entry.path
     const touch = e.touches[0]
     if (!touch) return
     const { clientX, clientY } = touch
     longPressTimer = setTimeout(() => {
       longPressTimer = null
       longPressFired = true
+      longPressTargetPath.value = null
       emit('contextMenu', entry, clientX, clientY)
     }, LONG_PRESS_DELAY_MS)
   }
 
   function onLongPressEnd() {
     touchActive = false
+    longPressTargetPath.value = null
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
   }
 
@@ -91,5 +95,5 @@ export function useFileInteraction(props: { selected: string[] }, emit: Emit) {
     emit('dropToFolder', entry.path, paths)
   }
 
-  return { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd }
+  return { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd, longPressTargetPath }
 }

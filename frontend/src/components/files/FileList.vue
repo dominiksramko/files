@@ -43,7 +43,7 @@ function onHeaderCheckbox() {
   else emit('selectAll')
 }
 
-const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd } =
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd, longPressTargetPath } =
   useFileInteraction(props, emit)
 </script>
 
@@ -108,7 +108,8 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
             :key="entry.path"
             draggable="true"
             :class="[
-              'border-b border-zinc-800/50 cursor-pointer group transition-colors',
+              'border-b border-zinc-800/50 cursor-pointer group transition-all',
+              longPressTargetPath === entry.path ? 'scale-[0.99] bg-zinc-700/60' : '',
               entry.is_dir && dragOverPath === entry.path
                 ? 'bg-blue-900/30 outline outline-1 outline-blue-500/40'
                 : selected.includes(entry.path)
