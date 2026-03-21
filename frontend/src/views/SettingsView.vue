@@ -178,27 +178,41 @@ async function changePassword() {
       <div>
         <h1 class="text-lg font-semibold text-white mb-4">Settings</h1>
         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
-          <div class="flex items-center gap-3">
-            <span
-              class="size-10 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold text-white uppercase shrink-0"
-            >
+          <!-- Profile row -->
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            <span class="size-10 rounded-full bg-blue-600 flex items-center justify-center text-sm font-semibold text-white uppercase shrink-0">
               {{ (authStore.user?.display_name || authStore.user?.username)?.[0] }}
             </span>
             <div>
-              <p class="font-medium text-white">
+              <p class="font-medium text-white mt-1 sm:mt-0">
                 {{ authStore.user?.display_name || authStore.user?.username }}
               </p>
-              <p class="text-xs text-zinc-500">
+              <!-- Mobile: username and role on separate lines, no dot -->
+              <div class="sm:hidden">
+                <p v-if="authStore.user?.display_name" class="text-xs text-zinc-500">{{ authStore.user.username }}</p>
+                <p class="text-xs text-zinc-500">{{ authStore.user?.is_admin ? 'Administrator' : 'User' }}</p>
+              </div>
+              <!-- sm+: original single line with dot -->
+              <p class="hidden sm:block text-xs text-zinc-500">
                 {{ authStore.user?.display_name ? authStore.user.username + ' · ' : '' }}{{ authStore.user?.is_admin ? 'Administrator' : 'User' }}
               </p>
             </div>
           </div>
           <div class="pt-2 border-t border-zinc-800">
             <p class="text-xs text-zinc-500 font-medium mb-0.5">Root directory</p>
-            <p class="text-sm text-zinc-300 font-mono">{{ authStore.user?.root_dir || '—' }}</p>
+            <p class="text-sm text-zinc-300 font-mono break-all">{{ authStore.user?.root_dir || '—' }}</p>
           </div>
           <div v-if="diskSpace" class="pt-2 border-t border-zinc-800">
-            <div class="flex items-center justify-between mb-1.5">
+            <!-- Mobile: label and usage stacked -->
+            <div class="sm:hidden">
+              <p class="text-xs text-zinc-500 font-medium mb-0.5">Disk space</p>
+              <p class="text-xs text-zinc-400 mb-1.5">
+                {{ formatBytes(diskSpace.used) }} used of {{ formatBytes(diskSpace.total) }}
+                <span class="text-zinc-500">({{ diskSpace.pct.toFixed(0) }}%)</span>
+              </p>
+            </div>
+            <!-- sm+: original side by side -->
+            <div class="hidden sm:flex items-center justify-between mb-1.5">
               <p class="text-xs text-zinc-500 font-medium">Disk space</p>
               <p class="text-xs text-zinc-400">
                 {{ formatBytes(diskSpace.used) }} used of {{ formatBytes(diskSpace.total) }}
@@ -221,24 +235,24 @@ async function changePassword() {
         <!-- Subtitle appearance -->
         <AppAccordionItem title="Subtitle appearance">
           <div class="space-y-4 pt-2">
-            <div class="rounded-lg flex flex-col items-center justify-end py-6 gap-1 select-none" style="background: linear-gradient(160deg, #1e3040 0%, #2a3d2a 40%, #1a1a1a 100%)">
-              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
+            <div class="rounded-lg flex flex-col items-center justify-end py-6 gap-1 select-none text-[10px] sm:text-[14px]" style="background: linear-gradient(160deg, #1e3040 0%, #2a3d2a 40%, #1a1a1a 100%)">
+              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 transition-all duration-150">
                 I should have stayed in bed today.
               </span>
-              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 text-sm transition-all duration-150">
+              <span :style="subtitlePreviewStyle" class="rounded px-1.5 py-0.5 transition-all duration-150">
                 Yeah, that would've been smarter.
               </span>
             </div>
 
-            <div class="space-y-2.5">
+            <div class="space-y-3">
               <div v-for="row in [
                 { label: 'Color',      field: 'color',       options: colorOptions },
                 { label: 'Background', field: 'bg_opacity',  options: bgOptions },
                 { label: 'Style',      field: 'text_style',  options: styleOptions },
                 { label: 'Size',       field: 'font_size',   options: sizeOptions },
                 { label: 'Font',       field: 'font_family', options: fontOptions },
-              ]" :key="row.field" class="flex items-center gap-3">
-                <label class="text-xs font-medium text-zinc-400 w-24 shrink-0">{{ row.label }}</label>
+              ]" :key="row.field" class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <label class="text-xs font-medium text-zinc-400 sm:w-24 sm:shrink-0">{{ row.label }}</label>
                 <AppSelect
                   :model-value="(localPrefs as any)[row.field]"
                   :options="row.options"

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, defineComponent, h, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
-import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
+import { fileCategory, formatSize } from '@/utils/formatters'
 import { files as filesApi, folders as foldersApi, fileops, ConflictError } from '@/utils/api'
+import FileDetailsModal from '@/components/files/FileDetailsModal.vue'
 import { useToast } from '@/composables/useToast'
-import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import FileList from '@/components/files/FileList.vue'
 import FileGrid from '@/components/files/FileGrid.vue'
 import FileSearch from '@/components/files/FileSearch.vue'
@@ -21,10 +21,14 @@ import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import ConflictDialog from '@/components/ui/ConflictDialog.vue'
 import AdvancedRenamer from '@/components/files/AdvancedRenamer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppDropdown from '@/components/ui/AppDropdown.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 import { useFileOps } from '@/composables/useFileOps'
-
+import { useLayoutStore } from '@/stores/layout'
+import { debounce } from '@/utils/debounce'
+import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 const filesStore = useFilesStore()
+const layoutStore = useLayoutStore()
 const route = useRoute()
 const router = useRouter()
 const { prompt: promptConflict } = useConflictDialog()
@@ -62,35 +66,6 @@ function toggleHidden() {
   localStorage.setItem('showHidden', String(showHidden.value))
 }
 
-// ── Mobile actions dropdown ──────────────────────────────────────────────────
-const mobileActionsButtonRef = ref<HTMLButtonElement | null>(null)
-const mobileActionsDropdownRef = ref<HTMLElement | null>(null)
-const mobileActionsOpen = ref(false)
-const mobileActionsTop = ref(0)
-const mobileActionsRight = ref(0)
-
-function openMobileActions() {
-  const btn = mobileActionsButtonRef.value
-  if (btn) {
-    const rect = btn.getBoundingClientRect()
-    mobileActionsTop.value = rect.bottom + 4
-    mobileActionsRight.value = window.innerWidth - rect.right
-  }
-  mobileActionsOpen.value = true
-}
-
-function closeMobileActions() {
-  mobileActionsOpen.value = false
-}
-
-function handleMobileActionsOutside(event: MouseEvent) {
-  if (mobileActionsButtonRef.value?.contains(event.target as Node)) return
-  if (mobileActionsDropdownRef.value?.contains(event.target as Node)) return
-  closeMobileActions()
-}
-
-onMounted(() => document.addEventListener('mousedown', handleMobileActionsOutside))
-onUnmounted(() => document.removeEventListener('mousedown', handleMobileActionsOutside))
 
 // ── Search ──────────────────────────────────────────────────────────────────
 const searchQuery = ref('')
@@ -99,7 +74,6 @@ const searchLoading = ref(false)
 const searchExpanded = ref(false) // mobile: search bar expanded
 const mobileSearchOpen = computed(() => searchExpanded.value || searchQuery.value.trim().length > 0)
 const mobileSearchInputRef = ref<HTMLInputElement | null>(null)
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 let searchSource: EventSource | null = null
 
 function closeSearchSource() {
@@ -114,33 +88,35 @@ function openMobileSearch() {
   nextTick(() => mobileSearchInputRef.value?.focus())
 }
 
+const debouncedExecuteSearch = debounce((query: string) => {
+  const url = filesApi.searchStreamUrl(query.trim(), '', showHidden.value)
+  const es = new EventSource(url)
+  searchSource = es
+  es.onmessage = (e) => {
+    try {
+      const obj = JSON.parse(e.data as string)
+      if (obj.done) {
+        searchLoading.value = false
+        es.close()
+        if (searchSource === es) searchSource = null
+        return
+      }
+      searchResults.value.push(obj as FileEntry)
+    } catch { /* ignore malformed */ }
+  }
+  es.onerror = () => {
+    searchLoading.value = false
+    es.close()
+    if (searchSource === es) searchSource = null
+  }
+}, 300)
+
 function startSearch(query: string) {
-  if (searchTimer) clearTimeout(searchTimer)
+  debouncedExecuteSearch.cancel()
   closeSearchSource()
   searchResults.value = []
   searchLoading.value = true
-  searchTimer = setTimeout(() => {
-    const url = filesApi.searchStreamUrl(query.trim(), '', showHidden.value)
-    const es = new EventSource(url)
-    searchSource = es
-    es.onmessage = (e) => {
-      try {
-        const obj = JSON.parse(e.data as string)
-        if (obj.done) {
-          searchLoading.value = false
-          es.close()
-          if (searchSource === es) searchSource = null
-          return
-        }
-        searchResults.value.push(obj as FileEntry)
-      } catch { /* ignore malformed */ }
-    }
-    es.onerror = () => {
-      searchLoading.value = false
-      es.close()
-      if (searchSource === es) searchSource = null
-    }
-  }, 300)
+  debouncedExecuteSearch(query)
 }
 
 watch(searchQuery, (query) => {
@@ -148,7 +124,7 @@ watch(searchQuery, (query) => {
     router.replace({ query: routeQuery() })
   }
   if (!query.trim()) {
-    if (searchTimer) clearTimeout(searchTimer)
+    debouncedExecuteSearch.cancel()
     closeSearchSource()
     searchResults.value = []
     searchLoading.value = false
@@ -162,8 +138,8 @@ watch(showHidden, () => {
 })
 
 function clearSearch() {
+  debouncedExecuteSearch.cancel()
   closeSearchSource()
-  if (searchTimer) clearTimeout(searchTimer)
   searchExpanded.value = false
   searchQuery.value = ''
   searchResults.value = []
@@ -326,7 +302,7 @@ function deselectAll() {
 
 function refresh() {
   deselectAll()
-  refresh()
+  filesStore.refresh()
 }
 
 // ── Background jobs (upload progress, zip download) ────────────────────────
@@ -814,51 +790,7 @@ async function confirmExtract() {
 }
 
 // ── Details panel ─────────────────────────────────────────────────────────
-type SizeProgress = { files: number; dirs: number; bytes: number; done: boolean }
-type MediaMeta = {
-  image?: { width: number; height: number }
-  video?: { duration: number; width: number; height: number; codec?: string }
-}
-
 const detailsItems = ref<FileEntry[]>([])
-const sizeProgress = ref<SizeProgress | null>(null)
-const detailsMedia = ref<MediaMeta | null>(null)
-let sizeEventSource: EventSource | null = null
-
-const detailsLocation = computed(() => {
-  if (!detailsItems.value.length) return ''
-  const parents = [...new Set(detailsItems.value.map((e) => {
-    const slash = e.path.lastIndexOf('/')
-    return slash < 0 ? '/' : '/' + e.path.slice(0, slash)
-  }))]
-  return parents.length === 1 ? parents[0] : 'Multiple locations'
-})
-
-const detailsFileCount = computed(() => detailsItems.value.filter((e) => !e.is_dir).length)
-const detailsFolderCount = computed(() => detailsItems.value.filter((e) => e.is_dir).length)
-
-const detailsSizeText = computed(() => {
-  if (!sizeProgress.value) return null
-  const { files, dirs, bytes, done } = sizeProgress.value
-  const sizeStr = bytes > 0 ? formatSize(bytes) : (done ? '0 B' : null)
-  const parts: string[] = []
-  if (files > 0) parts.push(`${files.toLocaleString()} file${files !== 1 ? 's' : ''}`)
-  if (dirs > 0) parts.push(`${dirs.toLocaleString()} folder${dirs !== 1 ? 's' : ''}`)
-  if (done && parts.length === 0) return 'Empty'
-  const countStr = parts.length > 0
-    ? `(${!done ? 'scanning… ' : ''}${parts.join(', ')})`
-    : '(scanning…)'
-  if (sizeStr) return `${sizeStr} ${countStr}`.trim()
-  return countStr
-})
-
-function formatDuration(secs: number): string {
-  const h = Math.floor(secs / 3600)
-  const m = Math.floor((secs % 3600) / 60)
-  const s = Math.floor(secs % 60)
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
-}
 
 function entriesForPaths(paths: string[]): FileEntry[] {
   const pool = [...visibleEntries.value, ...searchResults.value]
@@ -866,47 +798,11 @@ function entriesForPaths(paths: string[]): FileEntry[] {
 }
 
 function openDetails(items: FileEntry[]) {
-  sizeEventSource?.close()
-  sizeEventSource = null
   detailsItems.value = items
-  sizeProgress.value = null
-  detailsMedia.value = null
-
-  const first = items[0]
-  const needsStream = items.length > 1 || (items.length === 1 && first?.is_dir)
-  if (needsStream) {
-    sizeProgress.value = { files: 0, dirs: 0, bytes: 0, done: false }
-    const url = filesApi.sizeStreamUrl(items.map((e) => e.path))
-    sizeEventSource = new EventSource(url)
-    sizeEventSource.onmessage = (ev) => {
-      sizeProgress.value = JSON.parse(ev.data)
-      if (sizeProgress.value?.done) {
-        sizeEventSource?.close()
-        sizeEventSource = null
-      }
-    }
-    sizeEventSource.onerror = () => {
-      sizeEventSource?.close()
-      sizeEventSource = null
-    }
-  }
-
-  if (first && items.length === 1 && !first.is_dir) {
-    const cat = fileCategory(first.mime, first.name)
-    if (cat === 'image' || cat === 'video') {
-      filesApi.fileMeta(first.path).then((meta) => {
-        detailsMedia.value = meta
-      }).catch(() => {})
-    }
-  }
 }
 
 function closeDetails() {
   detailsItems.value = []
-  sizeEventSource?.close()
-  sizeEventSource = null
-  sizeProgress.value = null
-  detailsMedia.value = null
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -923,7 +819,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => { window.addEventListener('keydown', onGlobalKeydown) })
-onUnmounted(() => { window.removeEventListener('keydown', onGlobalKeydown); sizeEventSource?.close() })
+onUnmounted(() => { window.removeEventListener('keydown', onGlobalKeydown) })
 
 // ── Folder context menu (right-click on empty space) ──────────────────────
 const folderContextMenuState = ref<{ x: number; y: number } | null>(null)
@@ -978,6 +874,25 @@ const folderContextMenuItems = computed((): ContextMenuItem[] => {
 // ── Computed helpers ──────────────────────────────────────────────────────
 const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard.value !== null)
 
+// ── Register a header center component via the layout store ───────────────
+// defineComponent closes over this view's reactive state — AppHeader renders
+// it generically with <component :is="..."> without knowing what it is.
+layoutStore.headerBreadcrumbsActive = true
+layoutStore.headerCenter = defineComponent({
+  name: 'HeaderBreadcrumb',
+  setup() {
+    return () => h(FileBreadcrumb, {
+      path: filesStore.currentPath,
+      onNavigate: navigate,
+      onDropToFolder: onDropToFolder,
+    })
+  },
+})
+onUnmounted(() => {
+  layoutStore.headerBreadcrumbsActive = false
+  layoutStore.headerCenter = null
+})
+
 onMounted(async () => {
   const initialPath = (route.query.path as string) || ''
   const actualPath = await filesStore.navigate(initialPath)
@@ -998,15 +913,10 @@ onMounted(async () => {
     @dragover="onDragOver"
     @drop="onDrop"
   >
-    <!-- Toolbar: fixed 2-row height — no layout shift when fileops appear -->
+    <!-- Toolbar -->
     <div class="border-b border-zinc-800 bg-zinc-900 shrink-0">
 
-      <!-- Row 1: Breadcrumbs -->
-      <div class="px-3 h-9 flex items-center border-b border-zinc-800/50">
-        <FileBreadcrumb :path="filesStore.currentPath" @navigate="navigate" @drop-to-folder="onDropToFolder" />
-      </div>
-
-      <!-- Row 2: Search/FileOps (left, flex-1) + Action buttons (right, fixed) -->
+      <!-- Row: Search/FileOps (left, flex-1) + Action buttons (right, fixed) -->
       <div class="px-3 h-11 flex items-center gap-2">
 
         <!-- MOBILE: full-width expanded search (replaces everything) -->
@@ -1072,8 +982,8 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Right: action buttons — hidden on mobile when search open -->
-        <div :class="['items-center gap-0.5 shrink-0', mobileSearchOpen ? 'hidden sm:flex' : 'flex']">
+        <!-- Right: action buttons — hidden on mobile when search or fileops active -->
+        <div :class="['items-center gap-0.5 shrink-0', mobileSearchOpen || fileopsActive ? 'hidden sm:flex' : 'flex']">
 
           <!-- Search icon — mobile only, not shown during fileops -->
           <button
@@ -1121,41 +1031,36 @@ onMounted(async () => {
             <AppIcon name="refresh" class="size-4" />
           </button>
 
-          <!-- ••• mobile actions dropdown trigger -->
-          <button
-            ref="mobileActionsButtonRef"
-            class="sm:hidden p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-            title="More actions"
-            @click="mobileActionsOpen ? closeMobileActions() : openMobileActions()"
-          >
-            <AppIcon name="ellipsis" class="size-4" />
-          </button>
-
-          <Teleport to="body">
-            <div
-              v-if="mobileActionsOpen"
-              ref="mobileActionsDropdownRef"
-              class="fixed z-[200] min-w-[11rem] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1"
-              :style="{ top: mobileActionsTop + 'px', right: mobileActionsRight + 'px' }"
-            >
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openNewTextFile(); closeMobileActions()">
+          <!-- ••• mobile actions dropdown -->
+          <AppDropdown class="sm:hidden" align="right">
+            <template #trigger="{ toggle }">
+              <button
+                class="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                title="More actions"
+                @click="toggle"
+              >
+                <AppIcon name="ellipsis" class="size-4" />
+              </button>
+            </template>
+            <template #default>
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewTextFile()">
                 <AppIcon name="newFile" class="size-4 shrink-0" /> New text file
               </button>
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openNewFolder(); closeMobileActions()">
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewFolder()">
                 <AppIcon name="newFolder" class="size-4 shrink-0" /> New folder
               </button>
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openFilePicker(); closeMobileActions()">
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openFilePicker()">
                 <AppIcon name="upload" class="size-4 shrink-0" /> Upload files
               </button>
               <div class="my-1 border-t border-zinc-700" />
-              <button :class="['w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2.5 transition-colors', showHidden ? 'text-blue-400' : 'text-zinc-300 hover:text-white']" @click="toggleHidden(); closeMobileActions()">
+              <button :class="['w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-800 flex items-center gap-2.5 transition-colors', showHidden ? 'text-blue-400' : 'text-zinc-300 hover:text-white']" @click="toggleHidden()">
                 <AppIcon name="eye" class="size-4 shrink-0" /> {{ showHidden ? 'Hide hidden files' : 'Show hidden files' }}
               </button>
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="refresh(); closeMobileActions()">
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="refresh()">
                 <AppIcon name="refresh" class="size-4 shrink-0" /> Refresh
               </button>
-            </div>
-          </Teleport>
+            </template>
+          </AppDropdown>
         </div>
       </div>
     </div>
@@ -1507,97 +1412,7 @@ onMounted(async () => {
     />
 
     <!-- Details modal -->
-    <Transition name="fade">
-      <div
-        v-if="detailsItems.length > 0"
-        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
-        @mousedown.self="closeDetails"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-96 shadow-2xl">
-          <!-- Header -->
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">
-            <template v-if="detailsItems.length === 1">Details</template>
-            <template v-else>
-              Details —
-              <span v-if="detailsFolderCount > 0">{{ detailsFolderCount.toLocaleString() }} folder{{ detailsFolderCount !== 1 ? 's' : '' }}</span>
-              <span v-if="detailsFolderCount > 0 && detailsFileCount > 0">, </span>
-              <span v-if="detailsFileCount > 0">{{ detailsFileCount.toLocaleString() }} file{{ detailsFileCount !== 1 ? 's' : '' }}</span>
-            </template>
-          </h3>
-
-          <dl class="space-y-2">
-            <!-- Name (single only) -->
-            <div v-if="detailsItems.length === 1" class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Name</dt>
-              <dd class="text-xs text-zinc-200 break-all">{{ detailsItems[0]?.name }}</dd>
-            </div>
-
-            <!-- Location -->
-            <div class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Location</dt>
-              <dd class="text-xs text-zinc-400 break-all font-mono">{{ detailsLocation }}</dd>
-            </div>
-
-            <!-- Type (single only) -->
-            <div v-if="detailsItems.length === 1" class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Type</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsItems[0]?.is_dir ? 'Folder' : (detailsItems[0]?.mime || 'Unknown') }}</dd>
-            </div>
-
-            <!-- Size -->
-            <div class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Size</dt>
-              <dd class="text-xs text-zinc-200">
-                <!-- Single file: show directly -->
-                <template v-if="detailsItems.length === 1 && !detailsItems[0]?.is_dir">
-                  {{ formatSize(detailsItems[0]?.size ?? 0) }}
-                </template>
-                <!-- Streaming (folder or multi) -->
-                <template v-else>{{ detailsSizeText }}</template>
-              </dd>
-            </div>
-
-            <!-- Created (single only, if filesystem provides it) -->
-            <div v-if="detailsItems.length === 1 && detailsItems[0]?.created_at" class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Created</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0]?.created_at ?? '') }}</dd>
-            </div>
-
-            <!-- Modified (single only) -->
-            <div v-if="detailsItems.length === 1" class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Modified</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDate(detailsItems[0]?.mod_time ?? '') }}</dd>
-            </div>
-
-            <!-- Image resolution -->
-            <div v-if="detailsMedia?.image" class="flex gap-2">
-              <dt class="text-xs text-zinc-500 w-20 shrink-0">Resolution</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsMedia.image.width }} × {{ detailsMedia.image.height }}</dd>
-            </div>
-
-            <!-- Video metadata -->
-            <template v-if="detailsMedia?.video">
-              <div class="flex gap-2">
-                <dt class="text-xs text-zinc-500 w-20 shrink-0">Duration</dt>
-                <dd class="text-xs text-zinc-200">{{ formatDuration(detailsMedia.video.duration) }}</dd>
-              </div>
-              <div class="flex gap-2">
-                <dt class="text-xs text-zinc-500 w-20 shrink-0">Resolution</dt>
-                <dd class="text-xs text-zinc-200">{{ detailsMedia.video.width }} × {{ detailsMedia.video.height }}</dd>
-              </div>
-              <div v-if="detailsMedia.video.codec" class="flex gap-2">
-                <dt class="text-xs text-zinc-500 w-20 shrink-0">Codec</dt>
-                <dd class="text-xs text-zinc-200">{{ detailsMedia.video.codec }}</dd>
-              </div>
-            </template>
-          </dl>
-
-          <div class="flex justify-end mt-4">
-            <AppButton @click="closeDetails">Close</AppButton>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <FileDetailsModal :items="detailsItems" @close="closeDetails" />
 
   </div>
 </template>

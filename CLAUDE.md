@@ -59,6 +59,16 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted globally in `AppLayout` — no need to add it per-view.
 - **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
+## Debounce Convention
+Always use `debounce()` from `frontend/src/utils/debounce.ts` — never write raw `clearTimeout`/`setTimeout` pairs. Returns a debounced function with a `.cancel()` method; call `.cancel()` in `onUnmounted` / watch cleanup to avoid stale timers. Usage: `const debouncedFn = debounce(fn, delayMs)`.
+
+## Header Center Slot Convention (IMPORTANT)
+`AppHeader` is a layout shell — it must never import or reference view-specific components directly. It renders a generic center slot via `layout.headerCenter: shallowRef<Component | null>` from the layout store.
+
+Views that need to render content in the header create a `defineComponent` whose render function closes over their own reactive state, set it on `layoutStore.headerCenter`, and clear it in `onUnmounted`. AppHeader renders it blindly with `<component :is="layout.headerCenter">`.
+
+Currently used only by `FilesView` to render `FileBreadcrumb` in place of the logo. The pattern is generic — any future view can use it.
+
 ## File Operations Convention (IMPORTANT)
 When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/src/composables/useFileOps.ts` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
 

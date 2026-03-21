@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { debounce } from '@/utils/debounce'
 
 const props = defineProps<{ path: string }>()
 const emit = defineEmits<{
@@ -71,7 +72,9 @@ const hiddenCrumbs = computed(() => allCrumbs.value.slice(0, hiddenCount.value))
 const shownCrumbs = computed(() => allCrumbs.value.slice(hiddenCount.value))
 
 // Collapse crumbs from the front using actual DOM overflow measurement.
-// All iterations run as microtasks before the browser paints — no visible flicker.
+// Priority: show as much of the last crumb (current item) as possible — keep
+// hiding parents until the last crumb is no longer truncated or all parents
+// are hidden. All iterations run as microtasks before the browser paints.
 async function recalculate() {
   if (recalcRunning) { recalcQueued = true; return }
   recalcRunning = true
@@ -84,9 +87,13 @@ async function recalculate() {
     hiddenCount.value = 0
     await nextTick()
 
-    // Always keep at least the last 2 crumbs visible
-    const maxHide = Math.max(0, allCrumbs.value.length - 2)
-    while (nav.scrollWidth > nav.clientWidth + 1 && hiddenCount.value < maxHide) {
+    // Hide all but the last crumb at most
+    const maxHide = Math.max(0, allCrumbs.value.length - 1)
+    while (hiddenCount.value < maxHide) {
+      const links = nav.querySelectorAll<HTMLElement>('a')
+      const lastLink = links[links.length - 1]
+      // Stop once the last crumb fits without truncation
+      if (!lastLink || lastLink.scrollWidth <= lastLink.clientWidth + 1) break
       hiddenCount.value++
       await nextTick()
     }
@@ -97,13 +104,18 @@ async function recalculate() {
   recalcRunning = false
 }
 
+const scheduleRecalculate = debounce(recalculate, 60)
+
 watch(
   navRef,
   (el, _prev, onCleanup) => {
     if (!el) return
-    const ro = new ResizeObserver(() => recalculate())
+    const ro = new ResizeObserver(scheduleRecalculate)
     ro.observe(el)
-    onCleanup(() => ro.disconnect())
+    onCleanup(() => {
+      ro.disconnect()
+      scheduleRecalculate.cancel()
+    })
   },
   { flush: 'post' },
 )
@@ -192,6 +204,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('resize', handleScrollResize)
   window.removeEventListener('scroll', handleScrollResize, { capture: true })
+  scheduleRecalculate.cancel()
 })
 </script>
 
@@ -213,7 +226,7 @@ onUnmounted(() => {
     />
 
     <!-- Normal mode: breadcrumbs -->
-    <nav v-else ref="navRef" class="flex items-center gap-1 text-sm min-w-0 overflow-hidden">
+    <nav v-else ref="navRef" class="w-full flex items-center gap-1 text-sm min-w-0 overflow-hidden">
     <!-- "•••" trigger — Teleport escapes overflow:hidden so dropdown is never clipped -->
     <template v-if="hiddenCrumbs.length > 0">
       <button
@@ -282,7 +295,8 @@ onUnmounted(() => {
         v-else
         :href="crumbHref(crumb.path)"
         :class="[
-          'shrink-0 min-h-[2.5rem] flex items-center px-2 rounded whitespace-nowrap transition-colors',
+          'min-h-[2.5rem] flex items-center px-2 rounded whitespace-nowrap transition-colors',
+          idx === shownCrumbs.length - 1 ? 'min-w-0 overflow-hidden text-ellipsis' : 'shrink-0',
           !isCurrent(crumb) && dragOverCrumb === crumb.path
             ? 'bg-blue-800/50 text-white'
             : idx === shownCrumbs.length - 1

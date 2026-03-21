@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { debounce } from '@/utils/debounce'
 import type { FileEntry, RenamePreset, RenamePreviewItem } from '@/types'
 import { renamer, ConflictError } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
@@ -341,7 +342,10 @@ function closeAllPopovers() {
   showPresetsPopover.value = false
 }
 
-onUnmounted(() => document.removeEventListener('click', closeAllPopovers))
+onUnmounted(() => {
+  document.removeEventListener('click', closeAllPopovers)
+  debouncedFetchPreview.cancel()
+})
 
 const activeCategoryData = computed(
   () => VARIABLE_CATEGORIES.find((c) => c.key === activeCategory.value)!,
@@ -414,11 +418,10 @@ async function deletePreset(presetId: number) {
 
 const previewItems = ref<RenamePreviewItem[]>([])
 const loadingPreview = ref(false)
-let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null
+const debouncedFetchPreview = debounce(fetchPreview, 400)
 
 watch(template, () => {
-  if (previewDebounceTimer) clearTimeout(previewDebounceTimer)
-  previewDebounceTimer = setTimeout(fetchPreview, 400)
+  debouncedFetchPreview()
   // Re-render editor colors when template changes from outside (presets, folder load).
   // Double-check inside the tick: insertVariable focuses the editor in its own nextTick,
   // which runs before this one — if it already focused+rendered, skip to avoid clobbering the caret.

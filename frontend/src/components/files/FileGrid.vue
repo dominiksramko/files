@@ -108,7 +108,7 @@ watch(() => props.entries, () => {
   if (containerRef.value) containerRef.value.scrollTop = 0
 })
 
-const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop } =
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd } =
   useFileInteraction(props, emit)
 
 </script>
@@ -161,6 +161,9 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
           ]"
           @click="handleClick(item.entry, $event)"
           @contextmenu.prevent.stop="emit('contextMenu', item.entry, $event.clientX, $event.clientY)"
+          @touchstart.passive="onLongPressStart(item.entry, $event)"
+          @touchend="onLongPressEnd"
+          @touchmove.passive="onLongPressEnd"
           @dragstart="onDragStart($event, item.entry)"
           @dragend="onDragEnd"
           @dragover="onDragOver($event, item.entry)"

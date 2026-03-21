@@ -43,7 +43,7 @@ function onHeaderCheckbox() {
   else emit('selectAll')
 }
 
-const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop } =
+const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop, onLongPressStart, onLongPressEnd } =
   useFileInteraction(props, emit)
 </script>
 
@@ -117,6 +117,9 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
             ]"
             @click="handleClick(entry, $event)"
             @contextmenu.prevent.stop="emit('contextMenu', entry, $event.clientX, $event.clientY)"
+            @touchstart.passive="onLongPressStart(entry, $event)"
+            @touchend="onLongPressEnd"
+            @touchmove.passive="onLongPressEnd"
             @dragstart="onDragStart($event, entry)"
             @dragend="onDragEnd"
             @dragover="onDragOver($event, entry)"

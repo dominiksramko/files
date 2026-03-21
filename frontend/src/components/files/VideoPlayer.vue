@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { debounce } from '@/utils/debounce'
 import Plyr from 'plyr'
 import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
@@ -81,7 +82,7 @@ function resumePlayback() {
 // --- Progress saving ---
 const FINISHED_THRESHOLD = 0.92
 let progressInterval: ReturnType<typeof setInterval> | null = null
-let seekTimer: ReturnType<typeof setTimeout> | null = null
+const debouncedSaveOrClear = debounce(saveOrClear, 1000)
 
 async function saveOrClear() {
   if (!plyrInstance) return
@@ -139,10 +140,7 @@ function setupPlyr(el: HTMLVideoElement) {
   plyrInstance.on('pause', () => saveOrClear())
 
   // Save on seek (debounced)
-  plyrInstance.on('seeked', () => {
-    if (seekTimer) clearTimeout(seekTimer)
-    seekTimer = setTimeout(() => saveOrClear(), 1000)
-  })
+  plyrInstance.on('seeked', () => debouncedSaveOrClear())
 
   // Save every 30s while playing
   progressInterval = setInterval(() => {
@@ -206,7 +204,7 @@ onMounted(async () => {
 // own DOM manipulation before Vue unmounts the component.
 onBeforeUnmount(() => {
   alive = false
-  if (seekTimer) clearTimeout(seekTimer)
+  debouncedSaveOrClear.cancel()
   if (progressInterval) { clearInterval(progressInterval); progressInterval = null }
 
   // Fire-and-forget final position save
