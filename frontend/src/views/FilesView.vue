@@ -62,6 +62,36 @@ function toggleHidden() {
   localStorage.setItem('showHidden', String(showHidden.value))
 }
 
+// ── Mobile actions dropdown ──────────────────────────────────────────────────
+const mobileActionsButtonRef = ref<HTMLButtonElement | null>(null)
+const mobileActionsDropdownRef = ref<HTMLElement | null>(null)
+const mobileActionsOpen = ref(false)
+const mobileActionsTop = ref(0)
+const mobileActionsRight = ref(0)
+
+function openMobileActions() {
+  const btn = mobileActionsButtonRef.value
+  if (btn) {
+    const rect = btn.getBoundingClientRect()
+    mobileActionsTop.value = rect.bottom + 4
+    mobileActionsRight.value = window.innerWidth - rect.right
+  }
+  mobileActionsOpen.value = true
+}
+
+function closeMobileActions() {
+  mobileActionsOpen.value = false
+}
+
+function handleMobileActionsOutside(event: MouseEvent) {
+  if (mobileActionsButtonRef.value?.contains(event.target as Node)) return
+  if (mobileActionsDropdownRef.value?.contains(event.target as Node)) return
+  closeMobileActions()
+}
+
+onMounted(() => document.addEventListener('mousedown', handleMobileActionsOutside))
+onUnmounted(() => document.removeEventListener('mousedown', handleMobileActionsOutside))
+
 // ── Search ──────────────────────────────────────────────────────────────────
 const searchQuery = ref('')
 const searchResults = ref<FileEntry[]>([])
@@ -1055,23 +1085,23 @@ onMounted(async () => {
             <AppIcon name="search" class="size-4" />
           </button>
 
-          <!-- New text file -->
-          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New text file" @click="openNewTextFile">
+          <!-- New text file: desktop only -->
+          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New text file" @click="openNewTextFile">
             <AppIcon name="newFile" class="size-4" />
           </button>
 
-          <!-- New folder -->
-          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
+          <!-- New folder: desktop only -->
+          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
             <AppIcon name="newFolder" class="size-4" />
           </button>
 
-          <!-- Upload -->
-          <button :class="['p-1.5 rounded transition-colors', bgJobs.some(j => j.kind === 'upload') ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
+          <!-- Upload: desktop only -->
+          <button :class="['hidden sm:flex p-1.5 rounded transition-colors', bgJobs.some(j => j.kind === 'upload') ? 'text-blue-400 animate-pulse' : 'text-zinc-400 hover:text-white hover:bg-zinc-800']" title="Upload files" @click="openFilePicker">
             <AppIcon name="upload" class="size-4" />
           </button>
           <input ref="uploadInput" type="file" multiple class="hidden" @change="handleFileInput" />
 
-          <!-- View toggle -->
+          <!-- View toggle: always visible -->
           <div v-if="!searchQuery" class="flex items-center bg-zinc-800 rounded-lg p-0.5 gap-0.5 ml-0.5">
             <button :class="['p-1.5 rounded-md transition-colors', viewMode === 'grid' ? 'bg-zinc-600 text-white' : 'text-zinc-400 hover:text-white']" title="Grid view" @click="setView('grid')">
               <AppIcon name="grid" class="size-4" />
@@ -1081,15 +1111,51 @@ onMounted(async () => {
             </button>
           </div>
 
-          <!-- Show/hide hidden files -->
-          <button :class="['p-1.5 rounded transition-colors hover:bg-zinc-800', showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white']" :title="showHidden ? 'Hide hidden files' : 'Show hidden files'" @click="toggleHidden">
+          <!-- Show/hide hidden files: desktop only -->
+          <button :class="['hidden sm:flex p-1.5 rounded transition-colors hover:bg-zinc-800', showHidden ? 'text-blue-400 hover:text-blue-300' : 'text-zinc-400 hover:text-white']" :title="showHidden ? 'Hide hidden files' : 'Show hidden files'" @click="toggleHidden">
             <AppIcon name="eye" class="size-4" />
           </button>
 
-          <!-- Refresh -->
-          <button class="p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="Refresh" @click="refresh()">
+          <!-- Refresh: desktop only -->
+          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="Refresh" @click="refresh()">
             <AppIcon name="refresh" class="size-4" />
           </button>
+
+          <!-- ••• mobile actions dropdown trigger -->
+          <button
+            ref="mobileActionsButtonRef"
+            class="sm:hidden p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+            title="More actions"
+            @click="mobileActionsOpen ? closeMobileActions() : openMobileActions()"
+          >
+            <AppIcon name="ellipsis" class="size-4" />
+          </button>
+
+          <Teleport to="body">
+            <div
+              v-if="mobileActionsOpen"
+              ref="mobileActionsDropdownRef"
+              class="fixed z-[200] min-w-[11rem] bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1"
+              :style="{ top: mobileActionsTop + 'px', right: mobileActionsRight + 'px' }"
+            >
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openNewTextFile(); closeMobileActions()">
+                <AppIcon name="newFile" class="size-4 shrink-0" /> New text file
+              </button>
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openNewFolder(); closeMobileActions()">
+                <AppIcon name="newFolder" class="size-4 shrink-0" /> New folder
+              </button>
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="openFilePicker(); closeMobileActions()">
+                <AppIcon name="upload" class="size-4 shrink-0" /> Upload files
+              </button>
+              <div class="my-1 border-t border-zinc-700" />
+              <button :class="['w-full text-left px-3 py-2.5 text-sm hover:bg-zinc-700 flex items-center gap-2.5 transition-colors', showHidden ? 'text-blue-400' : 'text-zinc-300 hover:text-white']" @click="toggleHidden(); closeMobileActions()">
+                <AppIcon name="eye" class="size-4 shrink-0" /> {{ showHidden ? 'Hide hidden files' : 'Show hidden files' }}
+              </button>
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 flex items-center gap-2.5 transition-colors" @click="refresh(); closeMobileActions()">
+                <AppIcon name="refresh" class="size-4 shrink-0" /> Refresh
+              </button>
+            </div>
+          </Teleport>
         </div>
       </div>
     </div>
