@@ -17,9 +17,11 @@ export function useFileInteraction(props: { selected: string[] }, emit: Emit) {
   // ── Long press (mobile context menu) ─────────────────────────────────────
   let longPressTimer: ReturnType<typeof setTimeout> | null = null
   let longPressFired = false
+  let touchActive = false
 
   function onLongPressStart(entry: FileEntry, e: TouchEvent) {
     longPressFired = false
+    touchActive = true
     const touch = e.touches[0]
     if (!touch) return
     const { clientX, clientY } = touch
@@ -31,6 +33,7 @@ export function useFileInteraction(props: { selected: string[] }, emit: Emit) {
   }
 
   function onLongPressEnd() {
+    touchActive = false
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
   }
 
@@ -50,6 +53,7 @@ export function useFileInteraction(props: { selected: string[] }, emit: Emit) {
   const dragOverPath = ref<string | null>(null)
 
   function onDragStart(e: DragEvent, entry: FileEntry) {
+    if (touchActive) { e.preventDefault(); return }
     const paths = props.selected.includes(entry.path) ? [...props.selected] : [entry.path]
     e.dataTransfer!.setData('application/x-files-internal', JSON.stringify(paths))
     e.dataTransfer!.effectAllowed = 'move'
