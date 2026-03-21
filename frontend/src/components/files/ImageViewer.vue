@@ -81,26 +81,23 @@ let touchState: TouchState = null
 let lastTapTime = 0
 
 function touchDist(touches: TouchList): number {
-  const dx = touches[0].clientX - touches[1].clientX
-  const dy = touches[0].clientY - touches[1].clientY
-  return Math.sqrt(dx * dx + dy * dy)
+  const t0 = touches[0]!, t1 = touches[1]!
+  return Math.sqrt((t0.clientX - t1.clientX) ** 2 + (t0.clientY - t1.clientY) ** 2)
+}
+
+function touchMid(touches: TouchList): { x: number; y: number } {
+  const t0 = touches[0]!, t1 = touches[1]!
+  return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 }
 }
 
 function onTouchStart(e: TouchEvent) {
   if (e.touches.length === 2) {
     e.preventDefault()
-    touchState = {
-      type:     'pinch',
-      prevDist: touchDist(e.touches),
-      prevMidX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-      prevMidY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
-    }
+    const mid = touchMid(e.touches)
+    touchState = { type: 'pinch', prevDist: touchDist(e.touches), prevMidX: mid.x, prevMidY: mid.y }
   } else if (e.touches.length === 1 && zoom.value > 1) {
-    touchState = {
-      type:    'pan',
-      originX: e.touches[0].clientX - panX.value,
-      originY: e.touches[0].clientY - panY.value,
-    }
+    const t = e.touches[0]!
+    touchState = { type: 'pan', originX: t.clientX - panX.value, originY: t.clientY - panY.value }
   } else {
     touchState = null
   }
@@ -112,8 +109,7 @@ function onTouchMove(e: TouchEvent) {
 
   if (touchState.type === 'pinch' && e.touches.length === 2) {
     const newDist = touchDist(e.touches)
-    const newMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2
-    const newMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2
+    const newMid  = touchMid(e.touches)
     const newZoom = Math.max(1, Math.min(8, zoom.value * (newDist / touchState.prevDist)))
     const ratio   = newZoom / zoom.value
 
@@ -121,31 +117,28 @@ function onTouchMove(e: TouchEvent) {
       const rect   = imageContainer.value.getBoundingClientRect()
       const pinchX = touchState.prevMidX - (rect.left + rect.width  / 2)
       const pinchY = touchState.prevMidY - (rect.top  + rect.height / 2)
-      // Zoom around the pinch midpoint, then shift by midpoint translation
-      panX.value = pinchX * (1 - ratio) + panX.value * ratio + (newMidX - touchState.prevMidX)
-      panY.value = pinchY * (1 - ratio) + panY.value * ratio + (newMidY - touchState.prevMidY)
+      panX.value = pinchX * (1 - ratio) + panX.value * ratio + (newMid.x - touchState.prevMidX)
+      panY.value = pinchY * (1 - ratio) + panY.value * ratio + (newMid.y - touchState.prevMidY)
     }
 
     zoom.value = newZoom
     if (zoom.value === 1) { panX.value = 0; panY.value = 0 }
     touchState.prevDist = newDist
-    touchState.prevMidX = newMidX
-    touchState.prevMidY = newMidY
+    touchState.prevMidX = newMid.x
+    touchState.prevMidY = newMid.y
 
   } else if (touchState.type === 'pan' && e.touches.length === 1) {
-    panX.value = e.touches[0].clientX - touchState.originX
-    panY.value = e.touches[0].clientY - touchState.originY
+    const t = e.touches[0]!
+    panX.value = t.clientX - touchState.originX
+    panY.value = t.clientY - touchState.originY
   }
 }
 
 function onTouchEnd(e: TouchEvent) {
   // Finger lifted during pinch → switch to pan with remaining finger
   if (e.touches.length === 1 && touchState?.type === 'pinch') {
-    touchState = {
-      type:    'pan',
-      originX: e.touches[0].clientX - panX.value,
-      originY: e.touches[0].clientY - panY.value,
-    }
+    const t = e.touches[0]!
+    touchState = { type: 'pan', originX: t.clientX - panX.value, originY: t.clientY - panY.value }
     return
   }
 
