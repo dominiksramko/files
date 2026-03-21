@@ -124,6 +124,7 @@ onUnmounted(() => {
           :class="['p-1 rounded-full transition-colors', zoom <= 1 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
           title="Zoom out (-)"
           @click.stop="zoomOut"
+          @dblclick.stop
         >
           <AppIcon name="zoomOut" class="size-4" />
         </button>
@@ -131,11 +132,13 @@ onUnmounted(() => {
           class="text-xs text-zinc-300 tabular-nums w-10 text-center select-none hover:text-white transition-colors rounded px-0.5 py-1"
           title="Reset zoom (0)"
           @click.stop="resetZoom"
+          @dblclick.stop
         >{{ Math.round(zoom * 100) }}%</button>
         <button
           :class="['p-1 rounded-full transition-colors', zoom >= 8 ? 'text-zinc-600 cursor-default' : 'text-zinc-300 hover:text-white hover:bg-white/10']"
           title="Zoom in (+)"
           @click.stop="zoomIn"
+          @dblclick.stop
         >
           <AppIcon name="zoomIn" class="size-4" />
         </button>
