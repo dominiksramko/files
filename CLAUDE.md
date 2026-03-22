@@ -82,7 +82,7 @@ When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/s
 - Archive preview + extraction: ZIP/TAR (pure Go) + 7z CLI fallback for RAR/7z/password-protected
 - Admin panel: create/edit/delete users, toggle admin, display name
 - Settings: change own password, display name
-- Docker: multi-stage builds, nginx reverse proxy to backend
+- Docker: multi-stage builds, Caddy reverse proxy to backend
 
 ## URL State Convention (IMPORTANT)
 ALL browsing state must be reflected in the URL so page refresh restores it:
