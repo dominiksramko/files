@@ -6,23 +6,26 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
-      JWT_SECRET: "${JWT_SECRET:-change-me-in-production}"
+      # Required: set a stable secret so sessions survive restarts.
+      # Generate one with: openssl rand -hex 32
+      JWT_SECRET: "${JWT_SECRET}"
+      # Optional: set the initial admin credentials (only used on first run).
+      # If ADMIN_PASSWORD is unset, a random password is printed to the logs.
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      ADMIN_PATH: "${ADMIN_PATH:-}"
       DB_PATH: /data/files.db
       USERS_ROOT: /data/users
       THUMB_CACHE_DIR: /data/thumbs
       HLS_CACHE_DIR: /data/hls
       GIN_MODE: release
+    ports:
+      - "${PORT:-8080}:8080"
     volumes:
       - db_data:/data
       # Mount user folders here. Example:
       # - /host/path/alice:/data/users/alice
       # - /host/path/bob:/data/users/bob
-    networks:
-      - caddy
 
 volumes:
   db_data:
-
-networks:
-  caddy:
-    external: true
