@@ -4,6 +4,12 @@ A self-hosted file browser with a Vue 3 frontend and Go backend. Browse, preview
 
 > This project was built entirely through pair programming with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant — as an experiment in how far you can take a real-world app that way.
 
+## Screenshots
+
+![File browser](screenshots/list.png)
+
+More screenshots in the [`screenshots/`](screenshots/) folder.
+
 ## Features
 
 ### File Browser
