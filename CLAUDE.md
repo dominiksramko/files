@@ -16,10 +16,10 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 
 ## Backend
 - Entry: `backend/cmd/server/main.go`
-- Config: `backend/internal/config/config.go` (env vars: PORT, JWT_SECRET, DB_PATH, USERS_ROOT)
+- Config: `backend/internal/config/config.go` (env vars: PORT, JWT_SECRET, DB_PATH, USERS_ROOT, GIN_MODE, THUMB_CACHE_DIR, HLS_CACHE_DIR, CONV_CACHE_DIR, ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_PATH)
 - Auth middleware: `backend/internal/middleware/auth.go` — accepts JWT from `Authorization: Bearer` header OR `?token=` query param
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
-- DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin:admin on first run
+- DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
 
 ## Database Migrations (IMPORTANT)
@@ -32,7 +32,6 @@ A self-hosted file browser with Vue3 frontend + Go backend.
   - e.g. `go run ./cmd/migrate add_email_to_users`
   - Generates a file with the current timestamp + name, with empty Up/Down stubs
 - **Never edit or delete existing migration files** — only append new ones
-- Current migrations: `2026_02_26_000001_create_users_table`, `2026_02_26_000002_create_folder_prefs_table`, `2026_03_02_000001_add_display_name_to_users`
 
 ## Frontend
 - Stack: Vue3 + TypeScript + Pinia + Vue Router v5 + Tailwind v4
@@ -73,16 +72,6 @@ Currently used only by `FilesView` to render `FileBreadcrumb` in place of the lo
 When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/src/composables/useFileOps.ts` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
 
 `FilesView.vue` uses `useFileOps()` to get `clipboard`, `fileOps`, `contextMenuItems`, `onContextMenu`, `onPaste`, and `performMove`. New action callbacks (e.g. opening a dialog) must be passed via `actionCallbacks` when calling `useFileOps`.
-
-## Implemented Features
-- JWT auth (login, guards, auto-restore on reload, password change, display name)
-- File browser (list, navigate, sort, download, new folder, new text file)
-- File preview: images (with checkerboard for transparent formats), video, audio, PDF (inline)
-- Thumbnails: images, video (ffmpeg), SVG (resvg with checkerboard compositing)
-- Archive preview + extraction: ZIP/TAR (pure Go) + 7z CLI fallback for RAR/7z/password-protected
-- Admin panel: create/edit/delete users, toggle admin, display name
-- Settings: change own password, display name
-- Docker: multi-stage builds, Caddy reverse proxy to backend
 
 ## URL State Convention (IMPORTANT)
 ALL browsing state must be reflected in the URL so page refresh restores it:
@@ -127,14 +116,3 @@ Any new CLI tool used by the backend must be added to the `apk add` line in `bac
 - `ca-certificates` — TLS root certificates
 - `tzdata` — timezone data
 
-## Dev Commands
-```bash
-# Backend
-cd backend && go run ./cmd/server
-
-# Frontend
-cd frontend && npm run dev
-
-# Docker
-docker compose up --build
-```
