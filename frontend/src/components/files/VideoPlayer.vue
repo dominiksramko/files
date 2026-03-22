@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { debounce } from '@/utils/debounce'
 import Plyr from 'plyr'
 import 'plyr/dist/plyr.css'
@@ -9,7 +9,7 @@ import { useToast } from '@/composables/useToast'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 
-const props = defineProps<{ entry: FileEntry }>()
+const props = defineProps<{ entry: FileEntry; active?: boolean }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
 const needsRemux = ['video/x-matroska', 'video/x-msvideo', 'video/quicktime'].includes(props.entry.mime)
@@ -37,6 +37,12 @@ let hlsInstance: any = null
 let alive = true
 
 const { show: showToast } = useToast()
+
+watch(() => props.active, (isActive) => {
+  if (!plyrInstance) return
+  if (isActive) plyrInstance.play()?.catch(() => {})
+  else plyrInstance.pause()
+})
 
 // --- Screenshot ---
 const takingScreenshot = ref(false)

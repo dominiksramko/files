@@ -198,6 +198,12 @@ const previewIndex = computed(() =>
 const previewEntry = computed<FileEntry | null>(
   () => previewableEntries.value[previewIndex.value] ?? null,
 )
+const prevPreviewEntry = computed<FileEntry | null>(
+  () => previewableEntries.value[previewIndex.value - 1] ?? null,
+)
+const nextPreviewEntry = computed<FileEntry | null>(
+  () => previewableEntries.value[previewIndex.value + 1] ?? null,
+)
 
 function openPreview(entry: FileEntry) {
   previewTextEditMode.value = false
@@ -1132,6 +1138,8 @@ onMounted(async () => {
 
     <FilePreview
       :entry="previewEntry"
+      :prev-entry="prevPreviewEntry"
+      :next-entry="nextPreviewEntry"
       :has-prev="previewIndex > 0"
       :has-next="previewIndex < previewableEntries.length - 1"
       :index="previewIndex"

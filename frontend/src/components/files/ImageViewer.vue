@@ -240,6 +240,7 @@ onUnmounted(() => {
 <template>
   <div
     class="self-stretch w-full flex flex-col min-h-0 min-w-0 select-none py-4"
+    :data-image-zoomed="zoom > 1 ? true : undefined"
     :style="{ cursor: zoom > 1 ? (isPanning ? 'grabbing' : 'grab') : 'default' }"
     @click.stop
     @wheel.prevent="onWheel"
