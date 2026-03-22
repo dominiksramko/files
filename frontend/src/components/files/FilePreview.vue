@@ -151,6 +151,35 @@ function snapTo(direction: 'prev' | 'next' | 'reset') {
   }, 300)
 }
 
+// --- Horizontal wheel / trackpad swipe navigation ---
+// deltaX-dominant wheel events (trackpad two-finger horizontal swipe) navigate
+// prev/next. A small accumulator prevents accidental triggers from light brushes.
+let wheelAccX     = 0
+let wheelResetTimer: ReturnType<typeof setTimeout> | null = null
+const WHEEL_THRESHOLD = 60 // px of accumulated deltaX before snapping
+
+function onCarouselWheel(e: WheelEvent) {
+  // Only act when horizontal scroll is dominant (trackpad swipe, not zoom scroll)
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+  // Don't intercept when image is zoomed — ImageViewer handles panning
+  if (trackRef.value?.children[1]?.querySelector('[data-image-zoomed]')) return
+  if (isSnapping.value) return
+
+  e.preventDefault()
+  wheelAccX += e.deltaX
+
+  if (wheelResetTimer) clearTimeout(wheelResetTimer)
+  wheelResetTimer = setTimeout(() => { wheelAccX = 0 }, 300)
+
+  if (wheelAccX > WHEEL_THRESHOLD && props.hasNext) {
+    wheelAccX = 0
+    snapTo('next')
+  } else if (wheelAccX < -WHEEL_THRESHOLD && props.hasPrev) {
+    wheelAccX = 0
+    snapTo('prev')
+  }
+}
+
 // --- Keyboard ---
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
@@ -169,7 +198,10 @@ function onKey(e: KeyboardEvent) {
 }
 
 onMounted(()  => window.addEventListener('keydown', onKey))
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  if (wheelResetTimer) clearTimeout(wheelResetTimer)
+})
 </script>
 
 <template>
@@ -221,6 +253,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <div
           ref="carouselRef"
           class="flex-1 relative min-h-0 overflow-hidden"
+          @wheel="onCarouselWheel"
           @touchstart.passive="onCarouselTouchStart"
           @touchmove="onCarouselTouchMove"
           @touchend="onCarouselTouchEnd"
