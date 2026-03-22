@@ -21,12 +21,26 @@ const naturalH   = ref(0)
 const containerW = ref(0)
 const containerH = ref(0)
 
-const zoom      = ref(1)
-const panX      = ref(0)
-const panY      = ref(0)
-const isPanning = ref(false)
-const panOrigin = ref({ x: 0, y: 0, panX: 0, panY: 0 })
+const zoom       = ref(1)
+const panX       = ref(0)
+const panY       = ref(0)
+const isPanning  = ref(false)
+const isWheeling = ref(false)
+const panOrigin  = ref({ x: 0, y: 0, panX: 0, panY: 0 })
+let wheelTimer: ReturnType<typeof setTimeout> | null = null
 const imageContainer = ref<HTMLElement | null>(null)
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+// Clamp pan so the image edge never moves past the container edge.
+function clampPan() {
+  const halfOverflowX = Math.max(0, ((displayW.value ?? 0) - containerW.value) / 2)
+  const halfOverflowY = Math.max(0, ((displayH.value ?? 0) - containerH.value) / 2)
+  panX.value = clamp(panX.value, -halfOverflowX, halfOverflowX)
+  panY.value = clamp(panY.value, -halfOverflowY, halfOverflowY)
+}
 
 // Scale that makes the image fill the container at zoom=1 (same as object-contain)
 const fitScale = computed(() => {
@@ -52,10 +66,11 @@ function onImageLoad(e: Event) {
 }
 
 function resetZoom() { zoom.value = 1; panX.value = 0; panY.value = 0 }
-function zoomIn()    { zoom.value = Math.min(8, zoom.value * 1.25) }
+function zoomIn()    { zoom.value = Math.min(8, zoom.value * 1.25); clampPan() }
 function zoomOut()   {
   zoom.value = Math.max(1, zoom.value / 1.25)
   if (zoom.value === 1) { panX.value = 0; panY.value = 0 }
+  else clampPan()
 }
 function toggleZoom() {
   if (zoom.value === 1) zoom.value = 2
@@ -73,7 +88,10 @@ function zoomToward(ex: number, ey: number, newZoom: number) {
 
 // --- Mouse wheel zoom ---
 function onWheel(e: WheelEvent) {
-  const factor  = e.deltaY < 0 ? 1.15 : 1 / 1.15
+  isWheeling.value = true
+  if (wheelTimer) clearTimeout(wheelTimer)
+  wheelTimer = setTimeout(() => { isWheeling.value = false }, 150)
+  const factor  = e.deltaY < 0 ? 1.08 : 1 / 1.08
   const newZoom = Math.max(1, Math.min(8, zoom.value * factor))
   if (newZoom === zoom.value) return
   if (imageContainer.value) {
@@ -82,6 +100,7 @@ function onWheel(e: WheelEvent) {
   } else {
     zoom.value = newZoom
   }
+  clampPan()
 }
 
 // --- Mouse pan ---
@@ -97,6 +116,7 @@ function onPanStart(e: MouseEvent) {
 function onPanMove(e: MouseEvent) {
   panX.value = panOrigin.value.panX + (e.clientX - panOrigin.value.x)
   panY.value = panOrigin.value.panY + (e.clientY - panOrigin.value.y)
+  clampPan()
 }
 
 function onPanEnd() {
@@ -154,6 +174,7 @@ function onTouchMove(e: TouchEvent) {
       panY.value += newMid.y - touchState.value.prevMidY
     }
 
+    clampPan()
     touchState.value.prevDist = newDist
     touchState.value.prevMidX = newMid.x
     touchState.value.prevMidY = newMid.y
@@ -162,6 +183,7 @@ function onTouchMove(e: TouchEvent) {
     const t = e.touches[0]!
     panX.value = t.clientX - touchState.value.originX
     panY.value = t.clientY - touchState.value.originY
+    clampPan()
   }
 }
 
@@ -211,6 +233,7 @@ onUnmounted(() => {
   window.removeEventListener('mousemove', onPanMove)
   window.removeEventListener('mouseup',   onPanEnd)
   resizeObserver?.disconnect()
+  if (wheelTimer) clearTimeout(wheelTimer)
 })
 </script>
 
@@ -255,7 +278,7 @@ onUnmounted(() => {
             : { maxWidth: '100%', maxHeight: '100%' }),
           // translate(-50%, -50%) centres the image; panX/panY shift it from there.
           transform: `translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px))`,
-          transition: touchState ? 'none' : 'transform 0.1s ease',
+          transition: touchState || isPanning || isWheeling ? 'none' : 'transform 0.1s ease',
         }"
         :class="['block select-none', hasAlpha && 'checkerboard']"
         draggable="false"
