@@ -19,6 +19,7 @@
     "highlight.js": "^11.11.1",
     "hls.js": "^1.6.15",
     "marked": "^17.0.3",
+    "pdfjs-dist": "^4.10.38",
     "pinia": "^3.0.4",
     "plyr": "^3.8.4",
     "tailwindcss": "^4.2.1",
