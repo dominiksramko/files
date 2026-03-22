@@ -29,12 +29,35 @@ interface SubtitleTrack {
   srclang: string
 }
 
-const videoEl        = ref<HTMLVideoElement | null>(null)
-const subtitles      = ref<SubtitleTrack[]>([])
-const plyrControlsEl = ref<Element | null>(null)
+const videoEl            = ref<HTMLVideoElement | null>(null)
+const subtitles          = ref<SubtitleTrack[]>([])
+const plyrControlsEl = ref<Element | null>(null) // screenshot slot
 let plyrInstance: Plyr | null = null
 let hlsInstance: any = null
+let plyrEl: Element | null = null
 let alive = true
+let controlsHideTimer: ReturnType<typeof setTimeout> | null = null
+let controlsVisible = true
+
+// Check live at call time so CSS layout updates on resize without reinitialising Plyr.
+const isMobileNow = () => window.matchMedia('(max-width: 480px)').matches
+
+function showControls() {
+  controlsVisible = true
+  plyrEl?.classList.remove('plyr--hide-controls')
+  scheduleControlsHide()
+}
+
+function scheduleControlsHide() {
+  if (controlsHideTimer) clearTimeout(controlsHideTimer)
+  // Only hide while playing; stay visible when paused.
+  controlsHideTimer = setTimeout(() => {
+    if (plyrInstance?.playing) {
+      controlsVisible = false
+      plyrEl?.classList.add('plyr--hide-controls')
+    }
+  }, 5000)
+}
 
 const { show: showToast } = useToast()
 
@@ -103,6 +126,7 @@ async function saveOrClear() {
   progressApi.save(props.entry.path, pos, dur).catch(() => {})
 }
 
+
 function setupPlyr(el: HTMLVideoElement) {
   const plyrOptions: Plyr.Options = {
     controls: [
@@ -114,20 +138,62 @@ function setupPlyr(el: HTMLVideoElement) {
     captions: { active: true, language: 'auto', update: true },
     speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
     keyboard: { focused: true, global: false },
+    // We manage auto-hide and click-to-play ourselves.
+    hideControls: false,
+    clickToPlay: false,
   }
 
   plyrInstance = new Plyr(el, plyrOptions)
+  plyrEl = el.closest('.plyr')
 
-  // Insert a placeholder span before the captions button and teleport the
-  // screenshot button into it, so it appears in the native Plyr control bar.
-  const captionsBtn = el.closest('.plyr')?.querySelector('[data-plyr="captions"]')
+  // Inject screenshot slot before captions in the control bar.
+  const captionsBtn = plyrEl?.querySelector('[data-plyr="captions"]')
   if (captionsBtn?.parentElement) {
     const screenshotSlot = document.createElement('span')
+    screenshotSlot.className = 'plyr__screenshot-slot'
     captionsBtn.parentElement.insertBefore(screenshotSlot, captionsBtn)
     plyrControlsEl.value = screenshotSlot
   }
 
-  // Fetch saved progress once the player is ready
+  // Click/tap video: if controls are hidden, first interaction shows them only.
+  // If controls are visible, it toggles playback.
+  const videoWrapper = plyrEl?.querySelector('.plyr__video-wrapper')
+  let controlsVisibleAtTouchStart = true
+  videoWrapper?.addEventListener('touchstart', () => {
+    controlsVisibleAtTouchStart = controlsVisible
+  }, { passive: true })
+  videoWrapper?.addEventListener('touchend', (event) => {
+    event.preventDefault()
+    showControls()
+    if (!controlsVisibleAtTouchStart || !plyrInstance) return
+    if (plyrInstance.playing) plyrInstance.pause()
+    else plyrInstance.play()?.catch(() => {})
+  })
+
+  // Desktop click on video area (touch fires touchend which calls preventDefault,
+  // so this only runs on genuine mouse clicks).
+  videoWrapper?.addEventListener('click', () => {
+    if (!controlsVisible) { showControls(); return }
+    if (!plyrInstance) return
+    if (plyrInstance.playing) plyrInstance.pause()
+    else plyrInstance.play()?.catch(() => {})
+  })
+
+  // Mouse movement anywhere in the player shows controls and resets the 5s timer.
+  plyrEl?.addEventListener('mousemove', showControls)
+
+  // Touching the control bar resets the auto-hide timer.
+  plyrEl?.querySelector('.plyr__controls')?.addEventListener('touchstart', showControls, { passive: true })
+
+  // Auto-hide after 5s while playing; keep visible when paused.
+  plyrInstance.on('play', () => scheduleControlsHide())
+  plyrInstance.on('pause', () => {
+    if (controlsHideTimer) { clearTimeout(controlsHideTimer); controlsHideTimer = null }
+    controlsVisible = true
+    plyrEl?.classList.remove('plyr--hide-controls')
+  })
+
+  // Fetch saved progress once the player is ready.
   plyrInstance.on('ready', async () => {
     if (!alive) return
     try {
@@ -152,18 +218,6 @@ function setupPlyr(el: HTMLVideoElement) {
   progressInterval = setInterval(() => {
     if (plyrInstance?.playing) saveOrClear()
   }, 30000)
-}
-
-const plyrOptions: Plyr.Options = {
-  controls: [
-    'play-large', 'play', 'rewind', 'fast-forward',
-    'progress', 'current-time', 'duration',
-    'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen',
-  ],
-  settings: ['captions', 'speed'],
-  captions: { active: true, language: 'auto', update: true },
-  speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
-  keyboard: { focused: true, global: false },
 }
 
 onMounted(async () => {
@@ -211,7 +265,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   alive = false
   debouncedSaveOrClear.cancel()
-  if (progressInterval) { clearInterval(progressInterval); progressInterval = null }
+  if (progressInterval)  { clearInterval(progressInterval);  progressInterval  = null }
+  if (controlsHideTimer) { clearTimeout(controlsHideTimer);  controlsHideTimer = null }
 
   // Fire-and-forget final position save
   if (plyrInstance) {
@@ -232,7 +287,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="plyr-wrapper w-full relative" @click.stop>
+  <div class="plyr-wrapper w-full relative" @click.stop @touchstart.stop @touchmove.stop>
     <video ref="videoEl" preload="metadata" playsinline :poster="poster">
       <source v-if="src" :src="src" :type="sourceType" />
       <track
@@ -301,6 +356,56 @@ onBeforeUnmount(() => {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* ── Two-row control bar (all screen sizes) ───────────────────────────────── */
+:deep(.plyr__controls) {
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Progress bar: full-width first row with breathing room above buttons */
+:deep(.plyr__progress__container) {
+  order: -10;
+  flex: 0 0 100%;
+  margin-bottom: 6px;
+}
+
+/* Remove Plyr's default gap after the play button (all screen sizes) */
+:deep([data-plyr="play"]) {
+  margin-right: 0 !important;
+}
+
+/* Desktop: group left controls tightly, push screenshot + right-side controls to the far right */
+@media (min-width: 481px) {
+  :deep([data-plyr="rewind"]) {
+    margin-left: 0 !important;
+  }
+  :deep(.plyr__screenshot-slot) {
+    margin-left: auto;
+  }
+}
+
+/* ── Mobile-only adjustments (≤480px) ────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Pull play, mute, and duration to the front */
+  :deep([data-plyr="play"])      { order: -4; }
+  :deep(.plyr__volume)           { order: -3; }
+  :deep(.plyr__time--current)    { order: -2; }
+  :deep(.plyr__time--duration)   { order: -1; }
+
+  /* Hide desktop-only controls */
+  :deep([data-plyr="rewind"]),
+  :deep([data-plyr="fast-forward"]) {
+    display: none;
+  }
+  /* Hide only the volume slider, keep the mute button visible */
+  :deep(.plyr__volume input[type="range"]) {
+    display: none;
+  }
+  /* Push screenshot + right-side controls to the far right on mobile */
+  :deep(.plyr__screenshot-slot) {
+    margin-left: auto;
+  }
 }
 
 .fade-enter-active,
