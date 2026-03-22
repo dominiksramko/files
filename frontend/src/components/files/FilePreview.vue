@@ -287,10 +287,10 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Prev arrow (overlaid) -->
+          <!-- Prev arrow (overlaid, desktop only — mobile uses swipe) -->
           <button
             :class="[
-              'absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all',
+              'absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all hidden sm:block',
               hasPrev
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
@@ -300,10 +300,10 @@ onUnmounted(() => {
             <AppIcon name="chevronLeft" class="size-7" />
           </button>
 
-          <!-- Next arrow (overlaid) -->
+          <!-- Next arrow (overlaid, desktop only — mobile uses swipe) -->
           <button
             :class="[
-              'absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all',
+              'absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all hidden sm:block',
               hasNext
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
