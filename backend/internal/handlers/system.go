@@ -9,10 +9,11 @@ import (
 
 type SystemHandler struct {
 	rootPath string
+	version  string
 }
 
-func NewSystemHandler(rootPath string) *SystemHandler {
-	return &SystemHandler{rootPath: rootPath}
+func NewSystemHandler(rootPath, version string) *SystemHandler {
+	return &SystemHandler{rootPath: rootPath, version: version}
 }
 
 // GET /api/v1/system/disk
@@ -40,4 +41,9 @@ func (h *SystemHandler) DiskSpace(c *gin.Context) {
 		"used":  used,
 		"pct":   pct,
 	})
+}
+
+// GET /api/v1/system/version
+func (h *SystemHandler) Version(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"version": h.version})
 }

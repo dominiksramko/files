@@ -17,6 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const version = "1.0.0"
+
 func main() {
 	cfg := config.Load()
 	gin.SetMode(cfg.GinMode)
@@ -63,7 +65,7 @@ func main() {
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 	infoH := handlers.NewInfoHandler()
 	progressH := handlers.NewProgressHandler(db)
-	systemH := handlers.NewSystemHandler(cfg.UsersRoot)
+	systemH := handlers.NewSystemHandler(cfg.UsersRoot, version)
 	officeH := handlers.NewOfficeHandler(cfg.JWTSecret)
 	screenshotH := handlers.NewScreenshotHandler()
 	advancedRenameH := handlers.NewAdvancedRenamerHandler(db)
@@ -122,6 +124,7 @@ func main() {
 
 			// System info
 			authed.GET("/system/disk", systemH.DiskSpace)
+			authed.GET("/system/version", systemH.Version)
 
 			// Watch progress
 			authed.GET("/progress", progressH.Get)

@@ -121,6 +121,7 @@ async function saveDisplayName() {
 
 // --- Disk space ---
 const diskSpace = ref<{ total: number; free: number; used: number; pct: number } | null>(null)
+const appVersion = ref('')
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1e12) return (bytes / 1e12).toFixed(1) + ' TB'
@@ -132,6 +133,9 @@ function formatBytes(bytes: number): string {
 onMounted(async () => {
   try {
     diskSpace.value = await systemApi.diskSpace()
+  } catch { /* non-fatal */ }
+  try {
+    appVersion.value = await systemApi.version()
   } catch { /* non-fatal */ }
 })
 
@@ -226,6 +230,10 @@ async function changePassword() {
                 :style="{ width: diskSpace.pct.toFixed(1) + '%' }"
               />
             </div>
+          </div>
+          <div v-if="appVersion" class="pt-2 border-t border-zinc-800 flex justify-between items-center">
+            <p class="text-xs text-zinc-500 font-medium">Version</p>
+            <p class="text-xs text-zinc-500 font-mono">v{{ appVersion }}</p>
           </div>
         </div>
       </div>

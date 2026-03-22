@@ -1,6 +1,8 @@
-# Files
+# Files &nbsp;`v1.0.0`
 
 A self-hosted file browser with a Vue 3 frontend and Go backend. Browse, preview, and manage your files from any browser.
+
+> This project was built entirely through pair programming with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant — as an experiment in how far you can take a real-world app that way.
 
 ## Features
 

@@ -294,6 +294,8 @@ export const renamer = {
 export const system = {
   diskSpace: () =>
     request<{ total: number; free: number; used: number; pct: number }>('GET', '/system/disk'),
+  version: () =>
+    request<{ version: string }>('GET', '/system/version').then(data => data.version),
 }
 
 // --- Admin cache ---
