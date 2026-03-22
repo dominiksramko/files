@@ -90,7 +90,7 @@ function onCarouselTouchMove(e: TouchEvent) {
     if (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6) {
       dragDirection = Math.abs(deltaX) > Math.abs(deltaY) ? 'h' : 'v'
       // If horizontal but image is zoomed, let ImageViewer handle it as a pan
-      if (dragDirection === 'h' && currentPanelRef.value?.querySelector('[data-image-zoomed]')) {
+      if (dragDirection === 'h' && trackRef.value?.children[1]?.querySelector('[data-image-zoomed]')) {
         dragDirection = null
         isSwiping = false
       }
@@ -144,7 +144,8 @@ function snapTo(direction: 'prev' | 'next' | 'reset') {
 
   setTimeout(() => {
     transitionEnabled.value = false
-    emit(direction)
+    if (direction === 'prev') emit('prev')
+    else emit('next')
     dragX.value      = 0
     isSnapping.value = false
   }, 300)
