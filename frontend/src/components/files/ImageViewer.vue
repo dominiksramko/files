@@ -54,6 +54,19 @@ const fitScale = computed(() => {
 const displayW = computed(() => imgLoaded.value ? fitScale.value * naturalW.value * zoom.value : null)
 const displayH = computed(() => imgLoaded.value ? fitScale.value * naturalH.value * zoom.value : null)
 
+// Pixel-integer translate values so the image snaps to whole pixels — prevents
+// the checkerboard background bleeding around sub-pixel edges.
+const imgTranslateX = computed(() =>
+  displayW.value != null
+    ? Math.round((containerW.value - displayW.value) / 2 + panX.value)
+    : 0,
+)
+const imgTranslateY = computed(() =>
+  displayH.value != null
+    ? Math.round((containerH.value - displayH.value) / 2 + panY.value)
+    : 0,
+)
+
 function onImageLoad(e: Event) {
   const img = e.target as HTMLImageElement
   naturalW.value = img.naturalWidth
@@ -267,19 +280,23 @@ onUnmounted(() => {
         v-else
         :src="streamUrl"
         :alt="entry.name"
-        :style="{
+        :style="displayW ? {
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: `${displayW}px`,
+          height: `${displayH}px`,
+          maxWidth: 'none',
+          maxHeight: 'none',
+          transform: `translate(${imgTranslateX}px, ${imgTranslateY}px)`,
+          transition: touchState || isPanning || isWheeling ? 'none' : 'transform 0.1s ease',
+        } : {
           position: 'absolute',
           left: '50%',
           top: '50%',
-          // Explicit CSS dimensions so the browser renders at the right resolution —
-          // always downsampling from native pixels, never upscaling a rasterised buffer.
-          // Before naturalW is known, fall back to max-width/height so it still fills space.
-          ...(displayW
-            ? { width: `${displayW}px`, height: `${displayH}px`, maxWidth: 'none', maxHeight: 'none' }
-            : { maxWidth: '100%', maxHeight: '100%' }),
-          // translate(-50%, -50%) centres the image; panX/panY shift it from there.
-          transform: `translate(calc(-50% + ${panX}px), calc(-50% + ${panY}px))`,
-          transition: touchState || isPanning || isWheeling ? 'none' : 'transform 0.1s ease',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          transform: 'translate(-50%, -50%)',
         }"
         :class="['block select-none', hasAlpha && 'checkerboard']"
         draggable="false"
