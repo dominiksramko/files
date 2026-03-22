@@ -205,8 +205,8 @@ const { handleClick, dragOverPath, onDragStart, onDragEnd, onDragOver, onDragLea
 
             <!-- Selection checkmark (top-left): size-8 hit area, size-5 visual circle inside -->
             <button
-              class="absolute top-1 left-1 z-10 size-8 flex items-center justify-center rounded-full transition-opacity"
-              :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+              class="absolute top-0 left-0 z-10 size-11 flex items-center justify-center transition-opacity"
+              :class="selected.includes(item.entry.path) ? 'opacity-100' : 'opacity-25 group-hover:opacity-100'"
               :title="selected.includes(item.entry.path) ? 'Deselect' : 'Select'"
               @click.stop="emit('toggleSelect', item.entry.path, $event.shiftKey)"
             >
