@@ -101,6 +101,9 @@ export const files = {
   streamUrl: (path: string, modTime: string) =>
     `${BASE}/files/stream?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
 
+  streamUrlByPath: (path: string) =>
+    `${BASE}/files/stream?path=${encodeURIComponent(path)}&token=${token()}`,
+
   hlsPlaylistUrl: (path: string) =>
     `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}&token=${token()}`,
 

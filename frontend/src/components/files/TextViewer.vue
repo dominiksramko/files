@@ -56,11 +56,22 @@ async function save() {
 // ── Markdown + syntax highlighting ────────────────────────────────────────
 const isMarkdown = computed(() => isMarkdownFile(props.entry.mime, props.entry.name))
 
+function resolveMarkdownImageSrc(entryPath: string, href: string): string {
+  if (/^https?:\/\//.test(href) || href.startsWith('/')) return href
+  const dir = entryPath.substring(0, entryPath.lastIndexOf('/'))
+  const resolvedPath = new URL(href, `http://x/${dir}/`).pathname.replace(/^\//, '')
+  return filesApi.streamUrlByPath(resolvedPath)
+}
+
 const renderer = new Renderer()
 renderer.code = function ({ text, lang }: Tokens.Code) {
   const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
   const highlighted = hljs.highlight(text, { language }).value
   return `<pre class="hljs-md-pre"><code class="hljs language-${language}">${highlighted}</code></pre>`
+}
+renderer.image = function ({ href, text }: Tokens.Image) {
+  const src = resolveMarkdownImageSrc(props.entry.path, href)
+  return `<img src="${src}" alt="${text}">`
 }
 marked.use({ renderer })
 
