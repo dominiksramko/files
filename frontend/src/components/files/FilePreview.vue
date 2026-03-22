@@ -108,23 +108,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           </div>
         </div>
 
-        <!-- Main content + side arrows -->
-        <div class="flex-1 flex items-stretch min-h-0 gap-2 px-2 overflow-hidden">
-          <!-- Prev arrow -->
-          <button
-            :class="[
-              'self-center relative z-10 shrink-0 p-2 rounded-full transition-all',
-              hasPrev
-                ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
-                : 'text-transparent pointer-events-none',
-            ]"
-            @click.stop="emit('prev')"
-          >
-            <AppIcon name="chevronLeft" class="size-7" />
-          </button>
-
+        <!-- Main content — full width, arrows float on top -->
+        <div class="flex-1 relative min-h-0 overflow-hidden">
           <!-- Dynamic viewer -->
-          <div ref="viewerContainerRef" class="flex-1 flex items-center justify-center min-h-0 min-w-0" @click.stop>
+          <div ref="viewerContainerRef" class="w-full h-full flex items-center justify-center" @click.stop>
             <component
               :is="viewerComponent"
               v-if="viewerComponent"
@@ -134,10 +121,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             />
           </div>
 
-          <!-- Next arrow -->
+          <!-- Prev arrow (overlaid) -->
           <button
             :class="[
-              'self-center relative z-10 shrink-0 p-2 rounded-full transition-all',
+              'absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all',
+              hasPrev
+                ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
+                : 'text-transparent pointer-events-none',
+            ]"
+            @click.stop="emit('prev')"
+          >
+            <AppIcon name="chevronLeft" class="size-7" />
+          </button>
+
+          <!-- Next arrow (overlaid) -->
+          <button
+            :class="[
+              'absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full transition-all',
               hasNext
                 ? 'text-white bg-white/10 hover:bg-white/20 cursor-pointer'
                 : 'text-transparent pointer-events-none',
@@ -147,9 +147,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <AppIcon name="chevronRight" class="size-7" />
           </button>
         </div>
-
-        <!-- Bottom padding -->
-        <div class="shrink-0 h-4" />
       </div>
     </Transition>
   </Teleport>
