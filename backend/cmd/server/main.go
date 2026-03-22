@@ -31,7 +31,12 @@ func main() {
 
 	// CORS — allow Vite dev server in development
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:8080"},
+		AllowOriginFunc: func(origin string) bool {
+			return strings.HasPrefix(origin, "http://localhost:") ||
+				strings.HasPrefix(origin, "http://192.168.") ||
+				strings.HasPrefix(origin, "http://10.") ||
+				strings.HasPrefix(origin, "http://172.")
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Disposition"},
