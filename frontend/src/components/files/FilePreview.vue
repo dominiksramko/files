@@ -2,13 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { isOfficeFile, isTextFile } from '@/utils/formatters'
+import { isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
 import AudioPlayer  from '@/components/files/AudioPlayer.vue'
 import FileFallback from '@/components/files/FileFallback.vue'
 import ImageViewer  from '@/components/files/ImageViewer.vue'
 import OfficeViewer from '@/components/files/OfficeViewer.vue'
 import PdfViewer    from '@/components/files/PdfViewer.vue'
 import TextViewer   from '@/components/files/TextViewer.vue'
+import TodoViewer   from '@/components/files/TodoViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
 import AppIcon      from '@/components/ui/AppIcon.vue'
 
@@ -37,6 +38,7 @@ function viewerFor(entry: FileEntry) {
   if (mime.startsWith('video/')) return VideoPlayer
   if (mime.startsWith('audio/')) return AudioPlayer
   if (mime === 'application/pdf') return PdfViewer
+  if (isTodoFile(entry.name)) return TodoViewer
   if (isTextFile(mime, entry.name)) return TextViewer
   if (isOfficeFile(mime, entry.name)) return OfficeViewer
   return FileFallback

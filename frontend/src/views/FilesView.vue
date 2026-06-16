@@ -583,27 +583,38 @@ async function confirmNewFolder() {
   }
 }
 
-// ── New text file ─────────────────────────────────────────────────────────
-const newTextFileDialog = ref(false)
-const newTextFileName = ref('')
-const newTextFileInput = ref<HTMLInputElement | null>(null)
+// ── New file (text / todo) ──────────────────────────────────────────────────
+interface NewFileConfig {
+  title: string
+  extension: string
+  editMode: boolean // open the preview in edit mode (plain-text editor)
+}
+const newFileDialog = ref(false)
+const newFileName = ref('')
+const newFileInput = ref<HTMLInputElement | null>(null)
+const newFileConfig = ref<NewFileConfig>({ title: '', extension: 'txt', editMode: false })
 
-async function openNewTextFile() {
-  newTextFileName.value = ''
-  newTextFileDialog.value = true
+async function openNewFile(config: NewFileConfig) {
+  newFileConfig.value = config
+  newFileName.value = ''
+  newFileDialog.value = true
   await nextTick()
-  newTextFileInput.value?.focus()
+  newFileInput.value?.focus()
 }
 
-async function confirmNewTextFile() {
-  const name = newTextFileName.value.trim()
+const openNewTextFile = () => openNewFile({ title: 'New text file', extension: 'txt', editMode: true })
+const openNewTodoFile = () => openNewFile({ title: 'New todo file', extension: 'todo', editMode: false })
+
+async function confirmNewFile() {
+  const name = newFileName.value.trim()
   if (!name) return
-  newTextFileDialog.value = false
-  const filename = name.endsWith('.txt') ? name : `${name}.txt`
+  newFileDialog.value = false
+  const { extension, editMode } = newFileConfig.value
+  const filename = name.endsWith(`.${extension}`) ? name : `${name}.${extension}`
   const path = filesStore.currentPath ? `${filesStore.currentPath}/${filename}` : filename
   try {
     await filesApi.writeContent(path, '')
-    previewTextEditMode.value = true
+    previewTextEditMode.value = editMode
     previewFilePath.value = path
   } catch (err) {
     showToast((err as Error).message, 'error')
@@ -843,6 +854,11 @@ const folderContextMenuItems = computed((): ContextMenuItem[] => {
       action: () => { close(); openNewTextFile() },
     },
     {
+      label: 'New todo file',
+      icon: 'listChecks',
+      action: () => { close(); openNewTodoFile() },
+    },
+    {
       label: 'New folder',
       icon: 'newFolder',
       action: () => { close(); openNewFolder() },
@@ -1006,6 +1022,11 @@ onMounted(async () => {
             <AppIcon name="newFile" class="size-4" />
           </button>
 
+          <!-- New todo file: desktop only -->
+          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New todo file" @click="openNewTodoFile">
+            <AppIcon name="listChecks" class="size-4" />
+          </button>
+
           <!-- New folder: desktop only -->
           <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New folder" @click="openNewFolder">
             <AppIcon name="newFolder" class="size-4" />
@@ -1051,6 +1072,9 @@ onMounted(async () => {
             <template #default>
               <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewTextFile()">
                 <AppIcon name="newFile" class="size-4 shrink-0" /> New text file
+              </button>
+              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewTodoFile()">
+                <AppIcon name="listChecks" class="size-4 shrink-0" /> New todo file
               </button>
               <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewFolder()">
                 <AppIcon name="newFolder" class="size-4 shrink-0" /> New folder
@@ -1185,27 +1209,27 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- New text file dialog -->
+    <!-- New file dialog (text / todo) -->
     <Transition name="fade">
       <div
-        v-if="newTextFileDialog"
+        v-if="newFileDialog"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @mousedown.self="newTextFileDialog = false"
+        @mousedown.self="newFileDialog = false"
       >
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">New text file</h3>
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">{{ newFileConfig.title }}</h3>
           <input
-            ref="newTextFileInput"
-            v-model="newTextFileName"
+            ref="newFileInput"
+            v-model="newFileName"
             type="text"
-            placeholder="filename.txt"
+            :placeholder="`filename.${newFileConfig.extension}`"
             class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="confirmNewTextFile"
-            @keydown.escape="newTextFileDialog = false"
+            @keydown.enter="confirmNewFile"
+            @keydown.escape="newFileDialog = false"
           />
           <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="newTextFileDialog = false">Cancel</AppButton>
-            <AppButton variant="primary" @click="confirmNewTextFile">Create</AppButton>
+            <AppButton @click="newFileDialog = false">Cancel</AppButton>
+            <AppButton variant="primary" @click="confirmNewFile">Create</AppButton>
           </div>
         </div>
       </div>

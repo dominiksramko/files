@@ -73,4 +73,5 @@ export type FileCategory =
   | 'office'
   | 'archive'
   | 'text'
+  | 'todo'
   | 'other'

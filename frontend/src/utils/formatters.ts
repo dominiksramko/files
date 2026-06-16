@@ -98,7 +98,14 @@ export function isMarkdownFile(mime: string, name: string): boolean {
   return ext === 'md' || ext === 'mdx' || ext === 'markdown'
 }
 
+export function isTodoFile(name: string): boolean {
+  return (name.split('.').pop()?.toLowerCase() ?? '') === 'todo'
+}
+
 export function fileCategory(mime: string, name: string): FileCategory {
+  // .todo files open in the checklist editor — classify them ahead of the
+  // mime/extension checks so the category is correct regardless of reported mime.
+  if (isTodoFile(name)) return 'todo'
   if (!mime || mime === 'application/octet-stream') {
     // Fall back to extension
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
@@ -150,6 +157,7 @@ export const catBg: Record<EntryCat, string> = {
   office:  'bg-blue-950/60',
   archive: 'bg-orange-950/60',
   text:    'bg-zinc-800/60',
+  todo:    'bg-emerald-950/60',
   other:   'bg-zinc-800/60',
 }
 
@@ -162,6 +170,7 @@ export const catIconColor: Record<EntryCat, string> = {
   office:  'text-blue-400',
   archive: 'text-orange-400',
   text:    'text-zinc-300',
+  todo:    'text-emerald-400',
   other:   'text-zinc-500',
 }
 
@@ -174,6 +183,7 @@ export const catIconName: Record<EntryCat, IconName> = {
   office:  'document',
   archive: 'archive',
   text:    'document',
+  todo:    'listChecks',
   other:   'document',
 }
 
