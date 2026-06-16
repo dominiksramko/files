@@ -99,7 +99,7 @@ export function isMarkdownFile(mime: string, name: string): boolean {
 }
 
 export function isTodoFile(name: string): boolean {
-  return (name.split('.').pop()?.toLowerCase() ?? '') === 'todo'
+  return name.toLowerCase().endsWith('.todo')
 }
 
 export function fileCategory(mime: string, name: string): FileCategory {
