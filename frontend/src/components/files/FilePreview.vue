@@ -48,6 +48,7 @@ function extraProps(entry: FileEntry, active: boolean): Record<string, unknown> 
   const viewer = viewerFor(entry)
   const result: Record<string, unknown> = {}
   if (viewer === VideoPlayer) result.active = active
+  if (viewer === TodoViewer) result.active = active
   if (viewer === TextViewer && active) result.initialEdit = props.textEditMode
   return result
 }

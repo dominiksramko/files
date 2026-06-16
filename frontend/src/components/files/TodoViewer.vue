@@ -10,7 +10,7 @@ import { formatSize } from '@/utils/formatters'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import TodoRow from '@/components/files/TodoRow.vue'
 
-const props = defineProps<{ entry: FileEntry }>()
+const props = defineProps<{ entry: FileEntry; active?: boolean }>()
 
 const filesStore = useFilesStore()
 const { show: showToast } = useToast()
@@ -165,11 +165,13 @@ onMounted(async () => {
     })
     if (!response.ok) throw new Error()
     items.value = parse(await response.text())
-    // Start a fresh / empty file with one focused row, like Google Keep.
+    // Start a fresh / empty file with one row, like Google Keep. Only steal focus
+    // when this is the active panel — neighbouring carousel panels mount off-screen
+    // and focusing them would scroll/break the preview slider.
     if (items.value.length === 0) {
       const fresh = makeItem('', false)
       items.value.push(fresh)
-      focusItem(fresh.id)
+      if (props.active !== false) focusItem(fresh.id)
     }
   } catch (err) {
     if ((err as Error).name !== 'AbortError') loadError.value = true
