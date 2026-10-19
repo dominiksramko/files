@@ -248,6 +248,54 @@ func (h *FileOpsHandler) Mkdir(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "created"})
 }
 
+// POST /api/v1/files/create   body: { "path": "rel/new_file.txt", "conflict_mode": "error"|"replace"|"rename" }
+// Creates an empty file. conflict_mode defaults to "error" — returns HTTP 409
+// when the name is taken, so an existing file is never emptied by accident.
+// Responds with the name the file was created under.
+func (h *FileOpsHandler) Create(c *gin.Context) {
+	root := userRoot(c)
+
+	var body struct {
+		Path         string `json:"path"`
+		ConflictMode string `json:"conflict_mode"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil || body.Path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path required"})
+		return
+	}
+	if body.ConflictMode == "" {
+		body.ConflictMode = "error"
+	}
+
+	abs, err := safePath(root, body.Path)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	abs, conflict, err := resolveDestConflict(abs, body.ConflictMode)
+	if err == nil && !conflict {
+		// O_EXCL: a file created elsewhere in the meantime is a conflict too.
+		var file *os.File
+		file, err = os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			err = file.Close()
+		} else if os.IsExist(err) {
+			conflict = true
+		}
+	}
+	if conflict {
+		c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{filepath.Base(abs)}})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"name": filepath.Base(abs)})
+}
+
 // POST /api/v1/files/rename   body: { "path": "rel/old_path", "name": "new_name" }
 func (h *FileOpsHandler) Rename(c *gin.Context) {
 	root := userRoot(c)
@@ -337,6 +385,28 @@ func findFreeName(name string, existing, claimed map[string]bool) string {
 		if !existing[candidate] && !claimed[candidate] {
 			return candidate
 		}
+	}
+}
+
+// resolveDestConflict applies a conflict_mode to a single destination path
+// that may already exist: "error" reports the conflict, "replace" removes the
+// existing entry, "rename" returns a free " (n)" name next to it.
+func resolveDestConflict(destAbs, mode string) (resolved string, conflict bool, err error) {
+	if _, statErr := os.Stat(destAbs); statErr != nil {
+		return destAbs, false, nil
+	}
+	switch mode {
+	case "replace":
+		if err := os.Remove(destAbs); err != nil {
+			return destAbs, false, fmt.Errorf("failed to remove existing file: %w", err)
+		}
+		return destAbs, false, nil
+	case "rename":
+		dir := filepath.Dir(destAbs)
+		existing, claimed := buildExistingMap(dir)
+		return filepath.Join(dir, findFreeName(filepath.Base(destAbs), existing, claimed)), false, nil
+	default:
+		return destAbs, true, nil
 	}
 }
 

@@ -636,12 +636,22 @@ async function confirmNewFile() {
   newFileDialog.value = false
   const { extension, editMode } = newFileConfig.value
   const filename = name.endsWith(`.${extension}`) ? name : `${name}.${extension}`
-  const path = filesStore.currentPath ? `${filesStore.currentPath}/${filename}` : filename
+  await createFile(filename, editMode)
+}
+
+async function createFile(filename: string, editMode: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+  const folder = filesStore.currentPath
+  const pathIn = (name: string) => (folder ? `${folder}/${name}` : name)
   try {
-    await filesApi.writeContent(path, '')
-    showPreview(path, { editMode })
+    const created = await fileops.create(pathIn(filename), conflictMode)
+    showPreview(pathIn(created.name), { editMode })
   } catch (err) {
-    showToast((err as Error).message, 'error')
+    if (err instanceof ConflictError) {
+      const choice = await promptConflict('File already exists', err.conflicts)
+      if (choice) await createFile(filename, editMode, choice)
+    } else {
+      showToast((err as Error).message, 'error')
+    }
   }
 }
 

@@ -152,6 +152,7 @@ export const files = {
 
   // With baseVersion the save only goes through if the file is still at that
   // version, otherwise it throws EditConflictError; without it, it overwrites.
+  // Create new files with fileops.create, which never overwrites.
   writeContent: (path: string, content: string, baseVersion?: string) =>
     fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
       method: 'PUT',
@@ -232,6 +233,11 @@ export const fileops = {
 
   mkdir: (path: string) =>
     request<{ message: string }>('POST', '/files/mkdir', { path }),
+
+  // Creates an empty file; throws ConflictError when the name is taken (unless
+  // conflictMode says otherwise). Resolves to the name it was created under.
+  create: (path: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+    request<{ name: string }>('POST', '/files/create', { path, conflict_mode: conflictMode }),
 
   rename: (path: string, name: string) =>
     request<{ message: string }>('POST', '/files/rename', { path, name }),

@@ -107,6 +107,7 @@ func main() {
 			authed.POST("/files/move", opsH.Move)
 			authed.POST("/files/upload", opsH.Upload)
 			authed.POST("/files/mkdir", opsH.Mkdir)
+			authed.POST("/files/create", opsH.Create)
 			authed.POST("/files/rename", opsH.Rename)
 			authed.POST("/files/screenshot", screenshotH.Take)
 

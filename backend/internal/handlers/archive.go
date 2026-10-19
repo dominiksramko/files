@@ -51,22 +51,14 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		return
 	}
 
-	if _, statErr := os.Stat(destAbs); statErr == nil {
-		switch req.ConflictMode {
-		case "error":
-			archiveName := filepath.Base(destAbs)
-			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{archiveName}})
-			return
-		case "replace":
-			if err := os.Remove(destAbs); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove existing file: " + err.Error()})
-				return
-			}
-		case "rename":
-			dir := filepath.Dir(destAbs)
-			existing, claimed := buildExistingMap(dir)
-			destAbs = filepath.Join(dir, findFreeName(filepath.Base(destAbs), existing, claimed))
-		}
+	destAbs, conflict, err := resolveDestConflict(destAbs, req.ConflictMode)
+	if conflict {
+		c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{filepath.Base(destAbs)}})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	var absInputs []string
