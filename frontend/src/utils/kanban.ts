@@ -1,3 +1,5 @@
+import { adoptIds } from '@/utils/merge'
+
 // .kanban boards are Markdown, so they stay readable and editable by hand:
 //
 //   ## To do
@@ -132,6 +134,18 @@ function parseTitleLine(text: string): Pick<KanbanCard, 'title' | 'labels' | 'du
     title = title.slice(0, match.index).trimEnd()
   }
   return { title, labels, due }
+}
+
+// Keeps columns, cards and checklist items that survive a reload or merge on
+// their previous ids (matched by title / text), so the open card stays open.
+export function adoptBoardIds(previous: KanbanBoard, next: KanbanBoard) {
+  adoptIds(previous.columns, next.columns, (column) => column.title)
+  adoptIds(
+    previous.columns.flatMap((column) => column.cards),
+    next.columns.flatMap((column) => column.cards),
+    (card) => card.title,
+    (previousCard, nextCard) => adoptIds(previousCard.checklist, nextCard.checklist, (item) => item.text),
+  )
 }
 
 export function parseKanban(content: string): KanbanBoard {

@@ -18,6 +18,24 @@ export class NotFoundError extends Error {
   }
 }
 
+// A versioned save was refused because the file changed since the version it
+// was based on; carries the file's current content and version for merging.
+export class EditConflictError extends Error {
+  content: string
+  version: string
+  constructor(content: string, version: string) {
+    super('File was changed elsewhere')
+    this.content = content
+    this.version = version
+  }
+}
+
+// A text file's content plus its version (sent back as baseVersion when saving).
+export interface VersionedContent {
+  content: string
+  version: string
+}
+
 function token(): string {
   return localStorage.getItem('token') ?? ''
 }
@@ -119,20 +137,37 @@ export const files = {
   extract: (path: string, dest?: string, password?: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
     request<{ message: string }>('POST', '/files/extract', { path, dest, password, conflict_mode: conflictMode }),
 
-  writeContent: (path: string, content: string) =>
+  readContent: (path: string, signal?: AbortSignal): Promise<VersionedContent> =>
     fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        Authorization: `Bearer ${token()}`,
-      },
-      body: content,
+      headers: { Authorization: `Bearer ${token()}` },
+      cache: 'no-store',
+      signal,
     }).then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? res.statusText)
       }
-      return res.json() as Promise<{ message: string }>
+      return { content: await res.text(), version: (res.headers.get('ETag') ?? '').replace(/"/g, '') }
+    }),
+
+  // With baseVersion the save only goes through if the file is still at that
+  // version, otherwise it throws EditConflictError; without it, it overwrites.
+  writeContent: (path: string, content: string, baseVersion?: string) =>
+    fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        Authorization: `Bearer ${token()}`,
+        ...(baseVersion ? { 'If-Match': `"${baseVersion}"` } : {}),
+      },
+      body: content,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        if (res.status === 412) throw new EditConflictError(err.content ?? '', err.version ?? '')
+        throw new Error(err.error ?? res.statusText)
+      }
+      return res.json() as Promise<{ version: string; mod_time: string }>
     }),
 
   // All subtitle tracks (file-based + embedded) for a video file.

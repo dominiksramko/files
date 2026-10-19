@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +26,10 @@ import (
 type FilesHandler struct {
 	thumbs    *thumbs.Service // nil when thumbnail support is disabled
 	convCache *convCache      // nil when conversion cache is disabled
+
+	// Serialises the compare-and-write in WriteContent, so two saves based on the
+	// same version can't both pass the check.
+	contentWriteMu sync.Mutex
 }
 
 func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandler {
@@ -223,7 +230,62 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 	c.File(abs) // Gin handles Range headers automatically
 }
 
-// PUT /api/v1/files/content?path=
+// maxEditableSize caps what ReadContent serves and WriteContent accepts.
+const maxEditableSize = 10 * 1024 * 1024 // 10 MB
+
+// contentVersion identifies one exact content of a file, for optimistic
+// concurrency in the editors (sent as ETag, checked against If-Match).
+func contentVersion(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:16])
+}
+
+// GET /api/v1/files/content?path=
+// Returns the file's text with its version in the ETag header; editors send that
+// version back as If-Match when saving.
+func (h *FilesHandler) ReadContent(c *gin.Context) {
+	root, rel := userRoot(c), c.Query("path")
+
+	abs, err := safePath(root, rel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+	if info.IsDir() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path is a directory"})
+		return
+	}
+	if info.Size() > maxEditableSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file too large"})
+		return
+	}
+
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Header("ETag", `"`+contentVersion(data)+`"`)
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
+}
+
+// PUT /api/v1/files/content?path=   body: raw file content
+// With an If-Match header (the version the edit is based on), the write only
+// happens if the file is still at that version; otherwise 412 with the file's
+// current content and version, so the client can merge and retry. Without
+// If-Match the file is overwritten (used to create new files).
+// Responds with the new version and mod_time.
 func (h *FilesHandler) WriteContent(c *gin.Context) {
 	root, rel := userRoot(c), c.Query("path")
 
@@ -238,15 +300,37 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		return
 	}
 
-	const maxSize = 10 * 1024 * 1024 // 10 MB
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxSize+1))
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxEditableSize+1))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if int64(len(body)) > maxSize {
+	if int64(len(body)) > maxEditableSize {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "content too large"})
 		return
+	}
+
+	h.contentWriteMu.Lock()
+	defer h.contentWriteMu.Unlock()
+
+	if baseVersion := strings.Trim(c.GetHeader("If-Match"), `"`); baseVersion != "" {
+		current, err := os.ReadFile(abs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "file no longer exists"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			}
+			return
+		}
+		if currentVersion := contentVersion(current); currentVersion != baseVersion {
+			c.JSON(http.StatusPreconditionFailed, gin.H{
+				"error":   "file was changed elsewhere",
+				"content": string(current),
+				"version": currentVersion,
+			})
+			return
+		}
 	}
 
 	if err := os.WriteFile(abs, body, 0o644); err != nil {
@@ -254,7 +338,12 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "saved"})
+	info, err := os.Stat(abs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"version": contentVersion(body), "mod_time": info.ModTime()})
 }
 
 // POST /api/v1/files/download-zip   body: { "paths": ["rel/path1", ...] }

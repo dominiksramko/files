@@ -4,6 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import type { FileEntry } from '@/types'
 import { useEditableFile } from '@/composables/useFileContent'
 import {
+  adoptBoardIds,
   DEFAULT_COLUMNS,
   makeColumn,
   parseKanban,
@@ -43,6 +44,7 @@ const { loading, loadError, tooLarge, saveLabel } = useEditableFile(() => props.
       board.value.columns = DEFAULT_COLUMNS.map((title) => makeColumn(title))
     }
   },
+  carryOverIds: adoptBoardIds,
 })
 
 // ── Columns ──────────────────────────────────────────────────────────────────

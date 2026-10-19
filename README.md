@@ -31,6 +31,8 @@ More screenshots in the [`screenshots/`](screenshots/) folder.
 - **Text / Code** — plain text, Markdown, JSON, XML, HTML, CSS, JS, and more
 - **Todo lists** — `.todo` files open in a checklist editor
 - **Kanban boards** — `.kanban` files open as a drag-and-drop board (see below)
+
+Text files, todo lists and boards can be edited by several people (or devices) at once: open editors pick up changes saved elsewhere within a second, and edits made at the same time are merged line by line. On boards and lists, if two people change the same item at once, the later save wins for that item. In text files, lines changed on both sides are kept between conflict markers for you to resolve before saving.
 - **Office** — DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, ODP (rendered via Microsoft Office Online — requires the server to be publicly reachable)
 - **Archives** — browse contents of ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.ZST, RAR, 7Z without extracting
 

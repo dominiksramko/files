@@ -2,22 +2,55 @@
 import { computed, nextTick, ref } from 'vue'
 import hljs from 'highlight.js/lib/common'
 import type { FileEntry } from '@/types'
-import { files as filesApi } from '@/utils/api'
+import { EditConflictError, files as filesApi, type VersionedContent } from '@/utils/api'
 import { useFileContent } from '@/composables/useFileContent'
+import { useToast } from '@/composables/useToast'
 import { isMarkdownFile } from '@/utils/formatters'
+import { mergeText } from '@/utils/merge'
 import { renderMarkdown } from '@/utils/markdown'
 import EditableFileState from '@/components/files/EditableFileState.vue'
 
 const props = defineProps<{ entry: FileEntry; initialEdit?: boolean }>()
 
+const { show: showToast } = useToast()
+
+// The file as last read or saved; textContent is what the viewer shows.
+let synced: VersionedContent = { content: '', version: '' }
 const textContent = ref<string | null>(null)
-const { loading: textLoading, loadError: textError, tooLarge: textTooLarge } = useFileContent(
+
+function showSynced(file: VersionedContent) {
+  synced = file
+  textContent.value = file.content
+}
+
+// Set when the file changes elsewhere during an edit; saving then merges.
+const changedElsewhere = ref(false)
+
+const {
+  loading: textLoading,
+  loadError: textError,
+  tooLarge: textTooLarge,
+  fetchContent,
+  noteWritten,
+} = useFileContent(
   () => props.entry,
-  (content) => {
-    textContent.value = content
+  (file) => {
+    showSynced(file)
     if (props.initialEdit) startEdit()
   },
+  () => {
+    if (editing.value) changedElsewhere.value = true
+    else reloadContent()
+  },
 )
+
+async function reloadContent() {
+  try {
+    showSynced(await fetchContent())
+  } catch (err) {
+    showToast((err as Error).message, 'error')
+  }
+}
 
 // ── Edit mode ─────────────────────────────────────────────────────────────
 const editing     = ref(false)
@@ -25,10 +58,13 @@ const editContent = ref('')
 const saving      = ref(false)
 const saveError   = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+let editBase: VersionedContent = synced // the version the edit started from
 
 async function startEdit() {
-  editContent.value = textContent.value ?? ''
+  editBase = synced
+  editContent.value = synced.content
   saveError.value = ''
+  changedElsewhere.value = false
   editing.value = true
   await nextTick()
   textareaRef.value?.focus()
@@ -37,17 +73,46 @@ async function startEdit() {
 function cancelEdit() {
   editing.value = false
   saveError.value = ''
+  if (changedElsewhere.value) reloadContent()
+  changedElsewhere.value = false
 }
 
+// Saves against the version the edit started from. If the file changed
+// elsewhere since, the edit is merged with it: cleanly merged changes are saved
+// straight away; where both changed the same lines, both versions go into the
+// editor between conflict markers for the user to resolve and save again.
 async function save() {
   saving.value = true
   saveError.value = ''
+  let content = editContent.value
+  let merged = false
   try {
-    await filesApi.writeContent(props.entry.path, editContent.value)
-    textContent.value = editContent.value
-    editing.value = false
-  } catch (e) {
-    saveError.value = (e as Error).message
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const saved = await filesApi.writeContent(props.entry.path, content, editBase.version)
+        noteWritten(saved.mod_time)
+        showSynced({ content, version: saved.version })
+        editing.value = false
+        changedElsewhere.value = false
+        if (merged) showToast('Merged with changes made elsewhere', 'info')
+        return
+      } catch (err) {
+        if (!(err instanceof EditConflictError)) throw err
+        const result = mergeText(editBase.content, content, err.content, 'markers')
+        editBase = { content: err.content, version: err.version }
+        changedElsewhere.value = false
+        if (result.conflicts) {
+          editContent.value = result.text
+          showToast('This file was changed elsewhere in the same places — keep what you want between the markers, then save again', 'error')
+          return
+        }
+        content = result.text
+        merged = true
+      }
+    }
+    saveError.value = 'The file keeps changing elsewhere — try saving again'
+  } catch (err) {
+    saveError.value = (err as Error).message
   } finally {
     saving.value = false
   }
@@ -107,6 +172,9 @@ function highlightCode(raw: string | null): string {
         @click="startEdit"
       >Edit</button>
       <span v-if="saveError" class="text-xs text-red-400">{{ saveError }}</span>
+      <span v-else-if="editing && changedElsewhere" class="text-xs text-amber-400">
+        Changed elsewhere — saving will merge your edits with it
+      </span>
     </div>
 
     <!-- Content area -->

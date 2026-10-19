@@ -4,6 +4,7 @@ import { VueDraggable } from 'vue-draggable-plus'
 import type { FileEntry } from '@/types'
 import { useChecklistEditor } from '@/composables/useChecklistEditor'
 import { useEditableFile } from '@/composables/useFileContent'
+import { adoptIds } from '@/utils/merge'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import EditableFileState from '@/components/files/EditableFileState.vue'
 import TodoRow from '@/components/files/TodoRow.vue'
@@ -82,6 +83,7 @@ const { loading, loadError, tooLarge, saveLabel } = useEditableFile(() => props.
       if (props.active !== false) focusItem(fresh.id)
     }
   },
+  carryOverIds: (previous, next) => adoptIds(previous, next, (item) => item.text),
 })
 </script>
 

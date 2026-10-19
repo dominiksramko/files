@@ -95,6 +95,7 @@ func main() {
 			authed.GET("/files/download", filesH.Download)
 			authed.POST("/files/download-zip", filesH.DownloadZip)
 			authed.GET("/files/stream", filesH.Stream)
+			authed.GET("/files/content", filesH.ReadContent)
 			authed.PUT("/files/content", filesH.WriteContent)
 			authed.GET("/files/hls/playlist", hlsH.Playlist)
 			authed.GET("/files/hls/segment", hlsH.Segment)
