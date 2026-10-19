@@ -22,8 +22,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -o server ./cmd/server
 
-# ---- runtime ----
-FROM alpine:3.20
+# ---- runtime base: every CLI tool the backend shells out to (shared by dev + runtime) ----
+FROM alpine:3.20 AS runtime-base
 
 COPY --from=linuxserver/unrar:7.2.4 /usr/bin/unrar-alpine /usr/bin/unrar
 
@@ -36,6 +36,31 @@ RUN apk add --no-cache \
     imagemagick \
     imagemagick-heic \
     poppler-utils
+
+
+# ---- dev: runtime tools + Go toolchain + air live reload (used by docker-compose.dev.yml) ----
+FROM runtime-base AS dev
+
+COPY --from=golang:1.25-alpine /usr/local/go /usr/local/go
+
+RUN GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOBIN=/usr/local/bin \
+        /usr/local/go/bin/go install github.com/air-verse/air@v1.67.3 \
+    && chmod -R u+w /tmp/gopath \
+    && rm -rf /tmp/gopath /tmp/gocache \
+    && mkdir -m 777 /go-cache
+
+# World-writable cache dir so the container can run as the host user (uid set in compose)
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOTOOLCHAIN=local \
+    GOPATH=/go-cache \
+    GOCACHE=/go-cache/build
+
+WORKDIR /app/backend
+CMD ["air"]
+
+
+# ---- runtime ----
+FROM runtime-base
 
 WORKDIR /app
 COPY --from=backend-builder /backend/server .

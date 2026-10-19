@@ -1,0 +1,53 @@
+# Development stack: Go backend with live reload (air) + Vite dev server with HMR.
+# Source is bind-mounted, so edits on the host are picked up immediately.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   open http://localhost:5173   (login: admin / admin, root = your $HOME)
+#
+# Containers run as uid/gid 1000 so files they create (backend/data, node_modules,
+# lint fixes, go.mod edits) stay owned by you. Override with DEV_UID / DEV_GID.
+name: files-dev
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: dev
+    user: "${DEV_UID:-1000}:${DEV_GID:-1000}"
+    environment:
+      # Fixed secret so sessions survive live-reload restarts
+      JWT_SECRET: dev-secret-not-for-production
+      # Only applied on first run (when backend/data/files.db doesn't exist yet) —
+      # delete that file to re-seed, or change the admin's root dir in the admin panel
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+      # Admin browses your real home directory, mounted at the same path as on the host
+      ADMIN_PATH: ${HOME:?HOME must be set}
+      # DB, thumbnails, HLS cache and user folders default to ./data → backend/data on the host
+    volumes:
+      - ./backend:/app/backend
+      - go-cache:/go-cache
+      # Read-write: file operations in the dev app act on your real files
+      - ${HOME}:${HOME}
+    ports:
+      # Localhost only — the app exposes your home dir behind a dev password
+      - "127.0.0.1:8080:8080"
+
+  frontend:
+    image: node:24-alpine
+    user: "${DEV_UID:-1000}:${DEV_GID:-1000}"
+    working_dir: /app/frontend
+    # Reinstall only when package-lock.json changed (npm ci never rewrites the lockfile)
+    command: sh -c "[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-audit --no-fund; npm run dev"
+    environment:
+      API_PROXY_TARGET: http://backend:8080
+    volumes:
+      - ./frontend:/app/frontend
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  go-cache:

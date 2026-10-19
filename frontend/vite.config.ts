@@ -17,7 +17,8 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        // Overridden in docker-compose.dev.yml, where the backend is reachable as `backend`
+        target: process.env.API_PROXY_TARGET ?? 'http://localhost:8080',
         changeOrigin: true,
       },
     },

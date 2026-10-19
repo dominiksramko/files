@@ -13,6 +13,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - `backend/` — Go + Gin + SQLite API server
 - `frontend/` — Vue3 + Pinia + Tailwind SPA
 - `docker-compose.yml` — production deployment
+- `docker-compose.dev.yml` — dev stack (backend `dev` stage of `backend/Dockerfile` with air live reload via `backend/.air.toml`, + Vite on :5173). Run tooling inside it: `docker compose -f docker-compose.dev.yml exec backend go test ./...`, `... exec frontend npm run lint`
 
 ## Backend
 - Entry: `backend/cmd/server/main.go`
@@ -105,8 +106,8 @@ All conflict flows use a single shared composable + component — do NOT create 
 - Usage: `const { prompt: promptConflict } = useConflictDialog()` then `const choice = await promptConflict('Title', conflictNames)` — returns `'replace'`, `'rename'`, or `null` (cancel)
 - Backend `conflict_mode` parameter: `'replace'` maps to replace, `'rename'` maps to keep-all/rename
 
-## External Tool Dependencies (must be in Dockerfile runtime stage)
-Any new CLI tool used by the backend must be added to the `apk add` line in `backend/Dockerfile` runtime stage (Alpine). Current tools:
+## External Tool Dependencies (must be in Dockerfile `runtime-base` stage)
+Any new CLI tool used by the backend must be added to the `apk add` line in the `runtime-base` stage of `backend/Dockerfile` (Alpine) — both the production runtime and the dev container build on it. Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
 - `rsvg-convert` (Alpine package `rsvg-convert`) — SVG rasterisation for thumbnails

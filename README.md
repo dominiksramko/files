@@ -120,6 +120,23 @@ The app listens on port 8080 by default (override with `PORT` in `.env`). Put an
 
 ## Development
 
+**Docker dev stack** (recommended: only Docker needed, every CLI tool the backend uses is included):
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+Open `http://localhost:5173` and log in with `admin` / `admin`. The admin's root folder is your host `$HOME`, which is mounted read-write at the same path, so file operations in the dev app act on your real files. Ports are bound to localhost only. Both `backend/` and `frontend/` are bind-mounted: the Go server rebuilds and restarts on save (via [air](https://github.com/air-verse/air)), and Vite hot-reloads the frontend. Dev data (DB, caches, user folders) lives in `backend/data/`.
+
+Run one-off commands inside the containers:
+```bash
+alias dc='docker compose -f docker-compose.dev.yml'
+dc exec backend go test ./...
+dc exec backend go run ./cmd/migrate add_something
+dc exec frontend npm run lint
+dc exec frontend npm install some-package
+```
+
+**Without Docker**, you need Go 1.25+, Node 24 (see `frontend/.nvmrc`), and for full functionality `ffmpeg`, `7z`, `unrar`, ImageMagick, `rsvg-convert` and `pdftoppm` on your `PATH`.
+
 **Backend** (Go + Gin + SQLite):
 ```bash
 cd backend && go run ./cmd/server
