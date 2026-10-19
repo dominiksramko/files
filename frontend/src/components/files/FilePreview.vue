@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { isKanbanFile, isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
+import { catIconName, customViewName, fileCategory, isKanbanFile, isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
 import AudioPlayer  from '@/components/files/AudioPlayer.vue'
 import FileFallback from '@/components/files/FileFallback.vue'
 import ImageViewer  from '@/components/files/ImageViewer.vue'
@@ -23,6 +23,7 @@ const props = defineProps<{
   index: number
   total: number
   textEditMode?: boolean
+  rawText?: boolean // show the current file in the text viewer instead of its custom view
 }>()
 
 const emit = defineEmits<{
@@ -31,10 +32,16 @@ const emit = defineEmits<{
   next: []
   rename: [entry: FileEntry]
   delete: [entry: FileEntry]
+  toggleRawText: []
 }>()
 
-function viewerFor(entry: FileEntry) {
+// Name of the current file's custom view ("board"), if it has one — enables the raw-text toggle.
+const currentViewName = computed(() => (props.entry ? customViewName(props.entry.name) : null))
+
+// active: whether entry is the current panel (raw mode only applies to it).
+function viewerFor(entry: FileEntry, active: boolean) {
   const mime = entry.mime
+  if (active && props.rawText && customViewName(entry.name)) return TextViewer
   if (mime.startsWith('image/')) return ImageViewer
   if (mime.startsWith('video/')) return VideoPlayer
   if (mime.startsWith('audio/')) return AudioPlayer
@@ -47,7 +54,7 @@ function viewerFor(entry: FileEntry) {
 }
 
 function extraProps(entry: FileEntry, active: boolean): Record<string, unknown> {
-  const viewer = viewerFor(entry)
+  const viewer = viewerFor(entry, active)
   const result: Record<string, unknown> = {}
   if (viewer === VideoPlayer) result.active = active
   if (viewer === TodoViewer || viewer === KanbanViewer) result.active = active
@@ -237,6 +244,14 @@ onUnmounted(() => {
           <span class="text-sm text-white font-medium truncate max-w-xs">{{ entry.name }}</span>
           <div class="flex items-center gap-3 shrink-0 ml-4">
             <span class="text-xs text-zinc-400 tabular-nums">{{ index + 1 }} / {{ total }}</span>
+            <button
+              v-if="currentViewName"
+              class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
+              :title="rawText ? `View as ${currentViewName}` : 'View as text'"
+              @click.stop="emit('toggleRawText')"
+            >
+              <AppIcon :name="rawText ? catIconName[fileCategory(entry.mime, entry.name)] : 'code'" class="size-5" />
+            </button>
             <a
               :href="filesApi.downloadUrl(entry.path, entry.mod_time)"
               target="_blank"
@@ -300,7 +315,7 @@ onUnmounted(() => {
             >
               <component
                 v-if="panelEntry"
-                :is="viewerFor(panelEntry)"
+                :is="viewerFor(panelEntry, panelEntry === entry)"
                 :entry="panelEntry"
                 v-bind="extraProps(panelEntry, panelEntry === entry)"
               />

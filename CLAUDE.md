@@ -63,7 +63,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 File types with their own editor (`.todo` → `TodoViewer`, `.kanban` → `KanbanViewer`) follow one pattern — reuse it for new ones:
 - **Load + auto-save:** `useEditableFile(() => props.entry, { state, parse, serialize, onLoaded? })` from `frontend/src/composables/useFileContent.ts` — parses the file into `state`, auto-saves the serialized state 800 ms after each change. Read-only loading (e.g. `TextViewer`) uses `useFileContent` from the same file.
 - **Loading / error / too-large UI:** wrap the editor in `<EditableFileState>` (`components/files/`).
-- **Registration:** `isXFile()` + category in `utils/formatters.ts` (classified before the mime checks), `FileCategory` in `types/index.ts`, icon in `icons.ts`, viewer in `FilePreview.vue` `viewerFor()`, and an entry in `newFileTypes` in `FilesView.vue` — the single list behind the toolbar, mobile menu and context-menu "New …" items. Backend `mimeByExt` maps the extension to `text/plain`.
+- **Registration:** `isXFile()` + category in `utils/formatters.ts` (classified before the mime checks), the view's name in `customViewName()` (enables the preview header's "View as text" toggle and the "Open as text" file op), `FileCategory` in `types/index.ts`, icon in `icons.ts`, viewer in `FilePreview.vue` `viewerFor()`, and an entry in `newFileTypes` in `FilesView.vue` — the single list behind the toolbar, mobile menu and context-menu "New …" items. Backend `mimeByExt` maps the extension to `text/plain`.
 - **Checklists:** `useChecklistEditor` (`composables/`) + `TodoRow.vue` for any Enter/Backspace-driven checkbox list.
 - **Drag and drop:** `vue-draggable-plus` with `:force-fallback="true"`, `ghost-class="drag-ghost"`, `fallback-class="drag-fallback"` (global styles in `src/style.css`).
 - **Markdown:** render with `renderMarkdown(source, entryPath)` from `utils/markdown.ts` inside a `.markdown-body` element.
@@ -90,6 +90,7 @@ ALL browsing state must be reflected in the URL so page refresh restores it:
 - `?path=` — current folder (synced via `navigate()` + `watch(route.query.path)`)
 - `?preview=` — open preview file path
 - `?q=` — search query
+- `?view=text` — current preview shown as raw text instead of its custom view (`.todo`, `.kanban`)
 
 Any new state that should survive refresh MUST be added to the URL and synced bidirectionally with `watch(route.query.xxx)` + `watch(stateRef)`.
 

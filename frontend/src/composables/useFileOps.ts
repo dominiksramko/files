@@ -3,6 +3,7 @@ import type { Ref, ComputedRef } from 'vue'
 import type { FileEntry, FileOp } from '@/types'
 import { fileops, ConflictError } from '@/utils/api'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
+import { customViewName } from '@/utils/formatters'
 
 export interface FileOpsActionCallbacks {
   downloadPaths: (paths: string[]) => void
@@ -12,6 +13,7 @@ export interface FileOpsActionCallbacks {
   openAdvancedRenamer: (paths: string[]) => void
   openDeleteDialog: (paths: string[]) => void
   openDetails: (entries: FileEntry[]) => void
+  openAsText: (entry: FileEntry) => void
   entriesForPaths: (paths: string[]) => FileEntry[]
 }
 
@@ -70,6 +72,12 @@ export function useFileOps({
         action: () => { after(); actionCallbacks.openCompressDialog(paths) },
       },
       {
+        // Files with their own editor (.todo, .kanban) can still be opened as raw text
+        key: 'open-as-text', label: 'Open as text', icon: 'code',
+        visible: single && !!entry && customViewName(entry.name) !== null,
+        action: () => { after(); actionCallbacks.openAsText(entry!) },
+      },
+      {
         key: 'extract', label: 'Extract here', icon: 'archiveOut',
         visible: single && !!entry?.can_extract,
         action: () => { after(); actionCallbacks.openExtract(entry!.path) },
@@ -118,6 +126,7 @@ export function useFileOps({
       toItem(get('compress')),
       { separator: true },
     ]
+    if (get('open-as-text').visible !== false) items.push(toItem(get('open-as-text')))
     if (get('extract').visible !== false) items.push(toItem(get('extract')))
     if (get('rename').visible !== false) items.push(toItem(get('rename')))
     items.push(toItem(get('rename-advanced')))

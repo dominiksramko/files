@@ -181,6 +181,7 @@ const visibleEntries = computed(() =>
 // ── Preview navigation ─────────────────────────────────────────────────────
 const previewFilePath    = ref<string | null>(null)
 const previewTextEditMode = ref(false)
+const previewRawText      = ref(false) // custom-view files (.todo, .kanban) shown as plain text; ?view=text
 const archiveEntry       = ref<FileEntry | null>(null)
 
 const previewableEntries = computed(() => {
@@ -206,19 +207,28 @@ const nextPreviewEntry = computed<FileEntry | null>(
   () => previewableEntries.value[previewIndex.value + 1] ?? null,
 )
 
-function openPreview(entry: FileEntry) {
-  previewTextEditMode.value = false
-  previewFilePath.value = entry.path
+// Every way of opening a file in the preview goes through here, so per-file view
+// modes reset when moving to another file.
+function showPreview(path: string, { editMode = false, rawText = false } = {}) {
+  previewTextEditMode.value = editMode
+  previewRawText.value = rawText
+  previewFilePath.value = path
 }
-function closePreview() { previewFilePath.value = null }
+
+function openPreview(entry: FileEntry) { showPreview(entry.path) }
+function openAsText(entry: FileEntry) { showPreview(entry.path, { rawText: true }) }
+function closePreview() {
+  previewRawText.value = false
+  previewFilePath.value = null
+}
 
 function prevPreview() {
   const previousEntry = previewableEntries.value[previewIndex.value - 1]
-  if (previousEntry) { previewTextEditMode.value = false; previewFilePath.value = previousEntry.path }
+  if (previousEntry) showPreview(previousEntry.path)
 }
 function nextPreview() {
   const nextEntry = previewableEntries.value[previewIndex.value + 1]
-  if (nextEntry) { previewTextEditMode.value = false; previewFilePath.value = nextEntry.path }
+  if (nextEntry) showPreview(nextEntry.path)
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
@@ -227,6 +237,7 @@ function routeQuery() {
   if (filesStore.currentPath) q.path = filesStore.currentPath
   if (searchQuery.value) q.q = searchQuery.value
   if (previewEntry.value) q.preview = previewEntry.value.path
+  if (previewEntry.value && previewRawText.value) q.view = 'text'
   return q
 }
 
@@ -241,6 +252,11 @@ async function navigate(path: string) {
 watch(previewEntry, (entry) => {
   const currentPreview = route.query.preview as string | undefined
   if (entry?.path === currentPreview) return
+  router.replace({ query: routeQuery() })
+})
+
+watch(previewRawText, (rawText) => {
+  if (rawText === (route.query.view === 'text')) return
   router.replace({ query: routeQuery() })
 })
 
@@ -262,6 +278,7 @@ watch(
     if (searchQuery.value !== qParam) searchQuery.value = qParam
 
     const urlPreviewPath = q.preview as string | undefined
+    previewRawText.value = q.view === 'text'
     if (previewFilePath.value === (urlPreviewPath ?? null)) return
     previewFilePath.value = urlPreviewPath ?? null
   },
@@ -349,6 +366,7 @@ const {
     openDeleteDialog,
     openDetails,
     entriesForPaths,
+    openAsText,
   },
 })
 
@@ -618,8 +636,7 @@ async function confirmNewFile() {
   const path = filesStore.currentPath ? `${filesStore.currentPath}/${filename}` : filename
   try {
     await filesApi.writeContent(path, '')
-    previewTextEditMode.value = editMode
-    previewFilePath.value = path
+    showPreview(path, { editMode })
   } catch (err) {
     showToast((err as Error).message, 'error')
   }
@@ -922,6 +939,7 @@ onMounted(async () => {
     router.replace({ query: actualPath ? { path: actualPath } : {} })
   }
   if (route.query.preview) previewFilePath.value = route.query.preview as string
+  previewRawText.value = route.query.view === 'text'
   if (route.query.q) searchQuery.value = route.query.q as string
 })
 </script>
@@ -1171,11 +1189,13 @@ onMounted(async () => {
       :index="previewIndex"
       :total="previewableEntries.length"
       :text-edit-mode="previewTextEditMode"
+      :raw-text="previewRawText"
       @close="closePreview"
       @prev="prevPreview"
       @next="nextPreview"
       @rename="startRename"
       @delete="(e) => openDeleteDialog([e.path], e.name)"
+      @toggle-raw-text="previewRawText = !previewRawText"
     />
 
     <ArchiveContents

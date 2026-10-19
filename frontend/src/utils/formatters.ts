@@ -110,6 +110,15 @@ export function isKanbanFile(name: string): boolean {
   return hasExtension(name, 'kanban')
 }
 
+// File types that open in their own editor instead of the text viewer return
+// that view's name ("board"); null for everything else. These files can still
+// be opened as raw text from the preview header or the "Open as text" file op.
+export function customViewName(name: string): string | null {
+  if (isTodoFile(name)) return 'checklist'
+  if (isKanbanFile(name)) return 'board'
+  return null
+}
+
 export function fileCategory(mime: string, name: string): FileCategory {
   // .todo / .kanban files open in their own editors — classify them ahead of the
   // mime/extension checks so the category is correct regardless of reported mime.
