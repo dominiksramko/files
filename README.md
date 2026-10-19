@@ -24,10 +24,12 @@ More screenshots in the [`screenshots/`](screenshots/) folder.
 
 ### Previews
 - **Images** — JPEG, PNG, GIF, WebP, BMP, TIFF, SVG, plus AVIF, HEIC, HEIF, JXL, ICO, PSD, TGA, XCF, HDR, EXR, DDS (converted server-side via ImageMagick)
-- **Video** — MP4, WebM, MKV, AVI, MOV — with adaptive HLS transcoding, subtitle track selection, and screenshot capture at the current timestamp
-- **Audio** — MP3, OGG, WAV, FLAC, AAC, M4A
+- **Video** — MP4, M4V, WebM, plus MKV, AVI, MOV, OGV, M2TS, MTS, WMV, ASF, FLV, MPG, MPEG, VOB, 3GP (played via adaptive HLS transcoding) — with subtitle track selection, and screenshot capture at the current timestamp
+- **Subtitles** — SRT, VTT, ASS, SSA files next to the video, plus embedded subtitle tracks
+- **Audio** — MP3, OGG, OGA, Opus, WebA, WAV, FLAC, AAC, M4A, plus WMA, AIFF, APE, WavPack, MKA, AC3, AMR, CAF (transcoded server-side to AAC)
 - **PDF** — inline viewer with fallback for mobile
 - **Text / Code** — plain text, Markdown, JSON, XML, HTML, CSS, JS, and more
+- **Todo lists** — `.todo` files open in a checklist editor
 - **Office** — DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, ODP (rendered via Microsoft Office Online — requires the server to be publicly reachable)
 - **Archives** — browse contents of ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.ZST, RAR, 7Z without extracting
 

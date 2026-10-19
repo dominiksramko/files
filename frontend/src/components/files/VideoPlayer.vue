@@ -12,7 +12,8 @@ import AppSpinner from '@/components/ui/AppSpinner.vue'
 const props = defineProps<{ entry: FileEntry; active?: boolean }>()
 
 // Derived once at mount; parent remounts this component (via :key) on path change.
-const needsRemux = ['video/x-matroska', 'video/x-msvideo', 'video/quicktime'].includes(props.entry.mime)
+// Only MP4 and WebM play natively everywhere; every other container goes through server-side HLS.
+const needsRemux = !['video/mp4', 'video/webm'].includes(props.entry.mime)
 const src        = needsRemux ? undefined : filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 const sourceType = needsRemux ? undefined : props.entry.mime
 // Computed so it reacts if the store entry gets its thumb_hash populated by the

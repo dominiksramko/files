@@ -41,7 +41,7 @@ func (h *CacheHandler) Clear(c *gin.Context) {
 		}
 	}
 
-	// Conv cache: flat .jpg files
+	// Conv cache: flat converted files (.jpg images, .m4a audio)
 	if h.convCacheDir != "" {
 		if entries, err := os.ReadDir(h.convCacheDir); err == nil {
 			for _, e := range entries {

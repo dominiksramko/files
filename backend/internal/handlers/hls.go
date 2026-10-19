@@ -182,9 +182,9 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		}
 	}
 
-	// Copy video only if the codec can be muxed directly into MPEG-TS.
-	// MPEG-4 Part 2 (DivX/Xvid) and other codecs found in AVI cannot be
-	// copied into TS — they must be transcoded to H.264.
+	// Copy video only if the codec can be muxed into MPEG-TS and decoded by
+	// browsers. MPEG-4 Part 2 (DivX/Xvid), MPEG-2 (DVD, .mpg, broadcast .m2ts),
+	// WMV and others must be transcoded to H.264.
 	videoCodec := "libx264"
 	if probe, err := exec.Command("ffprobe",
 		"-v", "error",
@@ -194,7 +194,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		absPath,
 	).Output(); err == nil {
 		switch strings.TrimSpace(string(probe)) {
-		case "h264", "hevc", "mpeg2video":
+		case "h264", "hevc":
 			videoCodec = "copy"
 		}
 	}

@@ -24,29 +24,38 @@ func newConvCache(dir string) (*convCache, error) {
 	return c, nil
 }
 
-func (c *convCache) filePath(hash string) string {
-	return filepath.Join(c.dir, hash+".jpg")
+// filePath returns the cache location for a conversion of the given content
+// hash; ext (".jpg", ".m4a") tells apart conversions of different kinds.
+func (c *convCache) filePath(hash, ext string) string {
+	return filepath.Join(c.dir, hash+ext)
 }
 
-func (c *convCache) get(absPath string) ([]byte, string, bool) {
+// lookup hashes absPath and returns its cache location. ok reports whether a
+// fresh conversion is already there; hash is empty if the source can't be read.
+func (c *convCache) lookup(absPath, ext string) (hash, cachedPath string, ok bool) {
 	hash, err := thumbs.FileContentHash(absPath)
 	if err != nil {
-		return nil, "", false
+		return "", "", false
 	}
-	p := c.filePath(hash)
-	info, err := os.Stat(p)
-	if err != nil || time.Since(info.ModTime()) > convCacheTTL {
+	cachedPath = c.filePath(hash, ext)
+	info, err := os.Stat(cachedPath)
+	return hash, cachedPath, err == nil && time.Since(info.ModTime()) <= convCacheTTL
+}
+
+func (c *convCache) get(absPath, ext string) ([]byte, string, bool) {
+	hash, cachedPath, ok := c.lookup(absPath, ext)
+	if !ok {
 		return nil, hash, false
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(cachedPath)
 	if err != nil {
 		return nil, hash, false
 	}
 	return data, hash, true
 }
 
-func (c *convCache) put(hash string, data []byte) {
-	if err := os.WriteFile(c.filePath(hash), data, 0o644); err != nil {
+func (c *convCache) put(hash, ext string, data []byte) {
+	if err := os.WriteFile(c.filePath(hash, ext), data, 0o644); err != nil {
 		log.Printf("conv cache: write %s: %v", hash, err)
 	}
 }

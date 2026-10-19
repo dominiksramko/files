@@ -219,6 +219,10 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 		h.convertAndStream(c, abs, mime)
 		return
 	}
+	if needsAudioConversion(mime) {
+		h.convertAudioAndStream(c, abs)
+		return
+	}
 
 	c.File(abs) // Gin handles Range headers automatically
 }
@@ -364,7 +368,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 
 	// Check cache first.
 	if h.convCache != nil {
-		if data, hash, ok := h.convCache.get(srcPath); ok {
+		if data, hash, ok := h.convCache.get(srcPath, ".jpg"); ok {
 			_ = hash
 			c.Data(http.StatusOK, "image/jpeg", data)
 			return
@@ -375,7 +379,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 				return
 			}
-			h.convCache.put(hash, out)
+			h.convCache.put(hash, ".jpg", out)
 			c.Data(http.StatusOK, "image/jpeg", out)
 			return
 		}
@@ -388,6 +392,78 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 		return
 	}
 	c.Data(http.StatusOK, "image/jpeg", out)
+}
+
+// needsAudioConversion reports whether an audio format must be transcoded
+// server-side because browsers cannot play it natively.
+func needsAudioConversion(mime string) bool {
+	switch mime {
+	case "audio/x-ms-wma", "audio/aiff", "audio/x-ape", "audio/x-wavpack",
+		"audio/x-matroska", "audio/ac3", "audio/amr", "audio/x-caf":
+		return true
+	}
+	return false
+}
+
+// convertAudioAndStream transcodes srcPath to AAC (M4A) via ffmpeg and serves
+// the result as a file, so range requests (seeking) keep working. Results are
+// cached by content hash for convCacheTTL (7 days).
+func (h *FilesHandler) convertAudioAndStream(c *gin.Context, srcPath string) {
+	c.Header("Content-Type", "audio/mp4")
+
+	if h.convCache != nil {
+		if hash, cachedPath, ok := h.convCache.lookup(srcPath, ".m4a"); ok {
+			c.File(cachedPath)
+			return
+		} else if hash != "" {
+			if err := transcodeAudio(srcPath, cachedPath); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "audio conversion failed"})
+				return
+			}
+			c.File(cachedPath)
+			return
+		}
+	}
+
+	// No cache available — convert to a temp file, serve it, then delete it.
+	tmp, err := os.CreateTemp("", "files-audio-*.m4a")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	if err := transcodeAudio(srcPath, tmp.Name()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "audio conversion failed"})
+		return
+	}
+	c.File(tmp.Name())
+}
+
+// transcodeAudio converts the first audio stream of srcPath to AAC in an MP4
+// container at destPath. It writes to a unique sibling temp file and renames it
+// into place, so concurrent requests for the same file never see a partial result.
+func transcodeAudio(srcPath, destPath string) error {
+	part, err := os.CreateTemp(filepath.Dir(destPath), filepath.Base(destPath)+".*.part")
+	if err != nil {
+		return err
+	}
+	part.Close()
+	defer os.Remove(part.Name()) // no-op once renamed
+
+	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
+	cmd := exec.Command("nice", "-n", "10",
+		"ffmpeg", "-y", "-v", "error",
+		"-i", srcPath,
+		"-map", "0:a:0", "-vn",
+		"-c:a", "aac", "-b:a", "256k",
+		"-movflags", "+faststart",
+		"-f", "mp4", part.Name(),
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return os.Rename(part.Name(), destPath)
 }
 
 // buildConvertArgs returns the ImageMagick convert arguments for previewing
@@ -411,17 +487,6 @@ func buildConvertArgs(srcPath, mime string) []string {
 		return append([]string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}, tail...)
 	}
 	return append([]string{"-background", "white", srcPath + "[0]"}, tail...)
-}
-
-
-// needsRemux reports whether a video format needs to be transcoded to HLS/MP4
-// because browsers cannot play the raw container or its typical audio codecs.
-func needsRemux(mime string) bool {
-	switch mime {
-	case "video/x-matroska", "video/x-msvideo", "video/quicktime":
-		return true
-	}
-	return false
 }
 
 // GET /api/v1/files/search?q=query&path=optional_subfolder
@@ -565,8 +630,8 @@ func mimeByExt(ext string) string {
 		return "image/x-exr"
 	case ".dds":
 		return "image/vnd.ms-dds"
-	// Videos
-	case ".mp4":
+	// Videos (".ts" is deliberately absent — it is far more often TypeScript than MPEG-TS)
+	case ".mp4", ".m4v":
 		return "video/mp4"
 	case ".webm":
 		return "video/webm"
@@ -576,11 +641,27 @@ func mimeByExt(ext string) string {
 		return "video/x-msvideo"
 	case ".mov":
 		return "video/quicktime"
+	case ".ogv":
+		return "video/ogg"
+	case ".m2ts", ".mts":
+		return "video/mp2t"
+	case ".wmv":
+		return "video/x-ms-wmv"
+	case ".asf":
+		return "video/x-ms-asf"
+	case ".flv":
+		return "video/x-flv"
+	case ".mpg", ".mpeg", ".vob":
+		return "video/mpeg"
+	case ".3gp":
+		return "video/3gpp"
 	// Audio
 	case ".mp3":
 		return "audio/mpeg"
-	case ".ogg":
+	case ".ogg", ".oga", ".opus":
 		return "audio/ogg"
+	case ".weba":
+		return "audio/webm"
 	case ".wav":
 		return "audio/wav"
 	case ".flac":
@@ -589,6 +670,22 @@ func mimeByExt(ext string) string {
 		return "audio/aac"
 	case ".m4a":
 		return "audio/mp4"
+	case ".wma":
+		return "audio/x-ms-wma"
+	case ".aif", ".aiff", ".aifc":
+		return "audio/aiff"
+	case ".ape":
+		return "audio/x-ape"
+	case ".wv":
+		return "audio/x-wavpack"
+	case ".mka":
+		return "audio/x-matroska"
+	case ".ac3":
+		return "audio/ac3"
+	case ".amr":
+		return "audio/amr"
+	case ".caf":
+		return "audio/x-caf"
 	// Office
 	case ".doc", ".dot":
 		return "application/msword"
