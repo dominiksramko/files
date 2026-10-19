@@ -98,14 +98,23 @@ export function isMarkdownFile(mime: string, name: string): boolean {
   return ext === 'md' || ext === 'mdx' || ext === 'markdown'
 }
 
+function hasExtension(name: string, extension: string): boolean {
+  return name.toLowerCase().endsWith(`.${extension}`)
+}
+
 export function isTodoFile(name: string): boolean {
-  return name.toLowerCase().endsWith('.todo')
+  return hasExtension(name, 'todo')
+}
+
+export function isKanbanFile(name: string): boolean {
+  return hasExtension(name, 'kanban')
 }
 
 export function fileCategory(mime: string, name: string): FileCategory {
-  // .todo files open in the checklist editor — classify them ahead of the
+  // .todo / .kanban files open in their own editors — classify them ahead of the
   // mime/extension checks so the category is correct regardless of reported mime.
   if (isTodoFile(name)) return 'todo'
+  if (isKanbanFile(name)) return 'kanban'
   if (!mime || mime === 'application/octet-stream') {
     // Fall back to extension
     const ext = name.split('.').pop()?.toLowerCase() ?? ''
@@ -158,6 +167,7 @@ export const catBg: Record<EntryCat, string> = {
   archive: 'bg-orange-950/60',
   text:    'bg-zinc-800/60',
   todo:    'bg-emerald-950/60',
+  kanban:  'bg-sky-950/60',
   other:   'bg-zinc-800/60',
 }
 
@@ -171,6 +181,7 @@ export const catIconColor: Record<EntryCat, string> = {
   archive: 'text-orange-400',
   text:    'text-zinc-300',
   todo:    'text-emerald-400',
+  kanban:  'text-sky-400',
   other:   'text-zinc-500',
 }
 
@@ -184,6 +195,7 @@ export const catIconName: Record<EntryCat, IconName> = {
   archive: 'archive',
   text:    'document',
   todo:    'listChecks',
+  kanban:  'kanban',
   other:   'document',
 }
 

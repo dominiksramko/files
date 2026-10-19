@@ -30,6 +30,7 @@ More screenshots in the [`screenshots/`](screenshots/) folder.
 - **PDF** — inline viewer with fallback for mobile
 - **Text / Code** — plain text, Markdown, JSON, XML, HTML, CSS, JS, and more
 - **Todo lists** — `.todo` files open in a checklist editor
+- **Kanban boards** — `.kanban` files open as a drag-and-drop board (see below)
 - **Office** — DOC, DOCX, XLS, XLSX, PPT, PPTX, ODT, ODS, ODP (rendered via Microsoft Office Online — requires the server to be publicly reachable)
 - **Archives** — browse contents of ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.ZST, RAR, 7Z without extracting
 
@@ -40,6 +41,26 @@ Generated automatically and cached for: JPEG, PNG, GIF, WebP, BMP, TIFF (pure Go
 - Extract ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.ZST, RAR, 7Z (including password-protected)
 - Compress selected files to ZIP or 7Z (with optional password)
 - File conflict resolution: replace, keep both, or cancel
+
+### Kanban Boards
+Each `.kanban` file is one board. Drag cards within and between columns, reorder columns, and open a card to edit its labels, due date (highlighted when due or overdue), Markdown description and checklist. Changes auto-save.
+
+Boards are stored as plain Markdown, so they stay readable and editable in any text editor:
+
+```markdown
+## To do
+- Design login page #frontend #urgent @2026-11-01
+  Needs a dark mode variant.
+  - [x] wireframe
+  - [ ] build component
+
+## Doing
+- Fix HLS seek bug #backend
+
+## Done
+```
+
+`## ` starts a column and `- ` starts a card. Trailing `#labels` (must start with a letter) and an `@YYYY-MM-DD` due date sit on the card's line. Indented lines belong to the card: `- [ ]` / `- [x]` are checklist items, everything else is its description.
 
 ### Advanced Renamer
 - Batch rename with a template language (counters, original name, extension, date, etc.)

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize } from '@/utils/formatters'
+import type { IconName } from '@/utils/icons'
 import { files as filesApi, folders as foldersApi, fileops, ConflictError } from '@/utils/api'
 import FileDetailsModal from '@/components/files/FileDetailsModal.vue'
 import { useToast } from '@/composables/useToast'
@@ -583,12 +584,18 @@ async function confirmNewFolder() {
   }
 }
 
-// ── New file (text / todo) ──────────────────────────────────────────────────
+// ── New file (text / todo / kanban) ─────────────────────────────────────────
 interface NewFileConfig {
   title: string
   extension: string
   editMode: boolean // open the preview in edit mode (plain-text editor)
 }
+// Single source for the "new file" entries in the toolbar, mobile menu and folder context menu.
+const newFileTypes: (NewFileConfig & { icon: IconName })[] = [
+  { title: 'New text file',    extension: 'txt',    editMode: true,  icon: 'newFile' },
+  { title: 'New todo file',    extension: 'todo',   editMode: false, icon: 'listChecks' },
+  { title: 'New kanban board', extension: 'kanban', editMode: false, icon: 'kanban' },
+]
 const newFileDialog = ref(false)
 const newFileName = ref('')
 const newFileInput = ref<HTMLInputElement | null>(null)
@@ -601,9 +608,6 @@ async function openNewFile(config: NewFileConfig) {
   await nextTick()
   newFileInput.value?.focus()
 }
-
-const openNewTextFile = () => openNewFile({ title: 'New text file', extension: 'txt', editMode: true })
-const openNewTodoFile = () => openNewFile({ title: 'New todo file', extension: 'todo', editMode: false })
 
 async function confirmNewFile() {
   const name = newFileName.value.trim()
@@ -848,16 +852,11 @@ function onFolderContextMenu(x: number, y: number) {
 const folderContextMenuItems = computed((): ContextMenuItem[] => {
   const close = () => { folderContextMenuState.value = null }
   return [
-    {
-      label: 'New text file',
-      icon: 'newFile',
-      action: () => { close(); openNewTextFile() },
-    },
-    {
-      label: 'New todo file',
-      icon: 'listChecks',
-      action: () => { close(); openNewTodoFile() },
-    },
+    ...newFileTypes.map((fileType) => ({
+      label: fileType.title,
+      icon: fileType.icon,
+      action: () => { close(); openNewFile(fileType) },
+    } satisfies ContextMenuItem)),
     {
       label: 'New folder',
       icon: 'newFolder',
@@ -1017,14 +1016,15 @@ onMounted(async () => {
             <AppIcon name="search" class="size-4" />
           </button>
 
-          <!-- New text file: desktop only -->
-          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New text file" @click="openNewTextFile">
-            <AppIcon name="newFile" class="size-4" />
-          </button>
-
-          <!-- New todo file: desktop only -->
-          <button class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800" title="New todo file" @click="openNewTodoFile">
-            <AppIcon name="listChecks" class="size-4" />
+          <!-- New text / todo / kanban file: desktop only -->
+          <button
+            v-for="fileType in newFileTypes"
+            :key="fileType.extension"
+            class="hidden sm:flex p-1.5 rounded text-zinc-400 hover:text-white transition-colors hover:bg-zinc-800"
+            :title="fileType.title"
+            @click="openNewFile(fileType)"
+          >
+            <AppIcon :name="fileType.icon" class="size-4" />
           </button>
 
           <!-- New folder: desktop only -->
@@ -1070,11 +1070,13 @@ onMounted(async () => {
               </button>
             </template>
             <template #default>
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewTextFile()">
-                <AppIcon name="newFile" class="size-4 shrink-0" /> New text file
-              </button>
-              <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewTodoFile()">
-                <AppIcon name="listChecks" class="size-4 shrink-0" /> New todo file
+              <button
+                v-for="fileType in newFileTypes"
+                :key="fileType.extension"
+                class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors"
+                @click="openNewFile(fileType)"
+              >
+                <AppIcon :name="fileType.icon" class="size-4 shrink-0" /> {{ fileType.title }}
               </button>
               <button class="w-full text-left px-3 py-2.5 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800 flex items-center gap-2.5 transition-colors" @click="openNewFolder()">
                 <AppIcon name="newFolder" class="size-4 shrink-0" /> New folder

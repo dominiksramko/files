@@ -59,6 +59,17 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted globally in `AppLayout` — no need to add it per-view.
 - **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
+## Editable File Types Convention (IMPORTANT)
+File types with their own editor (`.todo` → `TodoViewer`, `.kanban` → `KanbanViewer`) follow one pattern — reuse it for new ones:
+- **Load + auto-save:** `useEditableFile(() => props.entry, { state, parse, serialize, onLoaded? })` from `frontend/src/composables/useFileContent.ts` — parses the file into `state`, auto-saves the serialized state 800 ms after each change. Read-only loading (e.g. `TextViewer`) uses `useFileContent` from the same file.
+- **Loading / error / too-large UI:** wrap the editor in `<EditableFileState>` (`components/files/`).
+- **Registration:** `isXFile()` + category in `utils/formatters.ts` (classified before the mime checks), `FileCategory` in `types/index.ts`, icon in `icons.ts`, viewer in `FilePreview.vue` `viewerFor()`, and an entry in `newFileTypes` in `FilesView.vue` — the single list behind the toolbar, mobile menu and context-menu "New …" items. Backend `mimeByExt` maps the extension to `text/plain`.
+- **Checklists:** `useChecklistEditor` (`composables/`) + `TodoRow.vue` for any Enter/Backspace-driven checkbox list.
+- **Drag and drop:** `vue-draggable-plus` with `:force-fallback="true"`, `ghost-class="drag-ghost"`, `fallback-class="drag-fallback"` (global styles in `src/style.css`).
+- **Markdown:** render with `renderMarkdown(source, entryPath)` from `utils/markdown.ts` inside a `.markdown-body` element.
+- **Horizontal gestures:** mark regions that scroll/drag sideways with `data-no-carousel-swipe` so the preview carousel doesn't treat them as prev/next swipes. Don't `.stop` touch events instead — SortableJS listens on `document`.
+- **Escape inside a viewer:** if an Escape handler removes the focused element, use `@keydown.escape.stop`, otherwise the preview's window listener sees focus on `<body>` and closes the preview.
+
 ## Debounce Convention
 Always use `debounce()` from `frontend/src/utils/debounce.ts` — never write raw `clearTimeout`/`setTimeout` pairs. Returns a debounced function with a `.cancel()` method; call `.cancel()` in `onUnmounted` / watch cleanup to avoid stale timers. Usage: `const debouncedFn = debounce(fn, delayMs)`.
 

@@ -723,7 +723,7 @@ func mimeByExt(ext string) string {
 	case ".7z":
 		return "application/x-7z-compressed"
 	// Text
-	case ".txt", ".todo":
+	case ".txt", ".todo", ".kanban":
 		return "text/plain"
 	case ".md":
 		return "text/markdown"

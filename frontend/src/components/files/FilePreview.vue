@@ -2,10 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
+import { isKanbanFile, isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
 import AudioPlayer  from '@/components/files/AudioPlayer.vue'
 import FileFallback from '@/components/files/FileFallback.vue'
 import ImageViewer  from '@/components/files/ImageViewer.vue'
+import KanbanViewer from '@/components/files/KanbanViewer.vue'
 import OfficeViewer from '@/components/files/OfficeViewer.vue'
 import PdfViewer    from '@/components/files/PdfViewer.vue'
 import TextViewer   from '@/components/files/TextViewer.vue'
@@ -39,6 +40,7 @@ function viewerFor(entry: FileEntry) {
   if (mime.startsWith('audio/')) return AudioPlayer
   if (mime === 'application/pdf') return PdfViewer
   if (isTodoFile(entry.name)) return TodoViewer
+  if (isKanbanFile(entry.name)) return KanbanViewer
   if (isTextFile(mime, entry.name)) return TextViewer
   if (isOfficeFile(mime, entry.name)) return OfficeViewer
   return FileFallback
@@ -48,7 +50,7 @@ function extraProps(entry: FileEntry, active: boolean): Record<string, unknown> 
   const viewer = viewerFor(entry)
   const result: Record<string, unknown> = {}
   if (viewer === VideoPlayer) result.active = active
-  if (viewer === TodoViewer) result.active = active
+  if (viewer === TodoViewer || viewer === KanbanViewer) result.active = active
   if (viewer === TextViewer && active) result.initialEdit = props.textEditMode
   return result
 }
@@ -74,8 +76,20 @@ let dragStartTime = 0
 let dragDirection: 'h' | 'v' | null = null
 let isSwiping     = false
 
+// Viewers whose content scrolls or drags horizontally (e.g. a kanban board) mark
+// that region with data-no-carousel-swipe; gestures starting there aren't navigation.
+// Checked on the target instead of stopping propagation, because drag-and-drop
+// libraries listen for touchmove on the document.
+function ownsHorizontalGestures(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-no-carousel-swipe]') !== null
+}
+
 function onCarouselTouchStart(e: TouchEvent) {
   if (isSnapping.value || e.touches.length !== 1) return
+  if (ownsHorizontalGestures(e.target)) {
+    isSwiping = false
+    return
+  }
   dragStartX    = e.touches[0]!.clientX
   dragStartY    = e.touches[0]!.clientY
   dragStartTime = Date.now()
@@ -164,6 +178,7 @@ const WHEEL_THRESHOLD = 60 // px of accumulated deltaX before snapping
 function onCarouselWheel(e: WheelEvent) {
   // Only act when horizontal scroll is dominant (trackpad swipe, not zoom scroll)
   if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+  if (ownsHorizontalGestures(e.target)) return
   // Don't intercept when image is zoomed — ImageViewer handles panning
   if (trackRef.value?.children[1]?.querySelector('[data-image-zoomed]')) return
   if (isSnapping.value) return
@@ -188,6 +203,8 @@ function onKey(e: KeyboardEvent) {
   if (!props.entry) return
   const tag = (document.activeElement as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  // A modal opened from inside a viewer (e.g. a kanban card) owns the keyboard.
+  if (document.querySelector('[aria-modal="true"]')) return
   if (e.key === 'Escape') { emit('close'); return }
   const currentPanel = trackRef.value?.children[1] as HTMLElement | undefined
   const mediaEl = currentPanel?.querySelector<HTMLVideoElement | HTMLAudioElement>('video, audio')

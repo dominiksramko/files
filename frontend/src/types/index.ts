@@ -74,4 +74,5 @@ export type FileCategory =
   | 'archive'
   | 'text'
   | 'todo'
+  | 'kanban'
   | 'other'

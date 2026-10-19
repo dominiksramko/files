@@ -17,6 +17,8 @@ const emit = defineEmits<{ close: [] }>()
       @mousedown.self="emit('close')"
     >
       <div
+        role="dialog"
+        aria-modal="true"
         :class="[
           'bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh] w-full',
           { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-7xl' }[size ?? 'md'],
