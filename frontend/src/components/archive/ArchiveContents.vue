@@ -6,6 +6,7 @@ import { formatSize } from '@/utils/formatters'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import SecretInput from '@/components/ui/SecretInput.vue'
 
 const props = defineProps<{ entry: FileEntry }>()
 const emit = defineEmits<{ close: []; extracted: [] }>()
@@ -77,10 +78,8 @@ onMounted(() => load())
     <div v-if="passwordRequired" class="space-y-3">
       <p class="text-sm text-zinc-400">{{ error }}</p>
       <div class="flex gap-2">
-        <input
+        <SecretInput
           v-model="password"
-          type="password"
-          autocomplete="off"
           placeholder="Enter password"
           class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           @keydown.enter="unlock"
@@ -175,10 +174,8 @@ onMounted(() => load())
       <div class="flex flex-col gap-2">
         <!-- Optional extraction password (always shown when contents loaded) -->
         <div v-if="!loading && !passwordRequired && !error" class="flex gap-2">
-          <input
+          <SecretInput
             v-model="extractPassword"
-            type="password"
-            autocomplete="off"
             placeholder="Password (optional)"
             class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
             @keydown.enter="extract"

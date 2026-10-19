@@ -339,6 +339,7 @@ async function changePassword() {
               <input
                 v-model="currentPassword"
                 type="password"
+                autocomplete="current-password"
                 required
                 class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
               />
@@ -348,6 +349,7 @@ async function changePassword() {
               <input
                 v-model="newPassword"
                 type="password"
+                autocomplete="new-password"
                 required
                 class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
               />
@@ -357,6 +359,7 @@ async function changePassword() {
               <input
                 v-model="confirmPassword"
                 type="password"
+                autocomplete="new-password"
                 required
                 class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
               />

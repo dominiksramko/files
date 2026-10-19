@@ -28,6 +28,7 @@ import { useFileOps } from '@/composables/useFileOps'
 import { useLayoutStore } from '@/stores/layout'
 import { debounce } from '@/utils/debounce'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
+import SecretInput from '@/components/ui/SecretInput.vue'
 const filesStore = useFilesStore()
 const layoutStore = useLayoutStore()
 const route = useRoute()
@@ -1359,9 +1360,8 @@ onMounted(async () => {
             Password
             <span class="text-zinc-600">(optional{{ compressFormat === 'tar' || compressFormat === 'tar.gz' ? ', not supported for TAR' : '' }})</span>
           </label>
-          <input
+          <SecretInput
             v-model="compressPassword"
-            type="password"
             placeholder="No password"
             :disabled="compressFormat === 'tar' || compressFormat === 'tar.gz'"
             class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-40"
@@ -1392,9 +1392,8 @@ onMounted(async () => {
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
           <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
           <p class="text-xs text-zinc-400 mb-3">This archive is password protected.</p>
-          <input
+          <SecretInput
             v-model="extractPasswordInput"
-            type="password"
             placeholder="Enter password"
             class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
             @keydown.enter="confirmExtract"

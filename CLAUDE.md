@@ -52,6 +52,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 
 ## UI Component Rules
 - **AppCheckbox.vue** — always use for checkboxes; supports `v-model`, `indeterminate` prop; never use native `<input type="checkbox">`
+- **SecretInput.vue** — ALWAYS use for passwords that aren't the user's account password (archive passwords); NEVER a native `type="password"` there — password managers autofill the login into those and offer to save what's typed. Supports `v-model`; other attributes fall through. Account password fields stay `type="password"` with the right `autocomplete` (`current-password` / `new-password`).
 - **AppSelect.vue** — ALWAYS use for dropdowns/selects; NEVER use native `<select>`. Supports `v-model`, `options: { label, value }[]`, `disabled`. Handles string and number values correctly. Usage: `<AppSelect v-model="val" :options="[{ label: 'Foo', value: 'foo' }]" />`
 - **AppAccordion.vue + AppAccordionItem.vue** — use for collapsible settings sections; only one item open at a time. Wrap items in `<AppAccordion>`, each section in `<AppAccordionItem title="…">`. Uses CSS grid-template-rows transition for smooth animation.
 - **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl/2xl

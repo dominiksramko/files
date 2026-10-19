@@ -87,6 +87,7 @@ async function save() {
         <input
           v-model="username"
           type="text"
+          autocomplete="off"
           :disabled="isEdit"
           required
           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -111,6 +112,7 @@ async function save() {
         <input
           v-model="password"
           type="password"
+          autocomplete="new-password"
           :required="!isEdit"
           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           placeholder="••••••••"
