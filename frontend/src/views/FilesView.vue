@@ -381,11 +381,14 @@ watch(selectedPaths, () => {
   if (!silentSelectionChange) selectionChangedSinceLastJob = true
 })
 
-// When a path is removed via the watch stream, silently drop it from selection.
-watch(() => filesStore.lastRemovedPath, (path) => {
-  if (!path || !selectedPaths.value.includes(path)) return
+// When paths leave the listing (removed via the watch stream, or missing from a
+// fresh snapshot after a reconnect), silently drop them from selection.
+watch(() => filesStore.entries, (entries) => {
+  if (!selectedPaths.value.length) return
+  const presentPaths = new Set(entries.map((entry) => entry.path))
+  if (selectedPaths.value.every((path) => presentPaths.has(path))) return
   silentSelectionChange = true
-  selectedPaths.value = selectedPaths.value.filter((p) => p !== path)
+  selectedPaths.value = selectedPaths.value.filter((path) => presentPaths.has(path))
   silentSelectionChange = false
 })
 

@@ -2,102 +2,173 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { files as filesApi, NotFoundError } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
+import { debounce } from '@/utils/debounce'
 import type { FileEntry } from '@/types'
+
+// The watch stream pings every 25 s; one silent for longer is treated as dead
+// (proxies, NAT and mobile networks can drop it without the browser noticing).
+const WATCH_SILENCE_LIMIT_MS = 60_000
+const RECONNECT_BASE_DELAY_MS = 1_000
+const RECONNECT_MAX_DELAY_MS = 30_000
 
 export const useFilesStore = defineStore('files', () => {
   const currentPath = ref('')
   const entries = ref<FileEntry[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
-  // Signals the last path removed via the watch stream (for selection cleanup).
-  const lastRemovedPath = ref('')
   const { show: showToast } = useToast()
 
+  // ── Live updates ───────────────────────────────────────────────────────────
+  // The watch stream starts with a full listing ("snapshot") taken after the
+  // server began watching, and sends a new one whenever it may have missed
+  // events, so every (re)connect brings the listing fully up to date.
   let watchSource: EventSource | null = null
+  let watchedPath: string | null = null // folder the stream follows; null when stopped
+  let rejectPendingSnapshot: (() => void) | null = null
+  let reconnectAttempts = 0
+  let lastWatchEventAt = 0
+  let pendingReconnect: ReturnType<typeof debounce> | null = null
 
-  function watchDisconnect() {
+  const reconnectIfSilent = debounce(reconnectNow, WATCH_SILENCE_LIMIT_MS)
+
+  function closeWatchSource() {
     watchSource?.close()
     watchSource = null
+    rejectPendingSnapshot?.()
+    rejectPendingSnapshot = null
+    reconnectIfSilent.cancel()
+    pendingReconnect?.cancel()
   }
 
-  function watchConnect(path: string) {
-    watchDisconnect()
+  function watchDisconnect() {
+    closeWatchSource()
+    watchedPath = null
+  }
+
+  function reconnectNow() {
+    if (watchedPath !== null) openWatch(watchedPath).catch(() => { /* onerror schedules the retry */ })
+  }
+
+  function scheduleReconnect() {
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempts, RECONNECT_MAX_DELAY_MS)
+    reconnectAttempts++
+    pendingReconnect = debounce(reconnectNow, delay)
+    pendingReconnect()
+  }
+
+  function upsertEntry(entry: FileEntry) {
+    const index = entries.value.findIndex((existing) => existing.path === entry.path)
+    if (index >= 0) entries.value[index] = entry
+    else entries.value.push(entry)
+  }
+
+  // Opens the stream for path; resolves once its first snapshot is applied and
+  // rejects if the stream fails (or is replaced) before that.
+  function openWatch(path: string): Promise<void> {
+    closeWatchSource()
+    watchedPath = path
+    lastWatchEventAt = Date.now()
+    reconnectIfSilent()
+
     const token = localStorage.getItem('token') ?? ''
-    const url = `/api/v1/files/watch?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`
-    const es = new EventSource(url)
-    watchSource = es
+    const source = new EventSource(`/api/v1/files/watch?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`)
+    watchSource = source
 
-    es.addEventListener('add', (e: MessageEvent) => {
-      try {
-        const entry = JSON.parse(e.data as string) as FileEntry
-        const idx = entries.value.findIndex((en) => en.path === entry.path)
-        if (idx >= 0) entries.value[idx] = entry
-        else entries.value.push(entry)
-      } catch { /* ignore */ }
-    })
+    return new Promise((resolve, reject) => {
+      rejectPendingSnapshot = () => reject(new Error('Live updates unavailable'))
 
-    es.addEventListener('remove', (e: MessageEvent) => {
-      try {
-        const { path: removedPath } = JSON.parse(e.data as string) as { path: string }
-        entries.value = entries.value.filter((en) => en.path !== removedPath)
-        lastRemovedPath.value = removedPath
-      } catch { /* ignore */ }
-    })
+      function listen<T>(eventName: string, apply: (payload: T) => void) {
+        source.addEventListener(eventName, (event: MessageEvent) => {
+          if (watchSource !== source) return
+          lastWatchEventAt = Date.now()
+          reconnectIfSilent()
+          let payload: T
+          try { payload = JSON.parse(event.data as string) as T } catch { return }
+          apply(payload)
+        })
+      }
 
-    es.addEventListener('update', (e: MessageEvent) => {
-      try {
-        const entry = JSON.parse(e.data as string) as FileEntry
-        const idx = entries.value.findIndex((en) => en.path === entry.path)
-        if (idx >= 0) entries.value[idx] = entry
-        else entries.value.push(entry)
-      } catch { /* ignore */ }
-    })
-
-    es.addEventListener('thumb', (e: MessageEvent) => {
-      try {
-        const { hash } = JSON.parse(e.data as string) as { hash: string }
+      listen<FileEntry[]>('snapshot', (snapshot) => {
+        entries.value = snapshot
+        error.value = null
+        reconnectAttempts = 0
+        rejectPendingSnapshot = null
+        resolve()
+      })
+      listen<FileEntry>('add', upsertEntry)
+      listen<FileEntry>('update', upsertEntry)
+      listen<{ path: string }>('remove', ({ path: removedPath }) => {
+        entries.value = entries.value.filter((entry) => entry.path !== removedPath)
+      })
+      listen<{ hash: string }>('thumb', ({ hash }) => {
         for (const entry of entries.value) {
           if (entry.content_hash === hash) {
             entry.has_thumb = true
             entry.thumb_hash = hash
           }
         }
-      } catch { /* ignore */ }
-    })
+      })
+      listen('ping', () => {})
 
-    es.onerror = () => {
-      es.close()
-      if (watchSource === es) watchSource = null
-    }
+      // EventSource's own retry would resume without a fresh token or backoff;
+      // reconnect ourselves instead (the new stream starts with a snapshot).
+      source.onerror = () => {
+        if (watchSource !== source) return
+        closeWatchSource()
+        scheduleReconnect()
+      }
+    })
   }
+
+  // Background tabs throttle or freeze timers, so the silence check may not have
+  // run; catch up as soon as the page is visible or the network is back.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || watchedPath === null) return
+    if (!watchSource || Date.now() - lastWatchEventAt > WATCH_SILENCE_LIMIT_MS / 2) {
+      reconnectAttempts = 0
+      reconnectNow()
+    }
+  })
+  window.addEventListener('online', () => {
+    reconnectAttempts = 0
+    reconnectNow()
+  })
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  // Bumped by every navigate(); an older navigation that finishes late must not
+  // overwrite the listing of the folder navigated to since.
+  let navigationId = 0
 
   // Returns the path actually navigated to (may differ from requested path if not found).
   async function navigate(path: string): Promise<string> {
+    const thisNavigation = ++navigationId
+    const isStale = () => thisNavigation !== navigationId
     currentPath.value = path // update immediately so watchers see the new path before entries load
     loading.value = true
     error.value = null
-    watchDisconnect()
     try {
-      entries.value = await filesApi.list(path)
-      watchConnect(path)
+      await openWatch(path)
       return path
-    } catch (e: unknown) {
-      if (e instanceof NotFoundError) {
-        showToast(e.message, 'error')
-        const fallback = e.fallbackPath
-        currentPath.value = fallback
-        try {
-          entries.value = await filesApi.list(fallback)
-          watchConnect(fallback)
-        } catch {
-          entries.value = []
+    } catch {
+      if (isStale()) return currentPath.value
+      // The stream failed before its snapshot (it keeps retrying on its own);
+      // the list endpoint says why, and where to go if the folder is gone.
+      try {
+        const listing = await filesApi.list(path)
+        if (isStale()) return currentPath.value
+        entries.value = listing
+        return path
+      } catch (e: unknown) {
+        if (isStale()) return currentPath.value
+        if (e instanceof NotFoundError && e.fallbackPath !== path) {
+          showToast(e.message, 'error')
+          return navigate(e.fallbackPath)
         }
-        return fallback
+        error.value = e instanceof Error ? e.message : 'Failed to load directory'
+        return path
       }
-      error.value = e instanceof Error ? e.message : 'Failed to load directory'
-      return path
     } finally {
-      loading.value = false
+      if (!isStale()) loading.value = false
     }
   }
 
@@ -106,11 +177,12 @@ export const useFilesStore = defineStore('files', () => {
   }
 
   function reset() {
+    navigationId++
     watchDisconnect()
     currentPath.value = ''
     entries.value = []
     error.value = null
   }
 
-  return { currentPath, entries, loading, error, navigate, refresh, reset, watchDisconnect, lastRemovedPath }
+  return { currentPath, entries, loading, error, navigate, refresh, reset, watchDisconnect }
 })

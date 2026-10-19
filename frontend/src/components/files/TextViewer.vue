@@ -3,15 +3,12 @@ import { computed, nextTick, ref } from 'vue'
 import hljs from 'highlight.js/lib/common'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { useFilesStore } from '@/stores/files'
 import { useFileContent } from '@/composables/useFileContent'
 import { isMarkdownFile } from '@/utils/formatters'
 import { renderMarkdown } from '@/utils/markdown'
 import EditableFileState from '@/components/files/EditableFileState.vue'
 
 const props = defineProps<{ entry: FileEntry; initialEdit?: boolean }>()
-
-const filesStore = useFilesStore()
 
 const textContent = ref<string | null>(null)
 const { loading: textLoading, loadError: textError, tooLarge: textTooLarge } = useFileContent(
@@ -49,7 +46,6 @@ async function save() {
     await filesApi.writeContent(props.entry.path, editContent.value)
     textContent.value = editContent.value
     editing.value = false
-    filesStore.refresh()
   } catch (e) {
     saveError.value = (e as Error).message
   } finally {

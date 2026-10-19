@@ -62,7 +62,7 @@ func (h *FilesHandler) List(c *gin.Context) {
 		return
 	}
 
-	entries, err := os.ReadDir(abs)
+	files, err := h.listDir(abs, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Walk up the path until we find an existing directory.
@@ -90,53 +90,63 @@ func (h *FilesHandler) List(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, files)
+}
+
+// listDir returns the entries of the folder at abs (rel is its path relative to
+// the user root), folders first, then alphabetical.
+func (h *FilesHandler) listDir(abs, rel string) ([]FileEntry, error) {
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return nil, err
+	}
+
 	files := make([]FileEntry, 0, len(entries))
 	for _, e := range entries {
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		entryRel := filepath.Join(rel, e.Name())
-		entryAbs := filepath.Join(abs, e.Name())
-		mime := ""
-		if !e.IsDir() {
-			mime = mimeByExt(filepath.Ext(e.Name()))
-		}
-		fe := FileEntry{
-			Name:       e.Name(),
-			Path:       entryRel,
-			IsDir:      e.IsDir(),
-			Size:       info.Size(),
-			ModTime:    info.ModTime(),
-			CreatedAt:  getBirthTime(entryAbs),
-			Mime:       mime,
-			CanExtract: CanExtract(e.Name()),
-		}
-		// Set content hash and thumb status for thumbnailable files.
-		// ContentHash is always included so the frontend can match thumb events
-		// across duplicate files (same content, different names).
-		if h.thumbs != nil && !e.IsDir() && thumbs.IsThumbnailable(mime) {
-			entryAbsPath := filepath.Join(abs, e.Name())
-			if hash, err := h.thumbs.CachedHash(entryAbsPath, info.ModTime().Unix()); err == nil {
-				fe.ContentHash = hash
-				if _, ok := h.thumbs.HashIfReady(entryAbsPath, info.ModTime().Unix()); ok {
-					fe.HasThumb = true
-					fe.ThumbHash = hash
-				}
-			}
-		}
-		files = append(files, fe)
+		files = append(files, h.newFileEntry(filepath.Join(abs, e.Name()), filepath.Join(rel, e.Name()), info))
 	}
 
-	// Folders first, then alphabetical
 	sort.Slice(files, func(i, j int) bool {
 		if files[i].IsDir != files[j].IsDir {
 			return files[i].IsDir
 		}
 		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
 	})
+	return files, nil
+}
 
-	c.JSON(http.StatusOK, files)
+// newFileEntry describes one file or folder. ContentHash is set for every
+// thumbnailable file so the frontend can match thumb events across duplicate
+// files (same content, different names); HasThumb/ThumbHash once it is ready.
+func (h *FilesHandler) newFileEntry(absPath, relPath string, info os.FileInfo) FileEntry {
+	mime := ""
+	if !info.IsDir() {
+		mime = mimeByExt(filepath.Ext(info.Name()))
+	}
+	fe := FileEntry{
+		Name:       info.Name(),
+		Path:       relPath,
+		IsDir:      info.IsDir(),
+		Size:       info.Size(),
+		ModTime:    info.ModTime(),
+		CreatedAt:  getBirthTime(absPath),
+		Mime:       mime,
+		CanExtract: CanExtract(info.Name()),
+	}
+	if h.thumbs != nil && !info.IsDir() && thumbs.IsThumbnailable(mime) {
+		if hash, err := h.thumbs.CachedHash(absPath, info.ModTime().Unix()); err == nil {
+			fe.ContentHash = hash
+			if _, ok := h.thumbs.HashIfReady(absPath, info.ModTime().Unix()); ok {
+				fe.HasThumb = true
+				fe.ThumbHash = hash
+			}
+		}
+	}
+	return fe
 }
 
 // GET /api/v1/files/stat?path=
@@ -160,21 +170,7 @@ func (h *FilesHandler) Stat(c *gin.Context) {
 		return
 	}
 
-	mime := ""
-	if !info.IsDir() {
-		mime = mimeByExt(filepath.Ext(info.Name()))
-	}
-
-	fe := FileEntry{
-		Name:       filepath.Base(abs),
-		Path:       rel,
-		IsDir:      info.IsDir(),
-		Size:       info.Size(),
-		ModTime:    info.ModTime(),
-		CreatedAt:  getBirthTime(abs),
-		Mime:       mime,
-		CanExtract: CanExtract(info.Name()),
-	}
+	fe := h.newFileEntry(abs, rel, info)
 
 	c.JSON(http.StatusOK, fe)
 }

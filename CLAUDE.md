@@ -40,6 +40,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Stores: `auth.ts` (login/logout, user), `files.ts` (current path + directory listing)
 - Types: `frontend/src/types/index.ts`
 - Dev proxy: Vite proxies `/api` → `http://localhost:8080`
+- Live folder updates: `GET /files/watch` (SSE, `backend/internal/handlers/watch.go`) starts with a `snapshot` event (the full listing, read after the watcher is live), resends one whenever events may have been lost, and pings every 25 s. `stores/files.ts` loads folders from that snapshot, reconnects with backoff (and on silence, tab visible, `online`), so every reconnect resyncs. After writing a file, don't call `filesStore.refresh()` — the stream reports the change; `refresh()` reopens the stream.
 
 ## Project Structure Convention
 - `components/ui/` — generic reusable (AppModal, AppSpinner, AppCheckbox)

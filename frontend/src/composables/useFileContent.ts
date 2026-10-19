@@ -1,7 +1,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { useFilesStore } from '@/stores/files'
 import { useToast } from '@/composables/useToast'
 import { debounce } from '@/utils/debounce'
 
@@ -59,7 +58,6 @@ interface EditableFileOptions<T> {
 // then auto-saves the serialized state 800 ms after each change (and flushes a
 // pending save on unmount).
 export function useEditableFile<T>(entry: MaybeRefOrGetter<FileEntry>, options: EditableFileOptions<T>) {
-  const filesStore = useFilesStore()
   const { show: showToast } = useToast()
 
   const ready     = ref(false) // gates auto-save until the initial content is loaded
@@ -82,7 +80,7 @@ export function useEditableFile<T>(entry: MaybeRefOrGetter<FileEntry>, options: 
     try {
       await filesApi.writeContent(toValue(entry).path, options.serialize(options.state.value))
       saveState.value = 'saved'
-      filesStore.refresh()
+      // The folder listing picks up the new size / mtime from the watch stream.
     } catch (err) {
       saveState.value = 'idle'
       showToast((err as Error).message, 'error')
