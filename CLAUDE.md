@@ -18,6 +18,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 ## Backend
 - Entry: `backend/cmd/server/main.go`
 - Config: `backend/internal/config/config.go` (env vars: PORT, JWT_SECRET, DB_PATH, USERS_ROOT, GIN_MODE, THUMB_CACHE_DIR, HLS_CACHE_DIR, CONV_CACHE_DIR, ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_PATH)
+- Production container runs the server as `PUID:PGID` (default 1000), never root: `backend/docker-entrypoint.sh` hands the database and caches to that user, then drops privileges with `su-exec`; `docker-entrypoint_test.sh` runs in the image build. Anything the server writes must live in `/data` (or `/tmp`).
 - Auth middleware: `backend/internal/middleware/auth.go` — accepts JWT from `Authorization: Bearer` header OR `?token=` query param
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)

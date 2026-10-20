@@ -140,6 +140,7 @@ The app listens on port 8080 by default (override with `PORT` in `.env`). Put an
 | `ADMIN_USERNAME` | `admin` | Initial admin username (first run only). |
 | `ADMIN_PASSWORD` | *(random)* | Initial admin password (first run only). Printed to logs if unset. |
 | `ADMIN_PATH` | *(empty)* | Initial admin root directory (first run only). Can be changed later. |
+| `PUID` / `PGID` | `1000` | User and group the server runs as (never root). Must be able to read and write your mounted folders. On startup the app's own data (database, caches) is handed to them; mounted folders are never changed. |
 
 ---
 

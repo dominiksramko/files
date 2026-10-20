@@ -77,15 +77,27 @@ CMD ["air"]
 # ---- runtime ----
 FROM runtime-base
 
+# su-exec: docker-entrypoint.sh starts the server as PUID:PGID, not root.
+RUN apk add --no-cache su-exec
+
 WORKDIR /app
 COPY --from=backend-builder /backend/server .
 COPY --from=frontend-builder /frontend/dist ./public
+COPY --chmod=755 backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN --mount=type=bind,source=backend/docker-entrypoint_test.sh,target=/tmp/docker-entrypoint_test.sh \
+    sh /tmp/docker-entrypoint_test.sh
 
-RUN mkdir -p /data/users
+RUN mkdir -p /data/users && chown 1000:1000 /data
 
 ENV PORT=8080 \
     DB_PATH=/data/files.db \
     USERS_ROOT=/data/users \
-    GIN_MODE=release
+    THUMB_CACHE_DIR=/data/thumbs \
+    HLS_CACHE_DIR=/data/hls \
+    CONV_CACHE_DIR=/data/conv \
+    GIN_MODE=release \
+    PUID=1000 \
+    PGID=1000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["./server"]
