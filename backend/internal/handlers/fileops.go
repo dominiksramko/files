@@ -79,6 +79,10 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if src, found := sourceContaining(srcAbs, destAbs); found {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("%s can't go inside itself", filepath.Base(src))})
+		return
+	}
 
 	if body.ConflictMode == "error" {
 		if conflicts := findConflicts(srcAbs, destAbs); len(conflicts) > 0 {
@@ -128,6 +132,10 @@ func (h *FileOpsHandler) Move(c *gin.Context) {
 	srcAbs, err := safeChildPaths(root, body.Paths)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if src, found := sourceContaining(srcAbs, destAbs); found {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("%s can't go inside itself", filepath.Base(src))})
 		return
 	}
 
@@ -383,6 +391,17 @@ func batchTargetName(name, mode string, existing, claimed map[string]bool) strin
 	}
 	claimed[name] = true
 	return name
+}
+
+// sourceContaining returns the first of srcAbs that destAbs is, or is inside:
+// copying or moving it there would put a folder inside itself.
+func sourceContaining(srcAbs []string, destAbs string) (string, bool) {
+	for _, src := range srcAbs {
+		if isWithin(src, destAbs) {
+			return src, true
+		}
+	}
+	return "", false
 }
 
 // isSameFile reports whether both paths exist and are the same file.

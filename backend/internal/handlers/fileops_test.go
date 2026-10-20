@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Paths that must never be deleted, renamed or moved: the home folder itself
@@ -373,5 +375,35 @@ func TestMoveConflictsListedOnce(t *testing.T) {
 	assertStatus(t, response, http.StatusConflict)
 	if conflicts := decodeResponse[struct{ Conflicts []string }](t, response).Conflicts; len(conflicts) != 1 {
 		t.Errorf("conflicts = %q, want plan.md once", conflicts)
+	}
+}
+
+// ── Into itself ──────────────────────────────────────────────────────────────
+
+func TestMoveAndCopyRefuseFolderIntoItself(t *testing.T) {
+	handler := NewFileOpsHandler()
+	for _, operation := range []gin.HandlerFunc{handler.Copy, handler.Move} {
+		for _, dest := range []string{"docs", "docs/inner", "docs/inner/deeper"} {
+			annRoot, annaRoot := newUserFolders(t)
+			writeFiles(t, annRoot, map[string]string{"docs/inner/deeper/x.txt": "x"})
+			// notes.txt is fine on its own, but nothing happens when one item can't go.
+			response := serveJSON(t, operation, annRoot, map[string]any{"paths": []string{"notes.txt", "docs"}, "dest": dest, "conflict_mode": "rename"})
+			assertStatus(t, response, http.StatusBadRequest)
+			assertUnchanged(t, annRoot, annaRoot)
+			assertMissing(t, filepath.Join(annRoot, dest, "docs"))
+			assertMissing(t, filepath.Join(annRoot, dest, "notes.txt"))
+		}
+	}
+}
+
+func TestMoveAndCopyIntoSimilarlyNamedFolder(t *testing.T) {
+	// docs-archive starts with "docs" but isn't inside it.
+	handler := NewFileOpsHandler()
+	for _, operation := range []gin.HandlerFunc{handler.Copy, handler.Move} {
+		annRoot, _ := newUserFolders(t)
+		writeFiles(t, annRoot, map[string]string{"docs-archive/old.txt": "old"})
+		response := serveJSON(t, operation, annRoot, map[string]any{"paths": []string{"docs"}, "dest": "docs-archive"})
+		assertStatus(t, response, http.StatusOK)
+		assertFileContent(t, filepath.Join(annRoot, "docs-archive/docs/plan.md"), "# plan")
 	}
 }
