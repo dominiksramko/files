@@ -15,7 +15,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Forgets everything about whoever was logged in: their file listing and its
   // live-update stream (per-view state goes when the views unmount), so the
-  // next person on this browser never sees any of it.
+  // next person on this browser never sees any of it. After logout, call it
+  // once the file views are gone — showLoginAfterLogout (router) does.
   function clearUserState() {
     user.value = null
     useFilesStore().reset()
@@ -39,13 +40,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // The server says the session is over (it answered "not logged in"): log
+  // out here too. Returns whether someone was logged in.
+  function sessionEnded(): boolean {
+    if (!user.value) return false
+    user.value = null
+    return true
+  }
+
+  // Ends the session on the server, and here even if that fails.
   async function logout() {
     try {
       await authApi.logout()
     } finally {
-      clearUserState()
+      user.value = null
     }
   }
 
-  return { user, isAuthenticated, isAdmin, login, restoreSession, logout }
+  return { user, isAuthenticated, isAdmin, login, restoreSession, sessionEnded, logout, clearUserState }
 })

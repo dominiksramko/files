@@ -46,7 +46,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 
 ## Frontend
 - Stack: Vue3 + TypeScript + Pinia + Vue Router v5 + Tailwind v4
-- API client: `frontend/src/utils/api.ts` (uses fetch; the session cookie goes along by itself). Whether the user is logged in is only known by asking the server (`auth.restoreSession()`), as scripts can't read the cookie.
+- API client: `frontend/src/utils/api.ts` (uses fetch; the session cookie goes along by itself). Whether the user is logged in is only known by asking the server (`auth.restoreSession()`), as scripts can't read the cookie. Any 401 goes to the `onSessionEnded` handler (set in `main.ts`): the app logs out and opens the login page with a way back — new request paths must call `noteStatus(status)` like the others. Leaving for the login page goes through `showLoginAfterLogout()` (`router/index.ts`), which navigates *before* clearing the user's state. Long-open responses (the watch stream) re-check the session with `sessionStillValid(c)`.
 - Stores: `auth.ts` (login/logout, user), `files.ts` (current path + directory listing)
 - Types: `frontend/src/types/index.ts`
 - Dev proxy: Vite proxies `/api` → `http://localhost:8080`
@@ -68,7 +68,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl/2xl
 - **PresetPill.vue** (`components/files/`) — full-width preset list row with left accent border when active, inline delete confirm; used in AdvancedRenamer presets popover. Props: `name`, `template`, `active` (blue left border + bg when current template matches). Emits: `select`, `delete`.
 - **AppIcon.vue** — ALWAYS use for icons; NEVER write inline SVGs. Registry: `frontend/src/utils/icons.ts`. Usage: `<AppIcon name="trash" class="size-4" />`. Optional `stroke-width` prop. To add a new icon, add it to `icons.ts` first.
-- **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted globally in `AppLayout` — no need to add it per-view.
+- **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted once in `App.vue` (so messages show on the login page too) — no need to add it per-view.
 - **AppButton.vue** — ALWAYS use for modal/dialog buttons; NEVER write raw `<button>` elements with inline Tailwind classes in modals. Props: `variant` (`'primary'` | `'destructive'` | `'secondary'` | `'ghost'`, default ghost), `disabled`, `type`. Usage: `<AppButton variant="primary" @click="confirm">Save</AppButton>`. `disabled` automatically adds `opacity-50 cursor-not-allowed`.
 
 ## Editable File Types Convention (IMPORTANT)

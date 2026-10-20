@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { files as filesApi, NotFoundError } from '@/utils/api'
+import { auth as authApi, files as filesApi, NotFoundError } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
 import { debounce } from '@/utils/debounce'
 import type { FileEntry } from '@/types'
@@ -115,6 +115,9 @@ export const useFilesStore = defineStore('files', () => {
         if (watchSource !== source) return
         closeWatchSource()
         scheduleReconnect()
+        // A stream can't tell why it failed. If the session ended, asking the
+        // server about it brings up the login page (which also stops this).
+        authApi.me().catch(() => { /* answered via onSessionEnded, or offline */ })
       }
     })
   }

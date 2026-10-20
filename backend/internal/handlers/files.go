@@ -665,6 +665,16 @@ func userRoot(c *gin.Context) string {
 	return c.GetString("rootDir")
 }
 
+// sessionStillValid reports whether the request's session is still live, for
+// responses that stay open long after the check made when they started. A
+// request without the check (handler tests) counts as live.
+func sessionStillValid(c *gin.Context) bool {
+	if check, ok := c.Get("sessionStillValid"); ok {
+		return check.(func() bool)()
+	}
+	return true
+}
+
 // safePath resolves rel inside root and rejects anything outside it.
 func safePath(root, rel string) (string, error) {
 	if root == "" {

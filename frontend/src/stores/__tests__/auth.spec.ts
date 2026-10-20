@@ -46,14 +46,23 @@ describe('auth store', () => {
     expect(auth.user).toBeNull()
   })
 
-  it("clears the user's files on logout and on a new login", async () => {
+  it("clearUserState drops the user's files; a new login starts clean", async () => {
     vi.spyOn(authApi, 'login').mockResolvedValue({ user: ann })
-    vi.spyOn(authApi, 'logout').mockResolvedValue({ message: 'logged out' })
     const auth = useAuthStore()
     const reset = vi.spyOn(useFilesStore(), 'reset')
-    await auth.logout()
+    await auth.login('ann', 'pw')
     expect(reset).toHaveBeenCalledOnce()
-    await auth.login('bob', 'pw')
+    auth.clearUserState()
+    expect(auth.user).toBeNull()
     expect(reset).toHaveBeenCalledTimes(2)
+  })
+
+  it('logs out when the server says the session ended', async () => {
+    vi.spyOn(authApi, 'login').mockResolvedValue({ user: ann })
+    const auth = useAuthStore()
+    expect(auth.sessionEnded()).toBe(false) // nobody logged in: e.g. a wrong password
+    await auth.login('ann', 'pw')
+    expect(auth.sessionEnded()).toBe(true)
+    expect(auth.user).toBeNull()
   })
 })

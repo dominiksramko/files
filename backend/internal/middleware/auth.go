@@ -16,8 +16,9 @@ const SessionCookie = "files_session"
 
 // Auth lets a request through only with a live session cookie, and puts the
 // user's current details in the context: userID, username, isAdmin, rootDir,
-// plus sessionToken. The cookie is sent again whenever the session's expiry
-// moves, so it keeps alive while used.
+// plus sessionToken, and sessionStillValid (func() bool) for responses that
+// stay open long after this check. The cookie is sent again whenever the
+// session's expiry moves, so it keeps alive while used.
 func Auth(store *sessions.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, _ := c.Cookie(SessionCookie)
@@ -42,6 +43,10 @@ func Auth(store *sessions.Store) gin.HandlerFunc {
 		c.Set("isAdmin", session.User.IsAdmin)
 		c.Set("rootDir", session.User.RootDir)
 		c.Set("sessionToken", token)
+		c.Set("sessionStillValid", func() bool {
+			_, err := store.Lookup(token)
+			return !errors.Is(err, sessions.ErrNoSession)
+		})
 		c.Next()
 	}
 }

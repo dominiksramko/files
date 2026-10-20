@@ -73,4 +73,13 @@ router.beforeEach(async (to) => {
   }
 })
 
+// After the user is logged out (logout, or the session ended): opens the login
+// page, then forgets the user's state. In that order: views still showing the
+// files would react to a cleared listing by rewriting the URL, which would
+// overtake this navigation. With redirect, logging in again returns there.
+export async function showLoginAfterLogout(redirect?: string) {
+  await router.push({ name: 'login', query: redirect ? { redirect } : {} })
+  useAuthStore().clearUserState()
+}
+
 export default router

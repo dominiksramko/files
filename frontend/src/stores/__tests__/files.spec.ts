@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useFilesStore } from '@/stores/files'
+import { auth as authApi } from '@/utils/api'
 import type { FileEntry } from '@/types'
 
 // A stand-in EventSource that records what was opened and closed.
@@ -46,5 +47,14 @@ describe('files store reset', () => {
     window.dispatchEvent(new Event('online'))
     await vi.advanceTimersByTimeAsync(120_000)
     expect(FakeEventSource.opened).toHaveLength(1)
+  })
+
+  it('asks the server about the session when the stream fails', async () => {
+    const me = vi.spyOn(authApi, 'me').mockRejectedValue(new Error('not logged in'))
+    const files = useFilesStore()
+    void files.navigate('docs').catch(() => {})
+    FakeEventSource.opened[0]!.onerror?.()
+    expect(me).toHaveBeenCalledOnce()
+    files.reset()
   })
 })

@@ -174,3 +174,24 @@ func TestAuthRenewsCookieWhileUsed(t *testing.T) {
 		t.Errorf("used after two hours: cookie %+v, want it renewed for another %v", cookie, sessions.IdleTimeout)
 	}
 }
+
+func TestAuthGivesLongResponsesASessionCheck(t *testing.T) {
+	db := testutil.OpenDB(t)
+	store := sessions.NewStore(db)
+	token, _, _ := store.Create(testutil.CreateUser(t, db, "ann", false, ""))
+
+	var stillValid func() bool
+	router := gin.New()
+	router.GET("/", Auth(store), func(c *gin.Context) {
+		check, _ := c.Get("sessionStillValid")
+		stillValid = check.(func() bool)
+	})
+	get(router, token)
+	if !stillValid() {
+		t.Fatal("live session reported as ended")
+	}
+	store.Delete(token)
+	if stillValid() {
+		t.Error("ended session reported as live")
+	}
+}

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AppHeader from './AppHeader.vue'
-import AppToast from '@/components/ui/AppToast.vue'
 import { useSubtitleStyle } from '@/composables/useSubtitleStyle'
 
 useSubtitleStyle()
@@ -12,6 +11,5 @@ useSubtitleStyle()
     <main class="flex-1 overflow-hidden">
       <RouterView />
     </main>
-    <AppToast />
   </div>
 </template>

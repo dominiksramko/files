@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConflictError, fileops, files } from '@/utils/api'
+import { ConflictError, fileops, files, onSessionEnded } from '@/utils/api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -78,5 +78,31 @@ describe('no login token in requests', () => {
     await fileops.delete(['x'])
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(new Headers(init.headers).has('Authorization')).toBe(false)
+  })
+})
+
+describe('onSessionEnded', () => {
+  afterEach(() => onSessionEnded(() => {}))
+
+  it('runs when the server answers 401, and only then', async () => {
+    const ended = vi.fn()
+    onSessionEnded(ended)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'nope' }), { status: 403 })))
+    await fileops.delete(['x']).catch(() => {})
+    expect(ended).not.toHaveBeenCalled()
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not logged in' }), { status: 401 })))
+    await expect(fileops.delete(['x'])).rejects.toThrow('not logged in')
+    await files.readContent('notes.txt').catch(() => {})
+    await files.writeContent('notes.txt', 'x', 'v1').catch(() => {})
+    expect(ended).toHaveBeenCalledTimes(3)
+  })
+
+  it('runs for uploads too', async () => {
+    const ended = vi.fn()
+    onSessionEnded(ended)
+    fakeXhr(401, { error: 'not logged in' })
+    await fileops.upload('', [new File(['x'], 'a.txt')]).promise.catch(() => {})
+    expect(ended).toHaveBeenCalledOnce()
   })
 })

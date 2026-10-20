@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useLayoutStore } from '@/stores/layout'
+import { showLoginAfterLogout } from '@/router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppDropdown from '@/components/ui/AppDropdown.vue'
 
 const auth = useAuthStore()
 const layout = useLayoutStore()
-const router = useRouter()
 
 async function logout() {
   await auth.logout().catch(() => { /* logged out locally anyway */ })
-  router.push('/login')
+  showLoginAfterLogout()
 }
 </script>
 

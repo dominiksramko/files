@@ -16,9 +16,9 @@ import (
 )
 
 // watchPingInterval keeps idle streams alive through proxies and NAT, lets the
-// client notice a dead connection, and lets the server notice a gone client
-// (a write to it fails).
-const watchPingInterval = 25 * time.Second
+// client notice a dead connection, lets the server notice a gone client (a
+// write to it fails), and is when the stream re-checks the session.
+var watchPingInterval = 25 * time.Second // a variable so tests can shorten it
 
 // GET /api/v1/files/watch?path=<folder-rel>
 // SSE endpoint: streams file system events for the given folder, plus thumbnail
@@ -184,7 +184,9 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 			}
 
 		case <-pingTicker.C:
-			if writeEvent("ping", struct{}{}) != nil {
+			// The session was checked when the stream opened; end the stream if
+			// it has ended since (logout elsewhere, password change, user deleted).
+			if !sessionStillValid(c) || writeEvent("ping", struct{}{}) != nil {
 				return
 			}
 

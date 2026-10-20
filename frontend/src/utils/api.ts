@@ -41,6 +41,16 @@ export interface VersionedContent {
   version: string
 }
 
+// Called whenever the server answers 401: the session has ended (expired,
+// logged out elsewhere, password changed, user deleted). main.ts sets it.
+let sessionEndedHandler: (() => void) | null = null
+export function onSessionEnded(handler: () => void) {
+  sessionEndedHandler = handler
+}
+function noteStatus(status: number) {
+  if (status === 401) sessionEndedHandler?.()
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -58,6 +68,7 @@ async function request<T>(
     signal,
   })
 
+  noteStatus(res.status)
   if (res.status === 409) {
     const body = await res.json().catch(() => ({ conflicts: [] as string[] }))
     throw new ConflictError(body.conflicts ?? [])
@@ -143,6 +154,7 @@ export const files = {
       cache: 'no-store',
       signal,
     }).then(async (res) => {
+      noteStatus(res.status)
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(err.error ?? res.statusText)
@@ -162,6 +174,7 @@ export const files = {
       },
       body: content,
     }).then(async (res) => {
+      noteStatus(res.status)
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
         if (res.status === 412) throw new EditConflictError(err.content ?? '', err.version ?? '')
@@ -211,6 +224,7 @@ export const fileops = {
       },
       body: JSON.stringify({ paths }),
     })
+    noteStatus(res.status)
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }))
       throw new Error(err.error ?? res.statusText)
@@ -260,6 +274,7 @@ export const fileops = {
         }
       }
       xhr.onload = () => {
+        noteStatus(xhr.status)
         if (xhr.status >= 200 && xhr.status < 300) {
           try { resolve(JSON.parse(xhr.responseText)) }
           catch { reject(new Error('Invalid response')) }
