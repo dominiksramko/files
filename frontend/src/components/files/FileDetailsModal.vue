@@ -2,14 +2,13 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
+import { fileCategory, formatDate, formatDuration, formatSize, formatSizeProgress, type SizeProgress } from '@/utils/formatters'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 
 const props = defineProps<{ items: FileEntry[] }>()
 const emit = defineEmits<{ close: [] }>()
 
-type SizeProgress = { files: number; dirs: number; bytes: number; done: boolean }
 type MediaMeta = {
   image?: { width: number; height: number }
   video?: { duration: number; width: number; height: number; codec?: string }
@@ -18,6 +17,8 @@ type MediaMeta = {
 const sizeProgress = ref<SizeProgress | null>(null)
 const detailsMedia = ref<MediaMeta | null>(null)
 let sizeEventSource: EventSource | null = null
+// Counts media info requests, so a late answer about a previous file is dropped.
+let mediaRequest = 0
 
 const location = computed(() => {
   if (!props.items.length) return ''
@@ -31,28 +32,7 @@ const location = computed(() => {
 const fileCount = computed(() => props.items.filter((entry) => !entry.is_dir).length)
 const folderCount = computed(() => props.items.filter((entry) => entry.is_dir).length)
 
-const sizeText = computed(() => {
-  if (!sizeProgress.value) return null
-  const { files, dirs, bytes, done } = sizeProgress.value
-  const sizeStr = bytes > 0 ? formatSize(bytes) : (done ? '0 B' : null)
-  const parts: string[] = []
-  if (files > 0) parts.push(`${files.toLocaleString()} file${files !== 1 ? 's' : ''}`)
-  if (dirs > 0) parts.push(`${dirs.toLocaleString()} folder${dirs !== 1 ? 's' : ''}`)
-  if (done && parts.length === 0) return 'Empty'
-  const countStr = parts.length > 0
-    ? `(${!done ? 'scanning… ' : ''}${parts.join(', ')})`
-    : '(scanning…)'
-  if (sizeStr) return `${sizeStr} ${countStr}`.trim()
-  return countStr
-})
-
-function formatDuration(secs: number): string {
-  const hours = Math.floor(secs / 3600)
-  const minutes = Math.floor((secs % 3600) / 60)
-  const seconds = Math.floor(secs % 60)
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
+const sizeText = computed(() => (sizeProgress.value ? formatSizeProgress(sizeProgress.value) : null))
 
 function stopStream() {
   sizeEventSource?.close()
@@ -63,6 +43,7 @@ watch(() => props.items, (items) => {
   stopStream()
   sizeProgress.value = null
   detailsMedia.value = null
+  const request = ++mediaRequest
   if (!items.length) return
 
   const first = items[0]
@@ -75,14 +56,18 @@ watch(() => props.items, (items) => {
       sizeProgress.value = JSON.parse(ev.data)
       if (sizeProgress.value?.done) stopStream()
     }
-    sizeEventSource.onerror = () => stopStream()
+    // The scan stopped before done (server error, connection lost).
+    sizeEventSource.onerror = () => {
+      if (sizeProgress.value && !sizeProgress.value.done) sizeProgress.value = { ...sizeProgress.value, failed: true }
+      stopStream()
+    }
   }
 
   if (first && items.length === 1 && !first.is_dir) {
     const cat = fileCategory(first.mime, first.name)
     if (cat === 'image' || cat === 'video') {
       filesApi.fileMeta(first.path).then((meta) => {
-        detailsMedia.value = meta
+        if (request === mediaRequest) detailsMedia.value = meta
       }).catch(() => {})
     }
   }

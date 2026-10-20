@@ -32,6 +32,40 @@ export function formatSize(bytes: number): string {
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i]
 }
 
+// Formats a length of time as m:ss, or h:mm:ss from an hour on.
+export function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = Math.floor(totalSeconds % 60)
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+// How far a folder size scan got (the /files/size stream); failed: it stopped
+// before done.
+export interface SizeProgress {
+  files: number
+  dirs: number
+  bytes: number
+  done: boolean
+  failed?: boolean
+}
+
+// Describes a size scan: "1.2 MB (3 files, 1 folder)", with "scanning…" while
+// it runs and "incomplete" if it stopped early.
+export function formatSizeProgress({ files, dirs, bytes, done, failed }: SizeProgress): string {
+  const parts: string[] = []
+  if (files > 0) parts.push(`${files.toLocaleString()} file${files !== 1 ? 's' : ''}`)
+  if (dirs > 0) parts.push(`${dirs.toLocaleString()} folder${dirs !== 1 ? 's' : ''}`)
+  if (done && parts.length === 0) return 'Empty'
+  const stopped = failed && !done
+  if (stopped && parts.length === 0 && bytes === 0) return "Couldn't measure"
+  const status = done ? '' : stopped ? 'incomplete: ' : 'scanning… '
+  const counts = parts.length > 0 ? `(${status}${parts.join(', ')})` : stopped ? '(incomplete)' : '(scanning…)'
+  const size = bytes > 0 ? formatSize(bytes) : done ? '0 B' : null
+  return size ? `${size} ${counts}` : counts
+}
+
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     year: 'numeric',

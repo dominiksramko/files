@@ -5,6 +5,7 @@ import Plyr from 'plyr'
 import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
 import { files as filesApi, progress as progressApi } from '@/utils/api'
+import { formatDuration } from '@/utils/formatters'
 import { useToast } from '@/composables/useToast'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
@@ -97,14 +98,6 @@ async function takeScreenshot() {
 // --- Resume prompt ---
 const showResumePrompt = ref(false)
 const savedPosition    = ref(0)
-
-function formatTime(s: number): string {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const ss = Math.floor(s % 60)
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-  return `${m}:${String(ss).padStart(2, '0')}`
-}
 
 function dismissResume() {
   showResumePrompt.value = false
@@ -340,7 +333,7 @@ onBeforeUnmount(() => {
         v-if="showResumePrompt"
         class="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 bg-black/85 backdrop-blur-sm rounded-xl px-4 py-2.5 text-sm whitespace-nowrap"
       >
-        <span class="text-zinc-300">Continue from <span class="font-medium text-white">{{ formatTime(savedPosition) }}</span>?</span>
+        <span class="text-zinc-300">Continue from <span class="font-medium text-white">{{ formatDuration(savedPosition) }}</span>?</span>
         <button
           class="text-zinc-400 hover:text-white transition-colors"
           @click="dismissResume"
