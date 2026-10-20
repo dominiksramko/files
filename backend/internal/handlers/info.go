@@ -92,6 +92,9 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 			continue
 		}
 		fsys.WalkDir(name, func(path string, d fs.DirEntry, err error) error {
+			if c.Request.Context().Err() != nil {
+				return fs.SkipAll // the client is gone (dialog closed): stop walking
+			}
 			if err != nil {
 				return nil
 			}
@@ -111,6 +114,9 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 			}
 			return nil
 		})
+		if c.Request.Context().Err() != nil {
+			return
+		}
 	}
 
 	flush(true)
