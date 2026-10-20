@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"files/internal/loginlimit"
 	"files/internal/middleware"
 	"files/internal/sessions"
 	"files/internal/testutil"
@@ -199,5 +201,80 @@ func TestHLSPlaylistHasNoToken(t *testing.T) {
 	playlist := response.Body.String()
 	if !strings.Contains(playlist, "segment?path=clip.mp4&seq=1\n") || strings.Contains(playlist, "token") {
 		t.Errorf("playlist:\n%s", playlist)
+	}
+}
+
+// loginFrom attempts a login as username from the client address.
+func loginFrom(t *testing.T, router http.Handler, address, username, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := jsonRequest(t, http.MethodPost, "/login", map[string]string{"username": username, "password": password})
+	request.RemoteAddr = address + ":40000"
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestLoginLimitsFailedAttempts(t *testing.T) {
+	db := testutil.OpenDB(t)
+	testutil.CreateUser(t, db, "ann", false, "")
+	router := sessionRouter(db)
+
+	for i := 0; i < loginlimit.MaxFailures; i++ {
+		assertStatus(t, loginFrom(t, router, "203.0.113.9", "ann", "wrong"), http.StatusUnauthorized)
+	}
+	// Refused now, even with the right password, and says how long to wait.
+	response := loginFrom(t, router, "203.0.113.9", "ann", testutil.Password)
+	assertStatus(t, response, http.StatusTooManyRequests)
+	if retry, _ := strconv.Atoi(response.Header().Get("Retry-After")); retry < 14*60 || retry > 15*60 {
+		t.Errorf("Retry-After = %q, want about 15 minutes", response.Header().Get("Retry-After"))
+	}
+	if !strings.Contains(response.Body.String(), "Try again in 15 minutes") {
+		t.Errorf("body = %s", response.Body)
+	}
+	if sessionCookieOf(response) != nil {
+		t.Error("a refused login got a session")
+	}
+}
+
+func TestLoginLimitLeavesOthersAlone(t *testing.T) {
+	db := testutil.OpenDB(t)
+	testutil.CreateUser(t, db, "ann", false, "")
+	testutil.CreateUser(t, db, "bob", false, "")
+	router := sessionRouter(db)
+	for i := 0; i < loginlimit.MaxFailures; i++ {
+		loginFrom(t, router, "203.0.113.9", "ann", "wrong")
+	}
+	// bob, from his own address, logs in as usual; ann's username is slowed
+	// down to one attempt a minute (not locked) from any address.
+	assertStatus(t, loginFrom(t, router, "198.51.100.7", "bob", testutil.Password), http.StatusOK)
+	response := loginFrom(t, router, "198.51.100.8", "ann", testutil.Password)
+	assertStatus(t, response, http.StatusTooManyRequests)
+	if !strings.Contains(response.Body.String(), "in a minute") {
+		t.Errorf("body = %s", response.Body)
+	}
+}
+
+func TestSuccessfulLoginResetsTheCount(t *testing.T) {
+	db := testutil.OpenDB(t)
+	testutil.CreateUser(t, db, "ann", false, "")
+	router := sessionRouter(db)
+	for round := 0; round < 3; round++ {
+		for i := 0; i < loginlimit.MaxFailures-1; i++ {
+			assertStatus(t, loginFrom(t, router, "203.0.113.9", "ann", "typo"), http.StatusUnauthorized)
+		}
+		assertStatus(t, loginFrom(t, router, "203.0.113.9", "ann", testutil.Password), http.StatusOK)
+	}
+}
+
+func TestTooManyAttemptsMessage(t *testing.T) {
+	for wait, want := range map[time.Duration]string{
+		10 * time.Second: "Try again in a minute.",
+		time.Minute:      "Try again in a minute.",
+		61 * time.Second: "Try again in 2 minutes.",
+		15 * time.Minute: "Try again in 15 minutes.",
+	} {
+		if got := tooManyAttemptsMessage(wait); !strings.HasSuffix(got, want) {
+			t.Errorf("%v: %q, want …%q", wait, got, want)
+		}
 	}
 }

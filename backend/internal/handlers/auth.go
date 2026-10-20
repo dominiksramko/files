@@ -3,9 +3,14 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
+	"files/internal/loginlimit"
 	"files/internal/middleware"
 	"files/internal/models"
 	"files/internal/sessions"
@@ -17,14 +22,18 @@ import (
 type AuthHandler struct {
 	db       *sql.DB
 	sessions *sessions.Store
+	limiter  *loginlimit.Limiter
 }
 
 func NewAuthHandler(db *sql.DB, sessionStore *sessions.Store) *AuthHandler {
-	return &AuthHandler{db: db, sessions: sessionStore}
+	return &AuthHandler{db: db, sessions: sessionStore, limiter: loginlimit.New()}
 }
 
 // POST /api/v1/auth/login
-// Starts a session: sets the session cookie and responds with the user.
+// Starts a session: sets the session cookie and responds with the user. Too
+// many failed attempts from one address, or for one username, are refused
+// with 429 for a while (see loginlimit). Failed and refused attempts are
+// logged with the client's address, e.g. for fail2ban.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
@@ -35,16 +44,24 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.fetchUser(req.Username)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
+	address := c.ClientIP()
+	if wait, ok := h.limiter.Begin(address, req.Username); !ok {
+		log.Printf("login refused, too many attempts: user %q from %s", req.Username, address)
+		c.Header("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": tooManyAttemptsMessage(wait)})
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+	user, err := h.fetchUser(req.Username)
+	if err == nil {
+		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
+	}
+	if err != nil {
+		log.Printf("login failed: user %q from %s", req.Username, address)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
+	h.limiter.Succeeded(address, req.Username)
 
 	token, expires, err := h.sessions.Create(user.ID)
 	if err != nil {
@@ -54,6 +71,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	middleware.SetSessionCookie(c, token, expires)
 	c.JSON(http.StatusOK, gin.H{"user": user.ToResponse()})
+}
+
+// tooManyAttemptsMessage tells the user how long to wait, in whole minutes.
+func tooManyAttemptsMessage(wait time.Duration) string {
+	minutes := int(math.Ceil(wait.Minutes()))
+	if minutes <= 1 {
+		return "Too many login attempts. Try again in a minute."
+	}
+	return fmt.Sprintf("Too many login attempts. Try again in %d minutes.", minutes)
 }
 
 // POST /api/v1/auth/logout
