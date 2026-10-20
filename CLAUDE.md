@@ -135,6 +135,8 @@ All conflict flows use a single shared composable + component — do NOT create 
 - Backend `conflict_mode` parameter: `'replace'` maps to replace, `'rename'` maps to keep-all/rename
 
 ## External Tool Dependencies (must be in Dockerfile `runtime-base` stage)
+**Running media tools (IMPORTANT):** ffmpeg, ffprobe and ImageMagick decide a file's format from its contents, and some formats they accept read other files or reach the network — a crafted file could make a thumbnail/preview read another user's files or an internal service (S7). Run them only through `internal/media`: `media.FFprobe(path, opts...)`, `media.FFprobeContext(ctx, …)`, `media.Input(path)` (the guarded `-i` to drop into an ffmpeg arg list), and `media.MagickConvert(args...)`. Never call `exec.Command("ffmpeg"/"ffprobe"/"convert", …)` on a user file directly. Pass tools the checked real location from `fsys.RealPath(name)`, never a raw request path.
+
 Any new CLI tool used by the backend must be added to the `apk add` line in the `runtime-base` stage of `backend/Dockerfile` (Alpine 3.24) — both the production runtime and the dev container build on it — and to the tool check right after it, which fails the build if a tool is missing or broken. Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
