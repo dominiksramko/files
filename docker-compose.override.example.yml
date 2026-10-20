@@ -1,0 +1,24 @@
+# Copy to docker-compose.override.yml and adjust. Docker Compose merges that
+# file into docker-compose.yml automatically; git ignores it, so updates with
+# `git pull` never conflict with your setup.
+services:
+  backend:
+    volumes:
+      # Your folders. Each user's root folder is set in the admin panel (or
+      # ADMIN_PATH on first run); the PUID:PGID user must be able to read and
+      # write them.
+      - /your/files:/data/users/admin
+
+    # ── Reverse proxy in another container ─────────────────────────────────────
+    # Joins the proxy's Docker network, where the proxy reaches the app as
+    # http://files:8080 (e.g. Caddy: `reverse_proxy files:8080`), and stops
+    # publishing the port on this machine.
+    # ports: !reset []
+    # networks:
+    #   default:
+    #   proxy:
+    #     aliases: [files]
+
+# networks:
+#   proxy:
+#     external: true   # the proxy's network, e.g. created with `docker network create proxy`

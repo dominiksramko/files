@@ -24,12 +24,13 @@ services:
       HLS_CACHE_DIR: /data/hls
       GIN_MODE: release
     ports:
-      - "${PORT:-8080}:8080"
+      # Local only by default: a reverse proxy on this machine reaches it, the
+      # network doesn't. BIND_ADDRESS=0.0.0.0 in .env opens it to the network.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
     volumes:
       - db_data:/data
-      # Mount user folders here. Example:
-      # - /host/path/alice:/data/users/alice
-      # - /host/path/bob:/data/users/bob
+      # Mount your folders in docker-compose.override.yml, not here — see
+      # docker-compose.override.example.yml.
 
 volumes:
   db_data:

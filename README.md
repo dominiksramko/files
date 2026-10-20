@@ -106,12 +106,17 @@ ADMIN_PASSWORD=
 ADMIN_PATH=
 ```
 
-2. Mount your files by adding volumes to `docker-compose.yml`:
+2. Mount your files in a `docker-compose.override.yml` next to `docker-compose.yml`. Docker Compose merges it in automatically, and git ignores it, so updating with `git pull` never conflicts with your setup. Start from the example:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
+```
 
 ```yaml
-volumes:
-  - db_data:/data
-  - /your/files:/data/users/admin   # the admin's root folder
+services:
+  backend:
+    volumes:
+      - /your/files:/data/users/admin   # the admin's root folder
 ```
 
 3. Start the container:
@@ -120,11 +125,17 @@ volumes:
 docker compose up -d
 ```
 
-The app is available at `http://localhost:8080`.
+The app is available at `http://localhost:8080` on that machine.
 
-### Reverse proxy
+### Reaching the app
 
-The app listens on port 8080 by default (override with `PORT` in `.env`). Put any reverse proxy in front of it — Caddy, nginx, Traefik, or none at all.
+The port is published on `127.0.0.1` only, so nothing outside the machine reaches the app until you choose how:
+
+- **Reverse proxy on the same machine** (Caddy, nginx, … installed on the host): point it at `localhost:8080`. Nothing else to change.
+- **Reverse proxy in another container** (e.g. a Caddy container): put both on a shared Docker network and drop the published port — the commented section in `docker-compose.override.example.yml` does this, for a proxy pointed at `files:8080`. Needs Docker Compose 2.24.4 or later.
+- **No proxy**: set `BIND_ADDRESS=0.0.0.0` in `.env` to publish the port on the network. Traffic, including passwords, is then unencrypted — only do this on a network you trust.
+
+`PORT` in `.env` changes the published port (default 8080).
 
 ### Configuration
 
