@@ -26,6 +26,7 @@ import AppDropdown from '@/components/ui/AppDropdown.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 import { useArchiveExtract } from '@/composables/useArchiveExtract'
 import { isTypingTarget } from '@/utils/keyboard'
+import { droppedFiles } from '@/utils/drop'
 import { useFileOps } from '@/composables/useFileOps'
 import { useLayoutStore } from '@/stores/layout'
 import { debounce } from '@/utils/debounce'
@@ -568,7 +569,11 @@ async function onDrop(e: DragEvent) {
   e.preventDefault()
   dragCounter.value = 0
   if (!e.dataTransfer?.types.includes('Files')) return
-  const files = Array.from(e.dataTransfer?.files ?? [])
+  const { files, folders } = droppedFiles(e.dataTransfer)
+  if (folders.length) {
+    const skipped = folders.length === 1 ? `"${folders[0]}" was` : `${folders.length} folders were`
+    showToast(`${skipped} left out: folders can't be uploaded`, 'info')
+  }
   if (files.length) await uploadFiles(files)
 }
 
