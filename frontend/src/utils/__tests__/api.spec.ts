@@ -106,3 +106,15 @@ describe('onSessionEnded', () => {
     expect(ended).toHaveBeenCalledOnce()
   })
 })
+
+describe('files.archiveContents', () => {
+  it('sends the password in the body, never in the URL', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify([])))
+    vi.stubGlobal('fetch', fetchMock)
+    await files.archiveContents('docs/locked.7z', 'hunter2')
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/v1/files/archive')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual({ path: 'docs/locked.7z', password: 'hunter2' })
+  })
+})

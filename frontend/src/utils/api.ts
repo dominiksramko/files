@@ -140,11 +140,9 @@ export const files = {
   thumbUrl: (path: string, hash: string) =>
     `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`,
 
+  // POST so the password travels in the body, never in a URL (URLs end up in logs).
   archiveContents: (path: string, password = '') =>
-    request<ArchiveEntry[]>(
-      'GET',
-      `/files/archive${qs({ path, ...(password ? { password } : {}) })}`,
-    ),
+    request<ArchiveEntry[]>('POST', '/files/archive', { path, password }),
 
   extract: (path: string, dest?: string, password?: string, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/extract', { path, dest, password, conflict_mode: conflictMode }),

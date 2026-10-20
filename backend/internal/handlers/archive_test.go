@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -337,7 +338,7 @@ func TestXzAndZstdTarArchives(t *testing.T) {
 		annRoot, _ := newUserFolders(t)
 		writeCompressedTar(t, filepath.Join(annRoot, archive), map[string]string{"bundle/a.txt": "a", "bundle/b.txt": "b"}, wrap)
 
-		listing := serve(NewArchiveHandler().Contents, annRoot, httptest.NewRequest(http.MethodGet, "/?path="+archive, nil))
+		listing := serve(NewArchiveHandler().Contents, annRoot, archiveContentsRequest(t, map[string]string{"path": archive}))
 		assertStatus(t, listing, http.StatusOK)
 		if entries := decodeResponse[[]ArchiveEntry](t, listing); len(entries) != 2 {
 			t.Errorf("%s lists %v, want 2 files", archive, entries)
@@ -413,7 +414,7 @@ func TestZipNamesInOldCodePage(t *testing.T) {
 	// "Café.txt" in CP437: é is 0x82, not valid UTF-8.
 	writeRawNameZip(t, filepath.Join(annRoot, "menu.zip"), []byte("Caf\x82.txt"))
 
-	listing := serve(NewArchiveHandler().Contents, annRoot, httptest.NewRequest(http.MethodGet, "/?path=menu.zip", nil))
+	listing := serve(NewArchiveHandler().Contents, annRoot, archiveContentsRequest(t, map[string]string{"path": "menu.zip"}))
 	if entries := decodeResponse[[]ArchiveEntry](t, listing); len(entries) != 1 || entries[0].Name != "Café.txt" {
 		t.Errorf("listed as %v, want Café.txt", entries)
 	}
@@ -439,4 +440,62 @@ func TestDeleteReportsMissingPaths(t *testing.T) {
 		t.Errorf("body = %s", response.Body)
 	}
 	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes") // nothing deleted
+}
+
+func archiveContentsRequest(t *testing.T, body any) *http.Request {
+	t.Helper()
+	return jsonRequest(t, http.MethodPost, "/", body)
+}
+
+func archiveEntryNames(t *testing.T, response *httptest.ResponseRecorder) []string {
+	t.Helper()
+	var names []string
+	for _, entry := range decodeResponse[[]ArchiveEntry](t, response) {
+		names = append(names, entry.Name)
+	}
+	return names
+}
+
+func TestArchiveContents(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeTestZip(t, filepath.Join(annRoot, "docs/bundle.zip"), map[string]string{"inside.txt": "x"})
+	response := serve(NewArchiveHandler().Contents, annRoot, archiveContentsRequest(t, map[string]string{"path": "docs/bundle.zip"}))
+	assertStatus(t, response, http.StatusOK)
+	if names := archiveEntryNames(t, response); len(names) != 1 || names[0] != "inside.txt" {
+		t.Errorf("entries = %v", names)
+	}
+}
+
+func TestArchiveContentsWithPassword(t *testing.T) {
+	if _, err := exec.LookPath("7z"); err != nil {
+		t.Skip("needs 7z")
+	}
+	annRoot, _ := newUserFolders(t)
+	// -mhe=on encrypts the names too, so nothing is listed without the password.
+	if out, err := exec.Command("7z", "a", "-phunter2", "-mhe=on", filepath.Join(annRoot, "locked.7z"), filepath.Join(annRoot, "notes.txt")).CombinedOutput(); err != nil {
+		t.Fatalf("7z: %v %s", err, out)
+	}
+	handler := NewArchiveHandler().Contents
+
+	response := serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "locked.7z", "password": "hunter2"}))
+	assertStatus(t, response, http.StatusOK)
+	if names := archiveEntryNames(t, response); len(names) != 1 || names[0] != "notes.txt" {
+		t.Errorf("entries = %v", names)
+	}
+	response = serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "locked.7z", "password": "wrong"}))
+	if response.Code == http.StatusOK {
+		t.Errorf("wrong password listed the archive: %s", response.Body.String())
+	}
+}
+
+func TestArchiveContentsRejects(t *testing.T) {
+	annRoot, annaRoot := newUserFolders(t)
+	writeTestZip(t, filepath.Join(annaRoot, "private.zip"), map[string]string{"inside.txt": "x"})
+	handler := NewArchiveHandler().Contents
+	// The path comes from the body only; one in the URL is ignored.
+	fromQuery := httptest.NewRequest(http.MethodPost, "/?path=docs/bundle.zip", nil)
+	assertStatus(t, serve(handler, annRoot, fromQuery), http.StatusBadRequest)
+	assertStatus(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{})), http.StatusBadRequest)
+	assertStatus(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "../anna/private.zip"})), http.StatusBadRequest)
+	assertStatus(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "missing.zip"})), http.StatusNotFound)
 }

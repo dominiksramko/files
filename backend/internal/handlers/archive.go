@@ -300,10 +300,19 @@ type ArchiveEntry struct {
 	IsDir bool   `json:"is_dir"`
 }
 
-// GET /api/v1/files/archive?path=&password=
+// POST /api/v1/files/archive {path, password?}
+// The password travels in the body: URLs end up in server and proxy logs.
 func (h *ArchiveHandler) Contents(c *gin.Context) {
-	password := c.Query("password")
-	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	var req struct {
+		Path     string `json:"path" binding:"required"`
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	password := req.Password
+	fsys, name, ok := requestFolderName(c, req.Path)
 	if !ok {
 		return
 	}

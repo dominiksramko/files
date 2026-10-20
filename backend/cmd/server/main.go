@@ -96,7 +96,7 @@ func main() {
 			authed.PUT("/files/content", filesH.WriteContent)
 			authed.GET("/files/hls/playlist", hlsH.Playlist)
 			authed.GET("/files/hls/segment", hlsH.Segment)
-			authed.GET("/files/archive", archiveH.Contents)
+			authed.POST("/files/archive", archiveH.Contents)
 			authed.POST("/files/extract", archiveH.Extract)
 			authed.POST("/files/compress", archiveH.Compress)
 			authed.DELETE("/files", opsH.Delete)
