@@ -54,20 +54,18 @@ type SubtitleTrack struct {
 //  1. Sibling subtitle files whose name starts with the video's base name.
 //  2. Text-based streams embedded in the file (requires ffprobe; skipped gracefully if absent).
 func (h *SubtitlesHandler) List(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, video, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
 
 	var tracks []SubtitleTrack
 
 	// ── File-based subtitles ──────────────────────────────────────────────────
-	dir := filepath.Dir(abs)
-	base := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(filepath.Base(abs)))
+	dir := filepath.Dir(video)
+	base := strings.TrimSuffix(filepath.Base(video), filepath.Ext(filepath.Base(video)))
 
-	if entries, err := os.ReadDir(dir); err == nil {
+	if entries, err := fsys.ReadDir(dir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
 			tag, ok := subtitleTag(base, name)
@@ -77,12 +75,7 @@ func (h *SubtitlesHandler) List(c *gin.Context) {
 
 			label, srclang := subtitleLangInfo(tag)
 
-			subAbs := filepath.Join(dir, name)
-			subRel, err := filepath.Rel(root, subAbs)
-			if err != nil {
-				continue
-			}
-			subRel = filepath.ToSlash(subRel)
+			subRel := filepath.ToSlash(filepath.Join(dir, name))
 
 			tracks = append(tracks, SubtitleTrack{
 				Label:   label,
@@ -92,8 +85,13 @@ func (h *SubtitlesHandler) List(c *gin.Context) {
 		}
 	}
 
-	// ── Embedded subtitle streams (ffprobe) ───────────────────────────────────
-	if embedded, err := probeSubtitles(abs); err == nil {
+	// ── Embedded subtitle streams (ffprobe, given the real location) ─────────
+	realVideo, err := fsys.RealPath(video)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if embedded, err := probeSubtitles(realVideo); err == nil {
 		for _, s := range embedded {
 			label, srclang := subtitleLangInfo(s.language)
 			if s.title != "" && !strings.EqualFold(s.title, s.language) {
@@ -101,7 +99,7 @@ func (h *SubtitlesHandler) List(c *gin.Context) {
 			}
 			trackURL := fmt.Sprintf(
 				"/api/v1/files/subtitle?path=%s&index=%d",
-				url.QueryEscape(rel), s.index,
+				url.QueryEscape(filepath.ToSlash(video)), s.index,
 			)
 			tracks = append(tracks, SubtitleTrack{
 				Label:   label + " [embedded]",
@@ -125,10 +123,14 @@ func (h *SubtitlesHandler) List(c *gin.Context) {
 //   - ?path=sub.ass          → ffmpeg converts ASS → VTT
 //   - ?path=file.mkv&index=2 → ffmpeg extracts embedded stream 2 → VTT
 func (h *SubtitlesHandler) Stream(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-	abs, err := safePath(root, rel)
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
+		return
+	}
+	// ffmpeg gets the real location, checked to be inside the folder.
+	abs, err := fsys.RealPath(name)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 
@@ -147,7 +149,7 @@ func (h *SubtitlesHandler) Stream(c *gin.Context) {
 		return
 	}
 
-	data, err := os.ReadFile(abs)
+	data, err := fsys.ReadFile(name)
 	if err != nil {
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

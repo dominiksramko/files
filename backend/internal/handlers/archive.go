@@ -154,11 +154,17 @@ func compressZip(fsys *userfs.FS, inputs []string, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	zw := zip.NewWriter(f)
-	defer zw.Close()
+	err = writeZip(fsys, inputs, f)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
 
-	return walkInputs(fsys, inputs, func(e compressEntry) error {
+// writeZip writes a zip of the inputs (and everything in folders among them) to out.
+func writeZip(fsys *userfs.FS, inputs []string, out io.Writer) error {
+	zw := zip.NewWriter(out)
+	err := walkInputs(fsys, inputs, func(e compressEntry) error {
 		header, err := zip.FileInfoHeader(e.info)
 		if err != nil {
 			return err
@@ -181,6 +187,10 @@ func compressZip(fsys *userfs.FS, inputs []string, dest string) error {
 		_, err = io.Copy(w, src)
 		return err
 	})
+	if closeErr := zw.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // --- Compress: TAR / TAR.GZ (pure Go) ---

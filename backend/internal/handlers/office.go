@@ -6,9 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 	"time"
+
+	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
 )
@@ -83,8 +84,7 @@ func (h *OfficeHandler) GenerateToken(c *gin.Context) {
 	}
 
 	root := userRoot(c)
-	if _, err := safePath(root, req.Path); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if _, _, ok := requestFolderName(c, req.Path); !ok {
 		return
 	}
 
@@ -105,18 +105,16 @@ func (h *OfficeHandler) ServeFile(c *gin.Context) {
 		return
 	}
 
-	abs, err := safePath(payload.Root, payload.Path)
+	name, err := userfs.Clean(payload.Path)
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return
 	}
-
-	info, err := os.Stat(abs)
-	if err != nil || info.IsDir() {
+	fsys, err := userfs.Open(payload.Root)
+	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
-
-	setUserFileHeaders(c, abs)
-	c.File(abs)
+	defer fsys.Close()
+	serveUserFile(c, fsys, name, false)
 }

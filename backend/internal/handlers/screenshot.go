@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -25,22 +27,25 @@ type screenshotRequest struct {
 
 // POST /api/v1/files/screenshot
 func (handler *ScreenshotHandler) Take(ctx *gin.Context) {
-	root := userRoot(ctx)
-
 	var req screenshotRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 
-	absVideoPath, err := safePath(root, req.Path)
+	fsys, video, ok := requestFolderName(ctx, req.Path)
+	if !ok {
+		return
+	}
+	// ffmpeg reads the real location, checked to be inside the folder, and
+	// hands the image back; it's saved through fsys under a new name.
+	realVideo, err := fsys.RealPath(video)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
 		return
 	}
 
-	videoDir := filepath.Dir(absVideoPath)
-	videoBase := filepath.Base(absVideoPath)
+	videoBase := filepath.Base(video)
 	videoStem := strings.TrimSuffix(videoBase, filepath.Ext(videoBase))
 
 	totalSeconds := int(req.Timestamp)
@@ -51,19 +56,35 @@ func (handler *ScreenshotHandler) Take(ctx *gin.Context) {
 
 	capturedAt := time.Now().Format("2006-01-02_15_04_05")
 	outputFilename := fmt.Sprintf("%s_%s_%s.png", videoStem, videoTimestamp, capturedAt)
-	absOutputPath := filepath.Join(videoDir, outputFilename)
 
+	var stderr bytes.Buffer
 	cmd := exec.Command("ffmpeg",
 		"-ss", fmt.Sprintf("%.3f", req.Timestamp),
-		"-i", absVideoPath,
+		"-i", realVideo,
 		"-frames:v", "1",
-		"-y",
-		absOutputPath,
+		"-f", "image2pipe", "-c:v", "png",
+		"pipe:1",
 	)
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("screenshot: ffmpeg failed for %q: %v\n%s", req.Path, err, output)
+	cmd.Stderr = &stderr
+	image, err := cmd.Output()
+	if err != nil || len(image) == 0 {
+		log.Printf("screenshot: ffmpeg failed for %q: %v\n%s", req.Path, err, stderr.String())
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "screenshot failed"})
+		return
+	}
+
+	folder := filepath.Dir(video)
+	existing, claimed := buildExistingMap(fsys, folder)
+	outputFilename = findFreeName(outputFilename, existing, claimed)
+	file, err := fsys.OpenFile(filepath.Join(folder, outputFilename), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err == nil {
+		_, err = file.Write(image)
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

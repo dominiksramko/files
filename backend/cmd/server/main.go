@@ -72,7 +72,7 @@ func main() {
 		api.POST("/auth/logout", authH.Logout)
 
 		// Authenticated
-		authed := api.Group("", authMiddleware)
+		authed := api.Group("", authMiddleware, handlers.CloseUserFS())
 		{
 			authed.GET("/auth/me", authH.Me)
 			authed.PUT("/auth/password", authH.ChangePassword)

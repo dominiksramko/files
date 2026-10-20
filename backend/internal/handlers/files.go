@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -62,19 +62,16 @@ type FileEntry struct {
 
 // GET /api/v1/files/list?path=
 func (h *FilesHandler) List(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
 
-	files, err := h.listDir(abs, rel)
+	files, err := h.listDir(fsys, name)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Walk up the path until we find an existing directory.
-			fallback := rel
+			fallback := name
 			for {
 				parent := filepath.Dir(fallback)
 				if parent == "." || parent == fallback {
@@ -82,16 +79,11 @@ func (h *FilesHandler) List(c *gin.Context) {
 					break
 				}
 				fallback = parent
-				absParent, err2 := safePath(root, fallback)
-				if err2 != nil {
-					fallback = ""
-					break
-				}
-				if _, err2 := os.Stat(absParent); err2 == nil {
+				if info, err := fsys.Stat(fallback); err == nil && info.IsDir() {
 					break
 				}
 			}
-			c.JSON(http.StatusNotFound, gin.H{"error": "Directory not found", "fallback_path": fallback})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Directory not found", "fallback_path": filepath.ToSlash(fallback)})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -101,10 +93,13 @@ func (h *FilesHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, files)
 }
 
-// listDir returns the entries of the folder at abs (rel is its path relative to
-// the user root), folders first, then alphabetical.
-func (h *FilesHandler) listDir(abs, rel string) ([]FileEntry, error) {
-	entries, err := os.ReadDir(abs)
+// listDir returns the entries of the folder dir, folders first, then alphabetical.
+func (h *FilesHandler) listDir(fsys *userfs.FS, dir string) ([]FileEntry, error) {
+	entries, err := fsys.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	realDir, err := fsys.RealPath(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +110,7 @@ func (h *FilesHandler) listDir(abs, rel string) ([]FileEntry, error) {
 		if err != nil {
 			continue
 		}
-		files = append(files, h.newFileEntry(filepath.Join(abs, e.Name()), filepath.Join(rel, e.Name()), info))
+		files = append(files, h.newFileEntry(fsys, realDir, filepath.Join(dir, e.Name()), info))
 	}
 
 	sort.Slice(files, func(i, j int) bool {
@@ -127,28 +122,41 @@ func (h *FilesHandler) listDir(abs, rel string) ([]FileEntry, error) {
 	return files, nil
 }
 
-// newFileEntry describes one file or folder. ContentHash is set for every
+// newFileEntry describes the file or folder name, whose info came from a
+// listing of the folder whose real location is realDir ("" to look it up).
+// A symbolic link is described as what it points to — if it can be followed:
+// one leading outside the user's folder (or broken) is listed with no type,
+// no thumbnail and nothing read through it. ContentHash is set for every
 // thumbnailable file so the frontend can match thumb events across duplicate
 // files (same content, different names); HasThumb/ThumbHash once it is ready.
-func (h *FilesHandler) newFileEntry(absPath, relPath string, info os.FileInfo) FileEntry {
+func (h *FilesHandler) newFileEntry(fsys *userfs.FS, realDir, name string, info os.FileInfo) FileEntry {
+	realPath := entryRealPath(fsys, realDir, name, info)
+	if info.Mode()&os.ModeSymlink != 0 && realPath != "" {
+		if target, err := fsys.Stat(name); err == nil {
+			info = target
+		}
+	}
 	mime := ""
-	if !info.IsDir() {
+	if !info.IsDir() && realPath != "" {
 		mime = mimeByExt(filepath.Ext(info.Name()))
 	}
 	fe := FileEntry{
 		Name:       info.Name(),
-		Path:       relPath,
+		Path:       filepath.ToSlash(name),
 		IsDir:      info.IsDir(),
 		Size:       info.Size(),
 		ModTime:    info.ModTime(),
-		CreatedAt:  getBirthTime(absPath),
 		Mime:       mime,
-		CanExtract: CanExtract(info.Name()),
+		CanExtract: realPath != "" && CanExtract(info.Name()),
 	}
+	if realPath == "" {
+		return fe
+	}
+	fe.CreatedAt = getBirthTime(realPath)
 	if h.thumbs != nil && !info.IsDir() && thumbs.IsThumbnailable(mime) {
-		if hash, err := h.thumbs.CachedHash(absPath, info.ModTime().Unix()); err == nil {
+		if hash, err := h.thumbs.CachedHash(realPath, info.ModTime().Unix()); err == nil {
 			fe.ContentHash = hash
-			if _, ok := h.thumbs.HashIfReady(absPath, info.ModTime().Unix()); ok {
+			if _, ok := h.thumbs.HashIfReady(realPath, info.ModTime().Unix()); ok {
 				fe.HasThumb = true
 				fe.ThumbHash = hash
 			}
@@ -157,18 +165,29 @@ func (h *FilesHandler) newFileEntry(absPath, relPath string, info os.FileInfo) F
 	return fe
 }
 
+// entryRealPath is where an entry named name really is: realDir/<its name>
+// for an ordinary entry of a folder already resolved, otherwise looked up
+// through fsys. "" when it can't be followed inside the user's folder.
+func entryRealPath(fsys *userfs.FS, realDir, name string, info os.FileInfo) string {
+	if realDir != "" && info.Mode()&os.ModeSymlink == 0 {
+		return filepath.Join(realDir, info.Name())
+	}
+	realPath, err := fsys.RealPath(name)
+	if err != nil {
+		return ""
+	}
+	return realPath
+}
+
 // GET /api/v1/files/stat?path=
 // Returns a single FileEntry for the given path (file or directory).
 func (h *FilesHandler) Stat(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
 
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil {
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -178,58 +197,72 @@ func (h *FilesHandler) Stat(c *gin.Context) {
 		return
 	}
 
-	fe := h.newFileEntry(abs, rel, info)
-
-	c.JSON(http.StatusOK, fe)
+	c.JSON(http.StatusOK, h.newFileEntry(fsys, "", name, info))
 }
 
 // GET /api/v1/files/download?path=
 func (h *FilesHandler) Download(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
+	serveUserFile(c, fsys, name, true)
+}
 
-	info, err := os.Stat(abs)
+// serveUserFile sends the file name from the user's folder (range-aware), as
+// a download when attachment is set, otherwise inline with the headers that
+// keep it from running as part of the app (setUserFileHeaders).
+func serveUserFile(c *gin.Context, fsys *userfs.FS, name string, attachment bool) {
+	file, err := fsys.Open(name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
 	if err != nil || info.IsDir() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
-
-	c.FileAttachment(abs, filepath.Base(abs))
+	if attachment {
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(name)}))
+	} else {
+		setUserFileHeaders(c, name)
+	}
+	http.ServeContent(c.Writer, c.Request, filepath.Base(name), info.ModTime(), file)
 }
 
 // GET /api/v1/files/stream?path=   (range-aware, for media)
 func (h *FilesHandler) Stream(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
-
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil || info.IsDir() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
 
-	setUserFileHeaders(c, abs)
-	mime := mimeByExt(filepath.Ext(abs))
-	if needsImageConversion(mime) && info.Size() <= convertSizeLimit {
-		h.convertAndStream(c, abs, mime)
-		return
-	}
-	if needsAudioConversion(mime) {
-		h.convertAudioAndStream(c, abs)
+	fileMime := mimeByExt(filepath.Ext(name))
+	convertImage := needsImageConversion(fileMime) && info.Size() <= convertSizeLimit
+	if convertImage || needsAudioConversion(fileMime) {
+		// Converters get the real location, checked to be inside the folder.
+		realPath, err := fsys.RealPath(name)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+		setUserFileHeaders(c, name)
+		if convertImage {
+			h.convertAndStream(c, realPath, fileMime)
+		} else {
+			h.convertAudioAndStream(c, realPath)
+		}
 		return
 	}
 
-	c.File(abs) // Gin handles Range headers automatically
+	serveUserFile(c, fsys, name, false)
 }
 
 // maxEditableSize caps what ReadContent serves and WriteContent accepts.
@@ -246,15 +279,12 @@ func contentVersion(data []byte) string {
 // Returns the file's text with its version in the ETag header; editors send that
 // version back as If-Match when saving.
 func (h *FilesHandler) ReadContent(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
 
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil {
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
@@ -272,12 +302,12 @@ func (h *FilesHandler) ReadContent(c *gin.Context) {
 		return
 	}
 
-	data, err := os.ReadFile(abs)
+	data, err := fsys.ReadFile(name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	setUserFileHeaders(c, abs)
+	setUserFileHeaders(c, name)
 	c.Header("ETag", `"`+contentVersion(data)+`"`)
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
@@ -287,18 +317,15 @@ func (h *FilesHandler) ReadContent(c *gin.Context) {
 // With an If-Match header (the version the edit is based on), the write only
 // happens if the file is still at that version; otherwise 412 with the file's
 // current content and version, so the client can merge and retry. Without
-// If-Match the file is overwritten (used to create new files).
+// If-Match the file is overwritten.
 // Responds with the new version and mod_time.
 func (h *FilesHandler) WriteContent(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
 
-	if info, err := os.Stat(abs); err == nil && info.IsDir() {
+	if info, err := fsys.Stat(name); err == nil && info.IsDir() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path is a directory"})
 		return
 	}
@@ -317,7 +344,7 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 	defer h.contentWriteMu.Unlock()
 
 	if baseVersion := strings.Trim(c.GetHeader("If-Match"), `"`); baseVersion != "" {
-		current, err := os.ReadFile(abs)
+		current, err := fsys.ReadFile(name)
 		if err != nil {
 			if os.IsNotExist(err) {
 				c.JSON(http.StatusNotFound, gin.H{"error": "file no longer exists"})
@@ -336,12 +363,12 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		}
 	}
 
-	if err := os.WriteFile(abs, body, 0o644); err != nil {
+	if err := fsys.WriteFile(name, body, 0o644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -352,13 +379,23 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 // POST /api/v1/files/download-zip   body: { "paths": ["rel/path1", ...] }
 // Zips the requested paths into a temp file, serves it, then deletes it.
 func (h *FilesHandler) DownloadZip(c *gin.Context) {
-	root := userRoot(c)
-
 	var body struct {
 		Paths []string `json:"paths"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || len(body.Paths) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "paths required"})
+		return
+	}
+	names := make([]string, len(body.Paths))
+	for i, rel := range body.Paths {
+		var ok bool
+		if names[i], ok = requestName(c, rel); !ok {
+			return
+		}
+	}
+	fsys, err := userFS(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -370,68 +407,18 @@ func (h *FilesHandler) DownloadZip(c *gin.Context) {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	zw := zip.NewWriter(tmp)
-	for _, rel := range body.Paths {
-		abs, err := safePath(root, rel)
-		if err != nil {
-			tmp.Close()
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if err := addToZip(zw, abs, filepath.Base(abs)); err != nil {
-			tmp.Close()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	err = writeZip(fsys, names, tmp)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
 	}
-	if err := zw.Close(); err != nil {
-		tmp.Close()
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	tmp.Close()
 
 	c.FileAttachment(tmpName, "download.zip")
 }
 
-func addToZip(zw *zip.Writer, abs, name string) error {
-	info, err := os.Stat(abs)
-	if err != nil {
-		return err
-	}
-	if info.IsDir() {
-		entries, err := os.ReadDir(abs)
-		if err != nil {
-			return err
-		}
-		for _, e := range entries {
-			if err := addToZip(zw, filepath.Join(abs, e.Name()), name+"/"+e.Name()); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	f, err := os.Open(abs)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	hdr, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return err
-	}
-	hdr.Name = name
-	hdr.Method = zip.Deflate
-
-	w, err := zw.CreateHeader(hdr)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(w, f)
-	return err
-}
 
 // convertSizeLimit is the maximum file size for on-the-fly image conversion.
 // Files larger than this are served raw; the browser will show its own error.
@@ -584,7 +571,6 @@ func (h *FilesHandler) Search(c *gin.Context) {
 	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	basePath := c.Query("path")
 	showHidden := c.Query("hidden") == "true"
-	root := userRoot(c)
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -601,7 +587,17 @@ func (h *FilesHandler) Search(c *gin.Context) {
 		return
 	}
 
-	abs, err := safePath(root, basePath)
+	base, err := userfs.Clean(basePath)
+	if err != nil {
+		done()
+		return
+	}
+	fsys, err := userFS(c)
+	if err != nil {
+		done()
+		return
+	}
+	realBase, err := fsys.RealPath(base)
 	if err != nil {
 		done()
 		return
@@ -611,8 +607,8 @@ func (h *FilesHandler) Search(c *gin.Context) {
 	const maxResults = 200
 	count := 0
 
-	_ = filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || path == abs {
+	_ = fsys.WalkDir(base, func(name string, d fs.DirEntry, err error) error {
+		if err != nil || name == base {
 			return nil
 		}
 		if !showHidden && strings.HasPrefix(d.Name(), ".") {
@@ -634,20 +630,23 @@ func (h *FilesHandler) Search(c *gin.Context) {
 			if ierr != nil {
 				return nil
 			}
-			rel, _ := filepath.Rel(root, path)
-			mime := ""
-			if !d.IsDir() {
-				mime = mimeByExt(filepath.Ext(d.Name()))
+			rel, _ := filepath.Rel(base, name)
+			realPath := entryRealPath(fsys, filepath.Join(realBase, filepath.Dir(rel)), name, info)
+			fileMime := ""
+			if !d.IsDir() && realPath != "" {
+				fileMime = mimeByExt(filepath.Ext(d.Name()))
 			}
 			entry := FileEntry{
 				Name:       d.Name(),
-				Path:       rel,
+				Path:       filepath.ToSlash(name),
 				IsDir:      d.IsDir(),
 				Size:       info.Size(),
 				ModTime:    info.ModTime(),
-				CreatedAt:  getBirthTime(path),
-				Mime:       mime,
-				CanExtract: CanExtract(d.Name()),
+				Mime:       fileMime,
+				CanExtract: realPath != "" && CanExtract(d.Name()),
+			}
+			if realPath != "" {
+				entry.CreatedAt = getBirthTime(realPath)
 			}
 			data, _ := json.Marshal(entry)
 			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
@@ -761,46 +760,6 @@ func sessionStillValid(c *gin.Context) bool {
 		return check.(func() bool)()
 	}
 	return true
-}
-
-// safePath resolves rel inside root and rejects anything outside it.
-func safePath(root, rel string) (string, error) {
-	if root == "" {
-		return "", fmt.Errorf("user has no root directory configured")
-	}
-	abs := filepath.Clean(filepath.Join(root, rel))
-	if !isWithin(filepath.Clean(root), abs) {
-		return "", fmt.Errorf("path traversal detected")
-	}
-	return abs, nil
-}
-
-// safeChildPath is safePath for an item that gets created, replaced, renamed,
-// moved or deleted: it also rejects root itself. Those operations act on the
-// item's parent folder too, and root's parent holds the other users' folders.
-func safeChildPath(root, rel string) (string, error) {
-	abs, err := safePath(root, rel)
-	if err != nil {
-		return "", err
-	}
-	if abs == filepath.Clean(root) {
-		return "", fmt.Errorf("the root folder itself can't be changed")
-	}
-	return abs, nil
-}
-
-// safeChildPaths resolves each of rels with safeChildPath, failing on the first
-// bad one — check them all before touching any.
-func safeChildPaths(root string, rels []string) ([]string, error) {
-	paths := make([]string, 0, len(rels))
-	for _, rel := range rels {
-		abs, err := safeChildPath(root, rel)
-		if err != nil {
-			return nil, err
-		}
-		paths = append(paths, abs)
-	}
-	return paths, nil
 }
 
 // setUserFileHeaders protects a response that returns a user's file inline,

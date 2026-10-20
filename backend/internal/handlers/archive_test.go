@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// writeZip creates a zip archive at path holding files (name → content).
-func writeZip(t *testing.T, path string, files map[string]string) {
+// writeTestZip creates a zip archive at path holding files (name → content).
+func writeTestZip(t *testing.T, path string, files map[string]string) {
 	t.Helper()
 	archive, err := os.Create(path)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestCompressRejectsRootAndOutsideDestinations(t *testing.T) {
 
 func TestExtract(t *testing.T) {
 	annRoot, _ := newUserFolders(t)
-	writeZip(t, filepath.Join(annRoot, "docs/photos.zip"), map[string]string{"a.txt": "a", "b.txt": "b"})
+	writeTestZip(t, filepath.Join(annRoot, "docs/photos.zip"), map[string]string{"a.txt": "a", "b.txt": "b"})
 	response := serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "docs/photos.zip"})
 	assertStatus(t, response, http.StatusOK)
 	assertFileContent(t, filepath.Join(annRoot, "docs/photos/a.txt"), "a")
@@ -126,7 +126,7 @@ func TestExtractArchiveWithoutBaseName(t *testing.T) {
 	// An archive named just ".zip" extracts into the folder it's in, which at
 	// the top is the home folder itself.
 	annRoot, annaRoot := newUserFolders(t)
-	writeZip(t, filepath.Join(annRoot, ".zip"), map[string]string{"only.txt": "x"})
+	writeTestZip(t, filepath.Join(annRoot, ".zip"), map[string]string{"only.txt": "x"})
 	response := serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": ".zip", "conflict_mode": "replace"})
 	assertStatus(t, response, http.StatusBadRequest)
 	assertUnchanged(t, annRoot, annaRoot)
@@ -175,7 +175,7 @@ func TestExtractFailureKeepsExistingFolder(t *testing.T) {
 
 func TestExtractSingleFileNextToExistingOne(t *testing.T) {
 	annRoot, _ := newUserFolders(t)
-	writeZip(t, filepath.Join(annRoot, "report.zip"), map[string]string{"notes.txt": "from archive"})
+	writeTestZip(t, filepath.Join(annRoot, "report.zip"), map[string]string{"notes.txt": "from archive"})
 
 	assertConflicts(t, extract(t, annRoot, "report.zip", "error"), "notes.txt")
 	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes")
@@ -194,7 +194,7 @@ func TestExtractIntoExistingFolder(t *testing.T) {
 	setup := func(t *testing.T) string {
 		annRoot, _ := newUserFolders(t)
 		writeFiles(t, annRoot, map[string]string{"photos/a.txt": "old a", "photos/keep.txt": "keep"})
-		writeZip(t, filepath.Join(annRoot, "photos.zip"), map[string]string{"a.txt": "new a", "b.txt": "new b"})
+		writeTestZip(t, filepath.Join(annRoot, "photos.zip"), map[string]string{"a.txt": "new a", "b.txt": "new b"})
 		return annRoot
 	}
 
@@ -221,7 +221,7 @@ func TestExtractIntoExistingFolder(t *testing.T) {
 func TestExtractFolderNameTakenByFile(t *testing.T) {
 	annRoot, _ := newUserFolders(t)
 	writeFiles(t, annRoot, map[string]string{"photos": "a file"})
-	writeZip(t, filepath.Join(annRoot, "photos.zip"), map[string]string{"a.txt": "a", "b.txt": "b"})
+	writeTestZip(t, filepath.Join(annRoot, "photos.zip"), map[string]string{"a.txt": "a", "b.txt": "b"})
 
 	assertConflicts(t, extract(t, annRoot, "photos.zip", "error"), "photos")
 	assertStatus(t, extract(t, annRoot, "photos.zip", "rename"), http.StatusOK)
@@ -232,14 +232,14 @@ func TestExtractFolderNameTakenByFile(t *testing.T) {
 func TestExtractSingleFolder(t *testing.T) {
 	// project.zip holding project/… extracts to project/, not project/project/.
 	annRoot, _ := newUserFolders(t)
-	writeZip(t, filepath.Join(annRoot, "project.zip"), map[string]string{"project/main.go": "package main"})
+	writeTestZip(t, filepath.Join(annRoot, "project.zip"), map[string]string{"project/main.go": "package main"})
 	assertStatus(t, extract(t, annRoot, "project.zip", "error"), http.StatusOK)
 	assertFileContent(t, filepath.Join(annRoot, "project/main.go"), "package main")
 }
 
 func TestExtractToExplicitDestination(t *testing.T) {
 	annRoot, _ := newUserFolders(t)
-	writeZip(t, filepath.Join(annRoot, "one.zip"), map[string]string{"only.txt": "only"})
+	writeTestZip(t, filepath.Join(annRoot, "one.zip"), map[string]string{"only.txt": "only"})
 	response := serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "one.zip", "dest": "docs/out"})
 	assertStatus(t, response, http.StatusOK)
 	assertFileContent(t, filepath.Join(annRoot, "docs/out/only.txt"), "only")

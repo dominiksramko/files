@@ -35,15 +35,19 @@ func NewHLSHandler(cacheDir string) *HLSHandler {
 
 // GET /api/v1/files/hls/playlist?path=
 func (h *HLSHandler) Playlist(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	rel := c.Query("path")
+	fsys, name, ok := requestFolderName(c, rel)
+	if !ok {
 		return
 	}
-
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil || info.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+	// ffmpeg gets the real location, checked to be inside the folder.
+	abs, err := fsys.RealPath(name)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}
@@ -89,15 +93,19 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 
 // GET /api/v1/files/hls/segment?path=...&seq=0
 func (h *HLSHandler) Segment(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	rel := c.Query("path")
+	fsys, name, ok := requestFolderName(c, rel)
+	if !ok {
 		return
 	}
-
-	info, err := os.Stat(abs)
+	info, err := fsys.Stat(name)
 	if err != nil || info.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+		return
+	}
+	// ffmpeg gets the real location, checked to be inside the folder.
+	abs, err := fsys.RealPath(name)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
 		return
 	}

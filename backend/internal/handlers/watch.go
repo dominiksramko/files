@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -32,14 +31,14 @@ var watchPingInterval = 25 * time.Second // a variable so tests can shorten it
 //	event: thumb    data: {"hash":"<hash>"}
 //	event: ping     data: {}
 func (h *FilesHandler) Watch(c *gin.Context) {
-	root, rel := userRoot(c), c.Query("path")
-
-	folderAbs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	rel := c.Query("path")
+	fsys, folder, ok := requestFolderName(c, rel)
+	if !ok {
 		return
 	}
-	if _, err := os.Stat(folderAbs); err != nil {
+	// The watcher needs the folder's real location (checked to be inside).
+	folderAbs, err := fsys.RealPath(folder)
+	if info, statErr := fsys.Stat(folder); err != nil || statErr != nil || !info.IsDir() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "directory not found"})
 		return
 	}
@@ -72,7 +71,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 	if h.thumbs != nil {
 		thumbCh, thumbUnsub = h.thumbs.Hub().Subscribe(folderAbs)
 		defer thumbUnsub()
-		go enqueueFolder(h.thumbs, root, rel, folderAbs)
+		go enqueueFolder(h.thumbs, fsys, folder, folderAbs)
 	}
 
 	// A failed write means the client is gone; the handler returns.
@@ -89,19 +88,21 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 	}
 
 	sendSnapshot := func() error {
-		files, err := h.listDir(folderAbs, rel)
+		files, err := h.listDir(fsys, folder)
 		if err != nil {
 			return err
 		}
 		return writeEvent("snapshot", files)
 	}
 
-	buildEntry := func(absPath, relPath string) (FileEntry, bool) {
-		info, err := os.Lstat(absPath) // Lstat, like the listing's DirEntry.Info
+	// buildEntry describes the entry name in the folder, and returns its real
+	// location ("" for a link that can't be followed inside the user's folder).
+	buildEntry := func(name string) (FileEntry, string, bool) {
+		info, err := fsys.Lstat(name) // Lstat, like the listing's DirEntry.Info
 		if err != nil {
-			return FileEntry{}, false
+			return FileEntry{}, "", false
 		}
-		return h.newFileEntry(absPath, relPath, info), true
+		return h.newFileEntry(fsys, folderAbs, name, info), entryRealPath(fsys, folderAbs, name, info), true
 	}
 
 	type pending struct {
@@ -122,24 +123,23 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 			}
 			delete(debounce, name)
 
-			entryAbs := filepath.Join(folderAbs, name)
-			entryRel := filepath.Join(rel, name)
+			entryName := filepath.Join(folder, name)
 
 			if p.op.Has(fsnotify.Create) {
-				if fe, ok := buildEntry(entryAbs, entryRel); ok {
+				if fe, entryAbs, ok := buildEntry(entryName); ok {
 					if err := writeEvent("add", fe); err != nil {
 						return err
 					}
-					if h.thumbs != nil && !fe.IsDir && thumbs.IsThumbnailable(fe.Mime) {
-						h.thumbs.CheckAndEnqueue(entryAbs, entryRel, folderAbs, fe.Mime, fe.ModTime.Unix())
+					if h.thumbs != nil && entryAbs != "" && !fe.IsDir && thumbs.IsThumbnailable(fe.Mime) {
+						h.thumbs.CheckAndEnqueue(entryAbs, fe.Path, folderAbs, fe.Mime, fe.ModTime.Unix())
 					}
 				}
 			} else if p.op.Has(fsnotify.Remove) || p.op.Has(fsnotify.Rename) {
-				if err := writeEvent("remove", map[string]string{"path": entryRel}); err != nil {
+				if err := writeEvent("remove", map[string]string{"path": filepath.ToSlash(entryName)}); err != nil {
 					return err
 				}
 			} else if p.op.Has(fsnotify.Write) || p.op.Has(fsnotify.Chmod) {
-				if fe, ok := buildEntry(entryAbs, entryRel); ok {
+				if fe, _, ok := buildEntry(entryName); ok {
 					if err := writeEvent("update", fe); err != nil {
 						return err
 					}

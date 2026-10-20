@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 
 	"files/internal/thumbs"
+	"files/internal/userfs"
 )
 
 type ThumbnailHandler struct {
@@ -28,21 +28,22 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	root, rel := userRoot(c), c.Query("path")
 	claimedHash := c.Query("hash")
-
 	if claimedHash == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "hash is required"})
 		return
 	}
 
-	absPath, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
-
-	fi, err := os.Stat(absPath)
+	fi, err := fsys.Stat(name)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	absPath, err := fsys.RealPath(name)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
@@ -65,29 +66,33 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 	c.File(thumbPath)
 }
 
-// enqueueFolder scans a folder and enqueues thumbnail generation for all
-// thumbnailable files. Called asynchronously when the watch stream connects.
-func enqueueFolder(svc *thumbs.Service, _, rel, folderAbs string) {
-	entries, err := os.ReadDir(folderAbs)
+// enqueueFolder enqueues thumbnail generation for every thumbnailable file in
+// the folder (folderAbs is its real location). Links are resolved through
+// fsys: one that can't be followed inside the user's folder gets no
+// thumbnail. Called asynchronously when the watch stream connects.
+func enqueueFolder(svc *thumbs.Service, fsys *userfs.FS, folder, folderAbs string) {
+	entries, err := fsys.ReadDir(folder)
 	if err != nil {
 		return
 	}
 
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
+		name := filepath.Join(folder, e.Name())
 		info, err := e.Info()
 		if err != nil {
+			continue
+		}
+		entryAbs := entryRealPath(fsys, folderAbs, name, info)
+		if entryAbs == "" {
+			continue
+		}
+		if info, err = fsys.Stat(name); err != nil || info.IsDir() {
 			continue
 		}
 		mime := mimeByExt(filepath.Ext(e.Name()))
 		if !thumbs.IsThumbnailable(mime) {
 			continue
 		}
-
-		entryAbs := filepath.Join(folderAbs, e.Name())
-		entryRel := filepath.Join(rel, e.Name())
-		svc.CheckAndEnqueue(entryAbs, entryRel, folderAbs, mime, info.ModTime().Unix())
+		svc.CheckAndEnqueue(entryAbs, filepath.ToSlash(name), folderAbs, mime, info.ModTime().Unix())
 	}
 }

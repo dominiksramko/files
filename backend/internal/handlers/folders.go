@@ -3,8 +3,9 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
-	"os"
 	"path/filepath"
+
+	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,15 +48,13 @@ func (h *FoldersHandler) GetPref(c *gin.Context) {
 	}
 
 	// No preference stored — auto-detect from directory contents
-	root := userRoot(c)
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, folder, ok := requestFolderName(c, rel)
+	if !ok {
 		return
 	}
 
 	var persist bool
-	viewMode, persist = autoDetectViewMode(abs)
+	viewMode, persist = autoDetectViewMode(fsys, folder)
 
 	// Only persist when the folder has files — empty folders should re-detect on next visit
 	if persist {
@@ -103,8 +102,8 @@ func (h *FoldersHandler) SetPref(c *gin.Context) {
 
 // autoDetectViewMode returns the detected view mode and whether it should be
 // persisted. Empty folders return ("list", false) so they re-detect on next visit.
-func autoDetectViewMode(dir string) (mode string, persist bool) {
-	entries, err := os.ReadDir(dir)
+func autoDetectViewMode(fsys *userfs.FS, dir string) (mode string, persist bool) {
+	entries, err := fsys.ReadDir(dir)
 	if err != nil {
 		return "list", false
 	}

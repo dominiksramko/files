@@ -7,13 +7,15 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"io/fs"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
 	_ "golang.org/x/image/tiff"
@@ -46,7 +48,6 @@ type FileMeta struct {
 // Streams SSE events with a running total of files, directories, and bytes
 // as it recursively walks all requested paths. Clients should use EventSource.
 func (h *InfoHandler) SizeStream(c *gin.Context) {
-	root := userRoot(c)
 	rels := c.QueryArray("paths[]")
 
 	c.Header("Content-Type", "text/event-stream")
@@ -70,12 +71,17 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 		c.Writer.Flush()
 	}
 
+	fsys, err := userFS(c)
+	if err != nil {
+		flush(true)
+		return
+	}
 	for _, rel := range rels {
-		abs, err := safePath(root, rel)
+		name, err := userfs.Clean(rel)
 		if err != nil {
 			continue
 		}
-		fi, err := os.Stat(abs)
+		fi, err := fsys.Stat(name)
 		if err != nil {
 			continue
 		}
@@ -85,12 +91,12 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 			n++
 			continue
 		}
-		filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
+		fsys.WalkDir(name, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
 			if d.IsDir() {
-				if path != abs {
+				if path != name {
 					p.Dirs++
 				}
 			} else {
@@ -115,44 +121,42 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 // Returns media metadata for a single file: image resolution or video
 // duration/resolution/codec. Empty object {} if the file has no media info.
 func (h *InfoHandler) Meta(c *gin.Context) {
-	root := userRoot(c)
-	rel := c.Query("path")
-
-	abs, err := safePath(root, rel)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
 		return
 	}
-	fi, err := os.Stat(abs)
+	fi, err := fsys.Stat(name)
 	if err != nil || fi.IsDir() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "not a file"})
 		return
 	}
 
-	mime := mimeByExt(filepath.Ext(abs))
+	mime := mimeByExt(filepath.Ext(name))
 	var result FileMeta
 
 	switch {
 	case strings.HasPrefix(mime, "image/"):
-		if w, h, err := probeImage(abs); err == nil {
-			result.Image = &ImageMeta{Width: w, Height: h}
+		if file, err := fsys.Open(name); err == nil {
+			if w, h, err := imageSize(file); err == nil {
+				result.Image = &ImageMeta{Width: w, Height: h}
+			}
+			file.Close()
 		}
 	case strings.HasPrefix(mime, "video/"):
-		if vm, err := probeVideo(abs); err == nil {
-			result.Video = vm
+		// ffprobe gets the real location, checked to be inside the folder.
+		if realPath, err := fsys.RealPath(name); err == nil {
+			if vm, err := probeVideo(realPath); err == nil {
+				result.Video = vm
+			}
 		}
 	}
 
 	c.JSON(http.StatusOK, result)
 }
 
-func probeImage(path string) (int, int, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0, 0, err
-	}
-	defer f.Close()
-	cfg, _, err := image.DecodeConfig(f)
+// imageSize reads an image's width and height from its header.
+func imageSize(content io.Reader) (int, int, error) {
+	cfg, _, err := image.DecodeConfig(content)
 	if err != nil {
 		return 0, 0, err
 	}

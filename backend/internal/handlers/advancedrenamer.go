@@ -322,9 +322,16 @@ func collectFileVars(absPath string, index int, referenced map[string]bool) temp
 	return vars
 }
 
+// collectImageVars reads image metadata from absPath, a real location already
+// checked to be inside the user's folder.
 func collectImageVars(absPath string, vars templateVars) {
-	// Width / height via the standard image package (already used by probeImage).
-	if width, height, err := probeImage(absPath); err == nil {
+	// Width / height via the standard image package (as for the info panel).
+	file, err := os.Open(absPath)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	if width, height, err := imageSize(file); err == nil {
 		vars["width"] = strconv.Itoa(width)
 		vars["height"] = strconv.Itoa(height)
 		mp := float64(width*height) / 1_000_000.0
