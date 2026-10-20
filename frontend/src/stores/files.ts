@@ -170,8 +170,10 @@ export const useFilesStore = defineStore('files', () => {
   // overwrite the listing of the folder navigated to since.
   let navigationId = 0
 
-  // Returns the path actually navigated to (may differ from requested path if not found).
-  async function navigate(path: string): Promise<string> {
+  // Returns the path actually navigated to (may differ from requested path if
+  // not found), or null when another navigation took over before this one
+  // finished: that one decides where the app is.
+  async function navigate(path: string): Promise<string | null> {
     const thisNavigation = ++navigationId
     const isStale = () => thisNavigation !== navigationId
     currentPath.value = path // update immediately so watchers see the new path before entries load
@@ -181,16 +183,16 @@ export const useFilesStore = defineStore('files', () => {
       await openWatch(path)
       return path
     } catch {
-      if (isStale()) return currentPath.value
+      if (isStale()) return null
       // The stream failed before its snapshot (it keeps retrying on its own);
       // the list endpoint says why, and where to go if the folder is gone.
       try {
         const listing = await filesApi.list(path)
-        if (isStale()) return currentPath.value
+        if (isStale()) return null
         entries.value = listing
         return path
       } catch (e: unknown) {
-        if (isStale()) return currentPath.value
+        if (isStale()) return null
         if (e instanceof NotFoundError && e.fallbackPath !== path) {
           showToast(e.message, 'error')
           return navigate(e.fallbackPath)

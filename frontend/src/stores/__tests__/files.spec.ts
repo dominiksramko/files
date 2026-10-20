@@ -28,6 +28,34 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('files store navigate', () => {
+  it('answers null to a navigation another one took over, so it decides nothing', async () => {
+    const files = useFilesStore()
+    const toVideos = files.navigate('media/videos')
+    const toMedia = files.navigate('media')
+    FakeEventSource.opened[1]!.emit('snapshot', [])
+    expect(await toVideos).toBeNull()
+    expect(await toMedia).toBe('media')
+    expect(files.currentPath).toBe('media')
+    files.reset()
+  })
+
+  it('answers null when it took over during the listing fallback', async () => {
+    const listAnswers: ((entries: FileEntry[]) => void)[] = []
+    vi.spyOn(filesApi, 'list').mockImplementation(() => new Promise((resolve) => { listAnswers.push(resolve) }))
+    const files = useFilesStore()
+    const toDocs = files.navigate('docs')
+    FakeEventSource.opened[0]!.onerror?.()
+    await Promise.resolve()
+    const toHome = files.navigate('')
+    listAnswers.forEach((answer) => answer([]))
+    expect(await toDocs).toBeNull()
+    FakeEventSource.opened[1]!.emit('snapshot', [])
+    expect(await toHome).toBe('')
+    files.reset()
+  })
+})
+
 describe('files store reset', () => {
   it('closes the live stream, drops the listing and never reconnects', async () => {
     const files = useFilesStore()

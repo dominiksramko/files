@@ -250,6 +250,7 @@ function routeQuery() {
 
 async function navigate(path: string) {
   const actualPath = await filesStore.navigate(path)
+  if (actualPath === null) return
   fetchFolderPref(actualPath)
   selectedPaths.value = []
   lastAnchorPath.value = null
@@ -282,6 +283,9 @@ watch(
     const p = (q.path as string) || ''
     if (p !== filesStore.currentPath) {
       const actualPath = await filesStore.navigate(p)
+      // The URL moved on meanwhile (Back pressed while loading): its own
+      // run of this watcher takes over.
+      if (actualPath === null) return
       fetchFolderPref(actualPath)
       selectedPaths.value = []
       lastAnchorPath.value = null
@@ -897,9 +901,9 @@ useHeaderCenter('HeaderBreadcrumb', () => h(FileBreadcrumb, {
 onMounted(async () => {
   const initialPath = (route.query.path as string) || ''
   const actualPath = await filesStore.navigate(initialPath)
-  fetchFolderPref(actualPath)
-  if (actualPath !== initialPath) {
-    router.replace({ query: actualPath ? { path: actualPath } : {} })
+  if (actualPath !== null) {
+    fetchFolderPref(actualPath)
+    if (actualPath !== initialPath) router.replace({ query: actualPath ? { path: actualPath } : {} })
   }
   if (route.query.preview) previewFilePath.value = route.query.preview as string
   previewRawText.value = route.query.view === 'text'
