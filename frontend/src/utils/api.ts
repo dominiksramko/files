@@ -2,6 +2,11 @@ import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePrevie
 
 const BASE = '/api/v1'
 
+// How an operation treats names that are already taken: 'error' refuses with
+// ConflictError (the default), 'replace' overwrites, 'rename' keeps both by
+// giving the new item a " (n)" name.
+export type ConflictMode = 'error' | 'replace' | 'rename'
+
 export class ConflictError extends Error {
   conflicts: string[]
   constructor(conflicts: string[]) {
@@ -134,7 +139,7 @@ export const files = {
       `/files/archive${qs({ path, ...(password ? { password } : {}) })}`,
     ),
 
-  extract: (path: string, dest?: string, password?: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+  extract: (path: string, dest?: string, password?: string, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/extract', { path, dest, password, conflict_mode: conflictMode }),
 
   readContent: (path: string, signal?: AbortSignal): Promise<VersionedContent> =>
@@ -225,10 +230,10 @@ export const fileops = {
     return res.blob()
   },
 
-  copy: (paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+  copy: (paths: string[], dest: string, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/copy', { paths, dest, conflict_mode: conflictMode }),
 
-  move: (paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+  move: (paths: string[], dest: string, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/move', { paths, dest, conflict_mode: conflictMode }),
 
   mkdir: (path: string) =>
@@ -236,19 +241,21 @@ export const fileops = {
 
   // Creates an empty file; throws ConflictError when the name is taken (unless
   // conflictMode says otherwise). Resolves to the name it was created under.
-  create: (path: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+  create: (path: string, conflictMode: ConflictMode = 'error') =>
     request<{ name: string }>('POST', '/files/create', { path, conflict_mode: conflictMode }),
 
-  rename: (path: string, name: string) =>
-    request<{ message: string }>('POST', '/files/rename', { path, name }),
+  // Resolves with the name the item ended up with.
+  rename: (path: string, name: string, conflictMode: ConflictMode = 'error') =>
+    request<{ message: string; name: string }>('POST', '/files/rename', { path, name, conflict_mode: conflictMode }),
 
-  compress: (paths: string[], dest: string, format: string, password?: string, protectFilenames?: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') =>
+  compress: (paths: string[], dest: string, format: string, password?: string, protectFilenames?: boolean, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/compress', { paths, dest, format, password, protect_filenames: protectFilenames, conflict_mode: conflictMode }),
 
   upload: (
     path: string,
     files: File[],
     onProgress?: (loaded: number, total: number) => void,
+    conflictMode: ConflictMode = 'error',
   ): { promise: Promise<{ message: string; count: number }>; abort: () => void } => {
     let xhr: XMLHttpRequest
     const promise = new Promise<{ message: string; count: number }>((resolve, reject) => {
@@ -258,7 +265,7 @@ export const fileops = {
         form.append(`mtime_${i}`, Math.floor(f.lastModified / 1000).toString())
       })
       xhr = new XMLHttpRequest()
-      xhr.open('POST', `/api/v1/files/upload?path=${encodeURIComponent(path)}`)
+      xhr.open('POST', `/api/v1/files/upload${qs({ path, conflict_mode: conflictMode })}`)
       xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') ?? ''}`)
       if (onProgress) {
         xhr.upload.onprogress = (e) => {
@@ -272,7 +279,7 @@ export const fileops = {
         } else {
           try {
             const err = JSON.parse(xhr.responseText)
-            reject(new Error(err.error ?? xhr.statusText))
+            reject(xhr.status === 409 ? new ConflictError(err.conflicts ?? []) : new Error(err.error ?? xhr.statusText))
           } catch { reject(new Error(xhr.statusText)) }
         }
       }
@@ -314,7 +321,7 @@ export const renamer = {
     renames: { from: string; to: string }[],
     folder: string,
     template: string,
-    conflictMode?: 'replace' | 'rename',
+    conflictMode: ConflictMode = 'error',
   ) =>
     request<{ message: string }>('POST', '/rename/apply', {
       renames,

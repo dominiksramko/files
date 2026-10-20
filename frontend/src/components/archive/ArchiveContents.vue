@@ -7,6 +7,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
+import { useArchiveExtract } from '@/composables/useArchiveExtract'
 
 const props = defineProps<{ entry: FileEntry }>()
 const emit = defineEmits<{ close: []; extracted: [] }>()
@@ -28,6 +29,7 @@ const extracting = ref(false)
 const extractError = ref('')
 const extractSuccess = ref(false)
 const extractPassword = ref('')
+const { extractArchive } = useArchiveExtract()
 
 async function load(pw = '') {
   loading.value = true
@@ -59,7 +61,7 @@ async function extract() {
   extractSuccess.value = false
   const pw = password.value || extractPassword.value || undefined
   try {
-    await filesApi.extract(props.entry.path, undefined, pw)
+    if ((await extractArchive(props.entry.path, pw)) === null) return
     extractSuccess.value = true
     emit('extracted')
   } catch (e: unknown) {

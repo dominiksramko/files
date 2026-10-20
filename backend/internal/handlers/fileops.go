@@ -90,11 +90,7 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 	existing, claimed := buildExistingMap(destAbs)
 
 	for _, src := range srcAbs {
-		dstName := filepath.Base(src)
-		if body.ConflictMode == "rename" {
-			dstName = findFreeName(dstName, existing, claimed)
-			claimed[dstName] = true
-		}
+		dstName := batchTargetName(filepath.Base(src), body.ConflictMode, existing, claimed)
 		if err := copyEntry(src, filepath.Join(destAbs, dstName)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -145,32 +141,23 @@ func (h *FileOpsHandler) Move(c *gin.Context) {
 	existing, claimed := buildExistingMap(destAbs)
 
 	for _, src := range srcAbs {
-		dstName := filepath.Base(src)
-		if body.ConflictMode == "rename" {
-			dstName = findFreeName(dstName, existing, claimed)
-			claimed[dstName] = true
-		}
-		target := filepath.Join(destAbs, dstName)
-		// Try fast rename first; fall back to copy+delete for cross-device moves
-		if err := os.Rename(src, target); err != nil {
-			if err2 := copyEntry(src, target); err2 != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
-				return
-			}
-			if err2 := os.RemoveAll(src); err2 != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err2.Error()})
-				return
-			}
+		dstName := batchTargetName(filepath.Base(src), body.ConflictMode, existing, claimed)
+		if err := moveEntry(src, filepath.Join(destAbs, dstName)); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "moved"})
 }
 
-// POST /api/v1/files/upload?path=rel/dest_dir   multipart form field: "files"
+// POST /api/v1/files/upload?path=rel/dest_dir&conflict_mode=error|replace|rename   multipart form field: "files"
+// conflict_mode defaults to "error" — returns HTTP 409 with the names already
+// in the folder, before writing anything.
 func (h *FileOpsHandler) Upload(c *gin.Context) {
 	root := userRoot(c)
 	rel := c.Query("path")
+	conflictMode := c.DefaultQuery("conflict_mode", "error")
 
 	destAbs, err := safePath(root, rel)
 	if err != nil {
@@ -190,13 +177,29 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	names := make([]string, len(uploadedFiles))
+	for i, fh := range uploadedFiles {
+		names[i] = filepath.Base(fh.Filename)
+		if err := validateNewFilename(names[i]); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename: " + err.Error()})
+			return
+		}
+	}
+	if conflictMode == "error" {
+		if conflicts := findNameConflicts(names, destAbs); len(conflicts) > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
+			return
+		}
+	}
+
 	if err := os.MkdirAll(destAbs, 0o755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	existing, claimed := buildExistingMap(destAbs)
 	for i, fh := range uploadedFiles {
-		dst := filepath.Join(destAbs, filepath.Base(fh.Filename))
+		dst := filepath.Join(destAbs, batchTargetName(names[i], conflictMode, existing, claimed))
 		if err := c.SaveUploadedFile(fh, dst); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -289,13 +292,16 @@ func (h *FileOpsHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"name": filepath.Base(abs)})
 }
 
-// POST /api/v1/files/rename   body: { "path": "rel/old_path", "name": "new_name" }
+// POST /api/v1/files/rename   body: { "path": "rel/old_path", "name": "new_name", "conflict_mode": "error"|"replace"|"rename" }
+// conflict_mode defaults to "error" — returns HTTP 409 when the name is taken.
+// Responds with the name the item ended up with.
 func (h *FileOpsHandler) Rename(c *gin.Context) {
 	root := userRoot(c)
 
 	var body struct {
-		Path string `json:"path"`
-		Name string `json:"name"`
+		Path         string `json:"path"`
+		Name         string `json:"name"`
+		ConflictMode string `json:"conflict_mode"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.Path == "" || body.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "path and name required"})
@@ -314,36 +320,79 @@ func (h *FileOpsHandler) Rename(c *gin.Context) {
 		return
 	}
 
+	if body.ConflictMode == "" {
+		body.ConflictMode = "error"
+	}
+
 	dstAbs := filepath.Join(filepath.Dir(srcAbs), body.Name)
+	// The same file under another name is no conflict: a change of case on a
+	// case-insensitive disk.
+	if !isSameFile(srcAbs, dstAbs) {
+		var conflict bool
+		dstAbs, conflict, err = resolveDestConflict(dstAbs, body.ConflictMode)
+		if conflict {
+			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{body.Name}})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "renamed"})
+	c.JSON(http.StatusOK, gin.H{"message": "renamed", "name": filepath.Base(dstAbs)})
 }
 
 // ── Conflict helpers ──────────────────────────────────────────────────────────
 
 // findConflicts returns base names from srcAbs that already exist in destAbs.
 func findConflicts(srcAbs []string, destAbs string) []string {
-	entries, err := os.ReadDir(destAbs)
-	if err != nil {
-		return nil // dest doesn't exist yet — no conflicts
+	names := make([]string, len(srcAbs))
+	for i, src := range srcAbs {
+		names[i] = filepath.Base(src)
 	}
-	existing := make(map[string]bool, len(entries))
-	for _, e := range entries {
-		existing[e.Name()] = true
-	}
+	return findNameConflicts(names, destAbs)
+}
+
+// findNameConflicts returns the names (each once) that already exist in destAbs.
+func findNameConflicts(names []string, destAbs string) []string {
+	existing, reported := buildExistingMap(destAbs)
 	var conflicts []string
-	for _, p := range srcAbs {
-		name := filepath.Base(p)
-		if existing[name] {
+	for _, name := range names {
+		if existing[name] && !reported[name] {
 			conflicts = append(conflicts, name)
+			reported[name] = true
 		}
 	}
 	return conflicts
+}
+
+// batchTargetName picks the name for the next item of a batch going into one
+// folder, and claims it in claimed. Items of the same batch never replace each
+// other: a name an earlier item took gets " (n)" whatever the mode. With
+// "rename" a name already in the folder (existing) does too; otherwise it's
+// kept, to be replaced or reported as a conflict beforehand.
+func batchTargetName(name, mode string, existing, claimed map[string]bool) string {
+	if mode == "rename" || claimed[name] {
+		name = findFreeName(name, existing, claimed)
+	}
+	claimed[name] = true
+	return name
+}
+
+// isSameFile reports whether both paths exist and are the same file.
+func isSameFile(first, second string) bool {
+	firstInfo, err := os.Stat(first)
+	if err != nil {
+		return false
+	}
+	secondInfo, err := os.Stat(second)
+	return err == nil && os.SameFile(firstInfo, secondInfo)
 }
 
 // buildExistingMap returns a set of names already present in dir and an empty claimed set.
@@ -400,6 +449,17 @@ func resolveDestConflict(destAbs, mode string) (resolved string, conflict bool, 
 }
 
 // ── Copy helpers ──────────────────────────────────────────────────────────────
+
+// moveEntry moves a file or directory; across disks, by copying then deleting.
+func moveEntry(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := copyEntry(src, dst); err != nil {
+		return err
+	}
+	return os.RemoveAll(src)
+}
 
 // copyEntry copies a file or directory recursively from src to dst.
 func copyEntry(src, dst string) error {

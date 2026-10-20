@@ -1,7 +1,8 @@
 import { ref, computed } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
 import type { FileEntry, FileOp } from '@/types'
-import { fileops, ConflictError } from '@/utils/api'
+import { fileops } from '@/utils/api'
+import { useConflictDialog } from '@/composables/useConflictDialog'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 import { customViewName } from '@/utils/formatters'
 
@@ -23,7 +24,6 @@ export function useFileOps({
   searchResults,
   downloading,
   currentPath,
-  promptConflict,
   showToast,
   actionCallbacks,
 }: {
@@ -32,10 +32,11 @@ export function useFileOps({
   searchResults: Ref<FileEntry[]>
   downloading: ComputedRef<boolean>
   currentPath: ComputedRef<string>
-  promptConflict: (title: string, names: string[]) => Promise<'replace' | 'rename' | null>
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void
   actionCallbacks: FileOpsActionCallbacks
 }) {
+  const { runWithConflictPrompt } = useConflictDialog()
+
   // ── Clipboard ───────────────────────────────────────────────────────────────
   const clipboard = ref<{ mode: 'copy' | 'move'; paths: string[] } | null>(null)
 
@@ -137,22 +138,15 @@ export function useFileOps({
   })
 
   // ── Paste (copy/move from clipboard) ───────────────────────────────────────
-  async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+  async function doPaste(mode: 'copy' | 'move', paths: string[], dest: string) {
     try {
-      if (mode === 'copy') {
-        await fileops.copy(paths, dest, conflictMode)
-      } else {
-        await fileops.move(paths, dest, conflictMode)
-        selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
-      }
+      const pasted = await runWithConflictPrompt(`${mode === 'copy' ? 'Copy' : 'Move'} conflicts`, (conflictMode) =>
+        mode === 'copy' ? fileops.copy(paths, dest, conflictMode) : fileops.move(paths, dest, conflictMode),
+      )
+      if (pasted === null) return
+      if (mode === 'move') selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
       clipboard.value = null
     } catch (err) {
-      if (err instanceof ConflictError) {
-        const label = mode === 'copy' ? 'Copy' : 'Move'
-        const choice = await promptConflict(`${label} conflicts`, err.conflicts)
-        if (choice) doPaste(mode, paths, dest, choice)
-        return
-      }
       showToast((err as Error).message, 'error')
     }
   }
@@ -164,18 +158,14 @@ export function useFileOps({
   }
 
   // ── Internal drag-and-drop move ─────────────────────────────────────────────
-  async function performMove(paths: string[], dest: string, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+  async function performMove(paths: string[], dest: string) {
     try {
-      await fileops.move([...paths], dest, conflictMode)
+      const moved = await runWithConflictPrompt('Move conflicts', (conflictMode) => fileops.move([...paths], dest, conflictMode))
+      if (moved === null) return
       selectedPaths.value = selectedPaths.value.filter((p) => !paths.includes(p))
       const count = paths.length
       showToast(`Moved ${count} item${count !== 1 ? 's' : ''}`, 'success')
     } catch (err) {
-      if (err instanceof ConflictError) {
-        const choice = await promptConflict('Move conflicts', err.conflicts)
-        if (choice) performMove(paths, dest, choice)
-        return
-      }
       showToast((err as Error).message, 'error')
     }
   }

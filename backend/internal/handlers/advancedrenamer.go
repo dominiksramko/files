@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -573,9 +574,10 @@ func (h *AdvancedRenamerHandler) Preview(c *gin.Context) {
 }
 
 // POST /api/v1/rename/apply
-// Executes a batch rename. Detects conflicts and returns HTTP 409 when
-// conflict_mode is "error" (the default). On success, saves the template as
-// the last-used template for the folder.
+// Executes a batch rename. Detects conflicts with items outside the batch and
+// returns HTTP 409 when conflict_mode is "error" (the default). Items of the
+// batch never replace each other: a name two of them would get is numbered.
+// On success, saves the template as the last-used template for the folder.
 func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 	root := userRoot(c)
 	userID := c.GetInt64("userID")
@@ -593,13 +595,15 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 		body.ConflictMode = "error"
 	}
 
-	// Resolve absolute paths once.
+	// Resolve absolute paths once, skipping items that keep their name.
 	type resolvedOp struct {
-		srcAbs string
-		dstDir string
-		toName string
+		srcAbs  string
+		dstDir  string
+		toName  string
+		replace bool // an item outside the batch has the name and is replaced
 	}
 	ops := make([]resolvedOp, 0, len(body.Renames))
+	sources := map[string]bool{}
 	for _, op := range body.Renames {
 		if err := validateNewFilename(op.To); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination filename: " + err.Error()})
@@ -610,79 +614,54 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		ops = append(ops, resolvedOp{
-			srcAbs: srcAbs,
-			dstDir: filepath.Dir(srcAbs),
-			toName: op.To,
-		})
-	}
-
-	// Check / resolve conflicts.
-	switch body.ConflictMode {
-	case "error":
-		var conflicts []string
-		for _, op := range ops {
-			dstAbs := filepath.Join(op.dstDir, op.toName)
-			if dstAbs == op.srcAbs {
-				continue // no-op rename
-			}
-			if _, err := os.Stat(dstAbs); err == nil {
-				conflicts = append(conflicts, op.toName)
-			}
-		}
-		if len(conflicts) > 0 {
-			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
+		if sources[srcAbs] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "the same item is renamed twice: " + op.From})
 			return
 		}
-
-	case "rename":
-		// Build per-directory maps of existing names (minus the files being
-		// renamed, since they vacate their current slots) and track claimed names.
-		existingByDir := map[string]map[string]bool{}
-		for _, op := range ops {
-			if _, ok := existingByDir[op.dstDir]; ok {
-				continue
-			}
-			existingByDir[op.dstDir] = map[string]bool{}
-			if entries, err := os.ReadDir(op.dstDir); err == nil {
-				for _, entry := range entries {
-					existingByDir[op.dstDir][entry.Name()] = true
-				}
-			}
+		sources[srcAbs] = true
+		if filepath.Base(srcAbs) == op.To {
+			continue
 		}
-		for _, op := range ops {
-			delete(existingByDir[op.dstDir], filepath.Base(op.srcAbs))
-		}
-		claimedByDir := map[string]map[string]bool{}
-		for i, op := range ops {
-			if _, ok := claimedByDir[op.dstDir]; !ok {
-				claimedByDir[op.dstDir] = map[string]bool{}
-			}
-			ops[i].toName = findFreeName(op.toName, existingByDir[op.dstDir], claimedByDir[op.dstDir])
-			claimedByDir[op.dstDir][ops[i].toName] = true
-		}
+		ops = append(ops, resolvedOp{srcAbs: srcAbs, dstDir: filepath.Dir(srcAbs), toName: op.To})
 	}
 
-	// Execute renames.
+	// Names in each folder, minus the ones this batch moves away: those are free
+	// for other items of the batch (chains like a→b, b→c, and swaps).
+	existingByDir := map[string]map[string]bool{}
+	claimedByDir := map[string]map[string]bool{}
 	for _, op := range ops {
-		dstAbs := filepath.Join(op.dstDir, op.toName)
-		if dstAbs == op.srcAbs {
-			continue // nothing to do
+		if _, ok := existingByDir[op.dstDir]; !ok {
+			existingByDir[op.dstDir], claimedByDir[op.dstDir] = buildExistingMap(op.dstDir)
 		}
+	}
+	for _, op := range ops {
+		delete(existingByDir[op.dstDir], filepath.Base(op.srcAbs))
+	}
 
-		if body.ConflictMode == "replace" {
-			if _, err := os.Stat(dstAbs); err == nil {
-				if err := os.RemoveAll(dstAbs); err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "could not overwrite: " + err.Error()})
-					return
-				}
-			}
+	// Pick every final name before touching anything.
+	var conflicts []string
+	for i := range ops {
+		op := &ops[i]
+		existing, claimed := existingByDir[op.dstDir], claimedByDir[op.dstDir]
+		takenOutsideBatch := existing[op.toName] && !claimed[op.toName]
+		if takenOutsideBatch && body.ConflictMode == "error" {
+			conflicts = append(conflicts, op.toName)
 		}
+		op.replace = takenOutsideBatch && body.ConflictMode == "replace"
+		op.toName = batchTargetName(op.toName, body.ConflictMode, existing, claimed)
+	}
+	if len(conflicts) > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
+		return
+	}
 
-		if err := os.Rename(op.srcAbs, dstAbs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	moves := make([]pathMove, len(ops))
+	for i, op := range ops {
+		moves[i] = pathMove{from: op.srcAbs, to: filepath.Join(op.dstDir, op.toName), replaceExisting: op.replace}
+	}
+	if err := renameAll(moves); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Persist the template as the last-used template for this folder.
@@ -801,4 +780,99 @@ func (h *AdvancedRenamerHandler) GetFolderTemplate(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"template": template})
+}
+
+// pathMove is one rename of a batch: from → to, removing what's at to first
+// when replaceExisting is set.
+type pathMove struct {
+	from, to        string
+	replaceExisting bool
+}
+
+// renameAll performs a batch of renames, each within its own folder. Items
+// deeper in the tree go first, so renaming a folder never strands an item
+// inside it that's renamed too.
+func renameAll(moves []pathMove) error {
+	byDepth := map[int][]pathMove{}
+	var depths []int
+	for _, move := range moves {
+		depth := strings.Count(filepath.Clean(move.from), string(filepath.Separator))
+		if _, ok := byDepth[depth]; !ok {
+			depths = append(depths, depth)
+		}
+		byDepth[depth] = append(byDepth[depth], move)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(depths)))
+	for _, depth := range depths {
+		if err := renameLevel(byDepth[depth]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renameLevel performs renames of items none of which is inside another, in
+// two steps — every item to a temporary name next to it, then each to its
+// final name — so names can pass along a chain (a→b, b→c) or be swapped. If a
+// step fails, items not yet at their final name go back to their original one
+// where it's still free.
+func renameLevel(moves []pathMove) error {
+	temps := make([]string, len(moves))
+	restoreFrom := func(first int) error {
+		var stranded []string
+		for i := first; i < len(moves); i++ {
+			if temps[i] == "" {
+				continue
+			}
+			if _, err := os.Lstat(moves[i].from); err == nil || os.Rename(temps[i], moves[i].from) != nil {
+				stranded = append(stranded, filepath.Base(temps[i]))
+			}
+		}
+		if len(stranded) > 0 {
+			return fmt.Errorf("some items were left under temporary names: %s", strings.Join(stranded, ", "))
+		}
+		return nil
+	}
+	fail := func(first int, err error) error {
+		if restoreErr := restoreFrom(first); restoreErr != nil {
+			return fmt.Errorf("%w; %v", err, restoreErr)
+		}
+		return err
+	}
+
+	for i, move := range moves {
+		temp, err := unusedTempName(filepath.Dir(move.from))
+		if err == nil {
+			err = os.Rename(move.from, temp)
+		}
+		if err != nil {
+			return fail(0, err)
+		}
+		temps[i] = temp
+	}
+	for _, move := range moves {
+		if move.replaceExisting {
+			if err := os.RemoveAll(move.to); err != nil {
+				return fail(0, fmt.Errorf("could not overwrite: %w", err))
+			}
+		}
+	}
+	for i, move := range moves {
+		if err := os.Rename(temps[i], move.to); err != nil {
+			return fail(i, err)
+		}
+		temps[i] = ""
+	}
+	return nil
+}
+
+// unusedTempName returns a hidden name in dir that nothing has.
+func unusedTempName(dir string) (string, error) {
+	for attempt := 0; attempt < 100; attempt++ {
+		candidate := filepath.Join(dir, ".~rename-"+rand.Text())
+		if _, err := os.Lstat(candidate); os.IsNotExist(err) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no free temporary name in %s", dir)
 }

@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -206,4 +210,168 @@ func TestResolveDestConflict(t *testing.T) {
 		}
 		assertFileContent(t, filepath.Join(dir, "folder/inside.txt"), "kept")
 	})
+}
+
+// ── Overwrite protection ─────────────────────────────────────────────────────
+
+func TestRenameNeverOverwritesByDefault(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"final.txt": "final"})
+	response := serveJSON(t, NewFileOpsHandler().Rename, annRoot, map[string]any{"path": "notes.txt", "name": "final.txt"})
+	assertStatus(t, response, http.StatusConflict)
+	if conflicts := decodeResponse[struct{ Conflicts []string }](t, response).Conflicts; len(conflicts) != 1 || conflicts[0] != "final.txt" {
+		t.Errorf("conflicts = %q", conflicts)
+	}
+	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes")
+	assertFileContent(t, filepath.Join(annRoot, "final.txt"), "final")
+}
+
+func TestRenameKeepAll(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"final.txt": "final"})
+	response := serveJSON(t, NewFileOpsHandler().Rename, annRoot, map[string]any{"path": "notes.txt", "name": "final.txt", "conflict_mode": "rename"})
+	assertStatus(t, response, http.StatusOK)
+	if got := decodeResponse[map[string]string](t, response)["name"]; got != "final (1).txt" {
+		t.Errorf("name = %q, want final (1).txt", got)
+	}
+	assertFileContent(t, filepath.Join(annRoot, "final.txt"), "final")
+	assertFileContent(t, filepath.Join(annRoot, "final (1).txt"), "ann's notes")
+}
+
+func TestRenameReplace(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"final.txt": "final"})
+	response := serveJSON(t, NewFileOpsHandler().Rename, annRoot, map[string]any{"path": "notes.txt", "name": "final.txt", "conflict_mode": "replace"})
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "final.txt"), "ann's notes")
+	assertMissing(t, filepath.Join(annRoot, "notes.txt"))
+}
+
+func TestRenameChangingCase(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serveJSON(t, NewFileOpsHandler().Rename, annRoot, map[string]any{"path": "notes.txt", "name": "Notes.txt"})
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "Notes.txt"), "ann's notes")
+}
+
+// uploadRequest builds a multipart upload of files (name → content) into folder.
+func uploadRequest(t *testing.T, folder, conflictMode string, files [][2]string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, file := range files {
+		part, err := writer.CreateFormFile("files", file[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		part.Write([]byte(file[1]))
+	}
+	writer.Close()
+	target := "/?path=" + url.QueryEscape(folder)
+	if conflictMode != "" {
+		target += "&conflict_mode=" + conflictMode
+	}
+	request := httptest.NewRequest(http.MethodPost, target, &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
+}
+
+func TestUpload(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "docs", "", [][2]string{{"new.txt", "new"}}))
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "docs/new.txt"), "new")
+}
+
+func TestUploadNeverOverwritesByDefault(t *testing.T) {
+	// The app checks its folder listing first; the server catches what changed since.
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "", "", [][2]string{{"new.txt", "new"}, {"notes.txt", "uploaded"}}))
+	assertStatus(t, response, http.StatusConflict)
+	if conflicts := decodeResponse[struct{ Conflicts []string }](t, response).Conflicts; len(conflicts) != 1 || conflicts[0] != "notes.txt" {
+		t.Errorf("conflicts = %q", conflicts)
+	}
+	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes")
+	assertMissing(t, filepath.Join(annRoot, "new.txt")) // nothing written
+}
+
+func TestUploadKeepAll(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "", "rename", [][2]string{{"notes.txt", "uploaded"}}))
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes")
+	assertFileContent(t, filepath.Join(annRoot, "notes (1).txt"), "uploaded")
+}
+
+func TestUploadReplace(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "", "replace", [][2]string{{"notes.txt", "uploaded"}}))
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "uploaded")
+}
+
+func TestUploadSameNameTwiceKeepsBoth(t *testing.T) {
+	for _, conflictMode := range []string{"", "replace", "rename"} {
+		annRoot, _ := newUserFolders(t)
+		response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "docs", conflictMode, [][2]string{{"same.txt", "first"}, {"same.txt", "second"}}))
+		assertStatus(t, response, http.StatusOK)
+		assertFileContent(t, filepath.Join(annRoot, "docs/same.txt"), "first")
+		assertFileContent(t, filepath.Join(annRoot, "docs/same (1).txt"), "second")
+	}
+}
+
+func TestUploadRejectsBadNames(t *testing.T) {
+	annRoot, annaRoot := newUserFolders(t)
+	for _, name := range []string{"..", "."} {
+		response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "docs", "replace", [][2]string{{name, "x"}}))
+		assertStatus(t, response, http.StatusBadRequest)
+	}
+	assertUnchanged(t, annRoot, annaRoot)
+}
+
+func TestMoveAndCopySameNameTwiceKeepsBoth(t *testing.T) {
+	// work/readme.md and home/readme.md into archive/, which has its own readme.md.
+	for _, operation := range []string{"copy", "move"} {
+		for _, conflictMode := range []string{"replace", "rename"} {
+			annRoot, _ := newUserFolders(t)
+			writeFiles(t, annRoot, map[string]string{"work/readme.md": "work", "home/readme.md": "home", "archive/readme.md": "archived"})
+			handler := NewFileOpsHandler().Copy
+			if operation == "move" {
+				handler = NewFileOpsHandler().Move
+			}
+			response := serveJSON(t, handler, annRoot, map[string]any{
+				"paths": []string{"work/readme.md", "home/readme.md"}, "dest": "archive", "conflict_mode": conflictMode,
+			})
+			assertStatus(t, response, http.StatusOK)
+
+			first := "readme (1).md"
+			if conflictMode == "replace" {
+				first = "readme.md"
+			} else {
+				assertFileContent(t, filepath.Join(annRoot, "archive/readme.md"), "archived")
+			}
+			second := map[string]string{"replace": "readme (1).md", "rename": "readme (2).md"}[conflictMode]
+			assertFileContent(t, filepath.Join(annRoot, "archive", first), "work")
+			assertFileContent(t, filepath.Join(annRoot, "archive", second), "home")
+		}
+	}
+}
+
+func TestMoveSameNameTwiceWithoutConflictKeepsBoth(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"work/readme.md": "work", "home/readme.md": "home"})
+	response := serveJSON(t, NewFileOpsHandler().Move, annRoot, map[string]any{"paths": []string{"work/readme.md", "home/readme.md"}, "dest": "docs"})
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "docs/readme.md"), "work")
+	assertFileContent(t, filepath.Join(annRoot, "docs/readme (1).md"), "home")
+}
+
+func TestMoveConflictsListedOnce(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"work/plan.md": "work", "home/plan.md": "home"})
+	response := serveJSON(t, NewFileOpsHandler().Move, annRoot, map[string]any{"paths": []string{"work/plan.md", "home/plan.md"}, "dest": "docs"})
+	assertStatus(t, response, http.StatusConflict)
+	if conflicts := decodeResponse[struct{ Conflicts []string }](t, response).Conflicts; len(conflicts) != 1 {
+		t.Errorf("conflicts = %q, want plan.md once", conflicts)
+	}
 }

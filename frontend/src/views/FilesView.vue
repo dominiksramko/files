@@ -5,7 +5,7 @@ import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
 import { fileCategory, formatSize } from '@/utils/formatters'
 import type { IconName } from '@/utils/icons'
-import { files as filesApi, folders as foldersApi, fileops, ConflictError } from '@/utils/api'
+import { files as filesApi, folders as foldersApi, fileops, type ConflictMode } from '@/utils/api'
 import FileDetailsModal from '@/components/files/FileDetailsModal.vue'
 import { useToast } from '@/composables/useToast'
 import FileList from '@/components/files/FileList.vue'
@@ -24,6 +24,7 @@ import AdvancedRenamer from '@/components/files/AdvancedRenamer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDropdown from '@/components/ui/AppDropdown.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
+import { useArchiveExtract } from '@/composables/useArchiveExtract'
 import { useFileOps } from '@/composables/useFileOps'
 import { useLayoutStore } from '@/stores/layout'
 import { debounce } from '@/utils/debounce'
@@ -33,7 +34,8 @@ const filesStore = useFilesStore()
 const layoutStore = useLayoutStore()
 const route = useRoute()
 const router = useRouter()
-const { prompt: promptConflict } = useConflictDialog()
+const { prompt: promptConflict, runWithConflictPrompt } = useConflictDialog()
+const { extractArchive } = useArchiveExtract()
 const { show: showToast } = useToast()
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
@@ -356,7 +358,6 @@ const {
   searchResults,
   downloading,
   currentPath: computed(() => filesStore.currentPath),
-  promptConflict,
   showToast,
   actionCallbacks: {
     downloadPaths,
@@ -490,26 +491,6 @@ function detectConflicts(files: File[]): string[] {
   return files.map((f) => f.name).filter((name) => existing.has(name))
 }
 
-function findFreeName(filename: string, taken: Set<string>): string {
-  if (!taken.has(filename)) return filename
-  const lastDot = filename.lastIndexOf('.')
-  const base = lastDot >= 0 ? filename.slice(0, lastDot) : filename
-  const ext = lastDot >= 0 ? filename.slice(lastDot) : ''
-  let n = 1
-  while (taken.has(`${base} (${n})${ext}`)) n++
-  return `${base} (${n})${ext}`
-}
-
-function resolveKeepAll(files: File[]): File[] {
-  const taken = new Set(filesStore.entries.map((e) => e.name))
-  return files.map((file) => {
-    const newName = findFreeName(file.name, taken)
-    taken.add(newName)
-    if (newName === file.name) return file
-    return new File([file], newName, { type: file.type, lastModified: file.lastModified })
-  })
-}
-
 function openFilePicker() {
   uploadInput.value?.click()
 }
@@ -521,29 +502,37 @@ async function handleFileInput(e: Event) {
   if (uploadInput.value) uploadInput.value.value = ''
 }
 
+// Asks first when names are taken in the folder as listed here; the server
+// checks again, in case the folder changed since.
 async function uploadFiles(files: File[]) {
-  const conflicts = detectConflicts(files)
-  if (conflicts.length > 0) {
-    const choice = await promptConflict('Upload conflicts', conflicts)
-    if (!choice) return
-    files = choice === 'rename' ? resolveKeepAll(files) : files
+  try {
+    const known = detectConflicts(files)
+    let uploaded
+    if (known.length > 0) {
+      const choice = await promptConflict('Upload conflicts', known)
+      if (!choice) return
+      uploaded = await performUpload(files, choice)
+    } else {
+      uploaded = await runWithConflictPrompt('Upload conflicts', (conflictMode) => performUpload(files, conflictMode))
+      if (uploaded === null) return
+    }
+    showToast(`Uploaded ${uploaded.count} file${uploaded.count !== 1 ? 's' : ''}`, 'success')
+  } catch (err) {
+    if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
   }
-  await performUpload(files)
 }
 
-async function performUpload(files: File[]) {
+// Uploads into the current folder, shown in the background jobs list meanwhile.
+async function performUpload(files: File[], conflictMode: ConflictMode) {
   const totalSize = files.reduce((s, f) => s + f.size, 0)
   const id = nextJobId++
   const { promise, abort } = fileops.upload(filesStore.currentPath, files, (loaded, total) => {
     const job = bgJobs.value.find(j => j.id === id) as UploadJob | undefined
     if (job) { job.pct = Math.round((loaded / total) * 100); job.loaded = loaded; job.total = total }
-  })
+  }, conflictMode)
   bgJobs.value.push({ kind: 'upload', id, count: files.length, pct: 0, loaded: 0, total: totalSize, startedAt: Date.now(), abort })
   try {
-    const res = await promise
-    showToast(`Uploaded ${res.count} file${res.count !== 1 ? 's' : ''}`, 'success')
-  } catch (err) {
-    if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
+    return await promise
   } finally {
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
@@ -640,19 +629,14 @@ async function confirmNewFile() {
   await createFile(filename, editMode)
 }
 
-async function createFile(filename: string, editMode: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+async function createFile(filename: string, editMode: boolean) {
   const folder = filesStore.currentPath
   const pathIn = (name: string) => (folder ? `${folder}/${name}` : name)
   try {
-    const created = await fileops.create(pathIn(filename), conflictMode)
-    showPreview(pathIn(created.name), { editMode })
+    const created = await runWithConflictPrompt('File already exists', (conflictMode) => fileops.create(pathIn(filename), conflictMode))
+    if (created) showPreview(pathIn(created.name), { editMode })
   } catch (err) {
-    if (err instanceof ConflictError) {
-      const choice = await promptConflict('File already exists', err.conflicts)
-      if (choice) await createFile(filename, editMode, choice)
-    } else {
-      showToast((err as Error).message, 'error')
-    }
+    showToast((err as Error).message, 'error')
   }
 }
 
@@ -690,16 +674,17 @@ async function confirmRename() {
   if (!trimmed || trimmed === (entry.path.split('/').pop() ?? '')) return
   const wasPreviewingThis = previewFilePath.value === entry.path
   try {
-    await fileops.rename(entry.path, trimmed)
+    const renamed = await runWithConflictPrompt('Name already taken', (conflictMode) => fileops.rename(entry.path, trimmed, conflictMode))
+    if (!renamed) return
     selectedPaths.value = []
     // Optimistically update the entry so preview index can be resolved immediately.
     // The watch stream will deliver the authoritative REMOVE + ADD events shortly after.
     const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
-    const newPath = parent ? `${parent}/${trimmed}` : trimmed
+    const newPath = parent ? `${parent}/${renamed.name}` : renamed.name
     const idx = filesStore.entries.findIndex((e) => e.path === entry.path)
     if (idx >= 0) {
       const existing = filesStore.entries[idx]!
-      filesStore.entries[idx] = { ...existing, name: trimmed, path: newPath }
+      filesStore.entries[idx] = { ...existing, name: renamed.name, path: newPath }
     }
     if (wasPreviewingThis) {
       previewFilePath.value = newPath
@@ -764,22 +749,20 @@ function confirmCompress() {
   runCompress([...compressPaths.value], dest, compressFormat.value, pass, protect)
 }
 
-async function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+async function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean) {
   const name = dest.split('/').pop() ?? dest
   const id = nextJobId++
   startBgJobTracking(id)
   bgJobs.value.push({ kind: 'compress', id, name })
   try {
-    await fileops.compress(paths, dest, format, password, protect, conflictMode)
+    const created = await runWithConflictPrompt('Archive already exists', (conflictMode) =>
+      fileops.compress(paths, dest, format, password, protect, conflictMode),
+    )
+    if (created === null) return
     if (canClearSelection(id)) selectedPaths.value = []
     showToast('Archive created', 'success')
   } catch (err) {
-    if (err instanceof ConflictError) {
-      const choice = await promptConflict('Archive already exists', err.conflicts)
-      if (choice) runCompress(paths, dest, format, password, protect, choice)
-    } else {
-      showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
-    }
+    showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
   } finally {
     bgJobs.value = bgJobs.value.filter(j => j.id !== id)
   }
@@ -796,17 +779,12 @@ async function openExtract(path: string) {
   await runExtract(path, undefined)
 }
 
-async function runExtract(path: string, password: string | undefined, conflictMode: 'error' | 'replace' | 'rename' = 'error') {
+async function runExtract(path: string, password: string | undefined) {
   try {
-    await filesApi.extract(path, undefined, password, conflictMode)
+    if ((await extractArchive(path, password)) === null) return
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
-    if (e instanceof ConflictError) {
-      const choice = await promptConflict('Extraction conflicts', e.conflicts)
-      if (choice) runExtract(path, password, choice)
-      return
-    }
     const msg = e instanceof Error ? e.message : 'Extraction failed'
     if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
       extractPendingPath.value = path
@@ -824,18 +802,13 @@ async function confirmExtract() {
   extracting.value = true
   extractError.value = ''
   try {
-    await filesApi.extract(extractPendingPath.value, undefined, extractPasswordInput.value)
+    const extracted = await extractArchive(extractPendingPath.value, extractPasswordInput.value)
     extractPasswordDialog.value = false
+    if (extracted === null) return
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
-    if (e instanceof ConflictError) {
-      extractPasswordDialog.value = false
-      const choice = await promptConflict('Extraction conflicts', e.conflicts)
-      if (choice) runExtract(extractPendingPath.value, extractPasswordInput.value, choice)
-    } else {
-      extractError.value = e instanceof Error ? e.message : 'Extraction failed'
-    }
+    extractError.value = e instanceof Error ? e.message : 'Extraction failed'
   } finally {
     extracting.value = false
   }

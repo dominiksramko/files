@@ -116,18 +116,21 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
 - Key handlers on inputs: `@keydown.enter` to confirm, `@keydown.escape` to close
 
 ## File Conflict Resolution Convention
-When a file operation (move, copy, upload, extract, compress, new file) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The frontend then presents the user with a resolution modal offering:
+When a file operation (move, copy, rename, advanced rename, upload, extract, compress, new file) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The server always enforces this itself — never rely on a check in the app, the folder may have changed since it was listed. Nothing is written before the 409. The frontend then presents the user with a resolution modal offering:
 - **Replace** — overwrite the existing file(s)
 - **Keep all** — rename the incoming file(s) by appending a suffix (e.g. `file (1).txt`, `file (2).txt`) until no conflict remains
 - **Cancel** — abort the operation entirely
 
-The resolution choice is sent back to the backend as `conflict_mode: 'replace' | 'rename'` on the retry request.
+The resolution choice is sent back to the backend as `conflict_mode: 'replace' | 'rename'` on the retry request (type `ConflictMode` in `api.ts`).
+
+Items of the same batch never replace each other (two `readme.md` moved into one folder, two photos renamed to the same name): the later one always gets ` (n)`, whatever the mode — Replace only applies to what was already there. Backend helpers in `fileops.go`: `findNameConflicts` (409 list), `batchTargetName` (names for a batch), `resolveDestConflict` (a single destination), `moveEntry`; extraction stages in a temp folder and moves the result with `mergeInto` / `mergeConflicts` (`archive.go`), so a failed extract never touches existing files.
 
 ### Unified conflict dialog system (IMPORTANT)
 All conflict flows use a single shared composable + component — do NOT create per-operation conflict dialogs:
 - Composable: `frontend/src/composables/useConflictDialog.ts` — `prompt(title, names): Promise<'replace' | 'rename' | null>`
 - Component: `frontend/src/components/ui/ConflictDialog.vue` — mounted once globally in `FilesView.vue` via `<ConflictDialog />`
-- Usage: `const { prompt: promptConflict } = useConflictDialog()` then `const choice = await promptConflict('Title', conflictNames)` — returns `'replace'`, `'rename'`, or `null` (cancel)
+- Usage: `const { runWithConflictPrompt } = useConflictDialog()` then `const result = await runWithConflictPrompt('Title', (conflictMode) => fileops.x(..., conflictMode))` — runs with `'error'`, asks on a conflict and runs again with the choice; resolves `null` when cancelled. Don't write the catch-ask-retry by hand. `prompt(title, names)` is there for asking before an operation (upload checks the listing first so a large upload isn't sent just to be refused).
+- Archive extraction: `useArchiveExtract().extractArchive(path, password?)` (used by FilesView and the archive viewer).
 - Backend `conflict_mode` parameter: `'replace'` maps to replace, `'rename'` maps to keep-all/rename
 
 ## External Tool Dependencies (must be in Dockerfile `runtime-base` stage)

@@ -9,7 +9,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -302,12 +301,14 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 }
 
 // POST /api/v1/files/extract
-// Body: { path, dest?, password? }
+// Body: { path, dest?, password?, conflict_mode? }
 //
-// Always extracts into a folder named after the archive (minus extension),
-// preserving all internal paths. If after extraction that folder contains
-// exactly one item (file or directory), it is moved to the parent folder
-// and the now-empty named folder is removed.
+// Extracts next to the archive into a folder named after it (minus extension),
+// preserving all internal paths — or, when the archive holds a single item,
+// puts that item straight next to the archive. With dest, the contents go
+// into that folder instead. Folders that already exist are merged into.
+// conflict_mode defaults to "error": HTTP 409 listing the files that are
+// already there, before anything is moved into place.
 func (h *ArchiveHandler) Extract(c *gin.Context) {
 	root := userRoot(c)
 
@@ -332,8 +333,8 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 	}
 
 	// Destination: explicit override or a folder named after the archive. Never
-	// root itself: a failed extract removes the destination, and unwrapping a
-	// single item moves it into the destination's parent.
+	// root itself: extraction is staged in the destination's parent, and a
+	// single item goes there too.
 	destRel := req.Dest
 	if destRel == "" {
 		destRel = filepath.Join(filepath.Dir(req.Path), archiveBaseName(abs))
@@ -344,58 +345,40 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		return
 	}
 
-	// Check file-level conflicts when destination already exists.
-	if _, statErr := os.Stat(destAbs); statErr == nil && req.ConflictMode == "error" {
-		if conflicts := listExtractConflicts(abs, destAbs, req.Password); len(conflicts) > 0 {
+	// Extract into a fresh folder next to the destination first, then move the
+	// result into place: a failed extract only ever removes that folder.
+	staging, err := os.MkdirTemp(filepath.Dir(destAbs), ".extract-tmp-*")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer os.RemoveAll(staging)
+	contents := filepath.Join(staging, filepath.Base(destAbs))
+	if err := os.Mkdir(contents, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := extractArchive(abs, contents, req.Password); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// staging holds the folder named after the archive; a single item skips
+	// that folder, and an explicit destination receives the contents.
+	from, into := staging, filepath.Dir(destAbs)
+	if req.Dest != "" {
+		from, into = contents, destAbs
+	} else if entries, err := os.ReadDir(contents); err == nil && len(entries) == 1 {
+		from = contents
+	}
+
+	if req.ConflictMode == "error" {
+		if conflicts := mergeConflicts(from, into); len(conflicts) > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
 			return
 		}
 	}
-
-	if err := os.MkdirAll(destAbs, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	doExtract := func(dest string) error {
-		ext := strings.ToLower(filepath.Ext(abs))
-		switch {
-		case ext == ".zip" && req.Password == "":
-			return extractZip(abs, dest)
-		case isTar(abs) && req.Password == "":
-			return extractTar(abs, dest)
-		case ext == ".rar":
-			return extractUnrar(abs, dest, req.Password)
-		default:
-			return extract7z(abs, dest, req.Password)
-		}
-	}
-
-	if req.ConflictMode == "rename" {
-		// Extract to a temp dir then move files into destAbs with per-file renaming.
-		tmp, tmpErr := os.MkdirTemp(filepath.Dir(destAbs), ".extract-tmp-*")
-		if tmpErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": tmpErr.Error()})
-			return
-		}
-		defer os.RemoveAll(tmp)
-		if err = doExtract(tmp); err == nil {
-			err = moveWithRename(tmp, destAbs)
-		}
-	} else {
-		err = doExtract(destAbs)
-	}
-
-	if err != nil {
-		os.RemoveAll(destAbs)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// If the destination contains exactly one item (file or folder), move it
-	// to the parent folder and remove the now-empty destination folder.
-	if err := unwrapSingleItem(destAbs); err != nil {
-		os.RemoveAll(destAbs)
+	if err := mergeInto(from, into, req.ConflictMode); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -426,124 +409,84 @@ func archiveBaseName(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// unwrapSingleItem checks if dir contains exactly one entry (file or directory).
-// If so, it moves that entry to the parent of dir and removes the now-empty dir.
-func unwrapSingleItem(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
+// extractArchive extracts the archive at path into the folder dest.
+func extractArchive(path, dest, password string) error {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch {
+	case ext == ".zip" && password == "":
+		return extractZip(path, dest)
+	case isTar(path) && password == "":
+		return extractTar(path, dest)
+	case ext == ".rar":
+		return extractUnrar(path, dest, password)
+	default:
+		return extract7z(path, dest, password)
 	}
-	if len(entries) != 1 {
-		return nil
-	}
-	src := filepath.Join(dir, entries[0].Name())
-	dst := filepath.Join(filepath.Dir(dir), entries[0].Name())
-
-	if dst == dir {
-		// The single item has the same name as the extraction folder (e.g. foo.zip
-		// contains a single top-level folder foo/). Rename the extraction folder
-		// aside, move the inner item to the final destination, then remove the shell.
-		tmp := dir + ".~unwrap_tmp"
-		if err := os.Rename(dir, tmp); err != nil {
-			return err
-		}
-		if err := os.Rename(filepath.Join(tmp, entries[0].Name()), dst); err != nil {
-			os.Rename(tmp, dir) // best-effort restore
-			return err
-		}
-		return os.RemoveAll(tmp) // should be empty; RemoveAll as a safety net
-	}
-
-	if err := os.Rename(src, dst); err != nil {
-		return err
-	}
-	return os.Remove(dir)
 }
 
-// listExtractConflicts returns the relative paths of archive entries that
-// already exist inside destAbs. Used to detect file-level conflicts before
-// deciding whether to overwrite or rename.
-func listExtractConflicts(archivePath, destAbs, password string) []string {
-	var entries []ArchiveEntry
-	ext := strings.ToLower(filepath.Ext(archivePath))
-	switch {
-	case ext == ".zip":
-		entries, _ = listZip(archivePath)
-	case isTar(archivePath):
-		entries, _ = listTar(archivePath)
-	case ext == ".rar":
-		entries, _ = listUnrar(archivePath, password)
-	default:
-		entries, _ = list7z(archivePath, password)
-	}
+// mergeConflicts lists, as paths relative to into, the entries of the folder
+// from that mergeInto would put where something already is. Folders on both
+// sides are merged, so only what's inside them counts.
+func mergeConflicts(from, into string) []string {
 	var conflicts []string
-	for _, e := range entries {
-		if e.IsDir {
-			continue
-		}
-		target := filepath.Join(destAbs, filepath.Clean(e.Name))
-		if _, err := os.Stat(target); err == nil {
-			conflicts = append(conflicts, e.Name)
+	var walk func(rel string)
+	walk = func(rel string) {
+		entries, _ := os.ReadDir(filepath.Join(from, rel))
+		for _, entry := range entries {
+			entryRel := filepath.Join(rel, entry.Name())
+			target, err := os.Lstat(filepath.Join(into, entryRel))
+			switch {
+			case err != nil:
+			case entry.IsDir() && target.IsDir():
+				walk(entryRel)
+			default:
+				conflicts = append(conflicts, filepath.ToSlash(entryRel))
+			}
 		}
 	}
+	walk("")
 	return conflicts
 }
 
-// moveWithRename walks src and moves every file into dest, using findFreeName
-// when the target path already exists so nothing is overwritten.
-func moveWithRename(src, dest string) error {
-	claimed := make(map[string]bool)
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(src, path)
-		if rel == "." {
-			return nil
-		}
-		target := filepath.Join(dest, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if _, statErr := os.Stat(target); statErr == nil || claimed[target] {
-			dir := filepath.Dir(target)
-			existing, dirClaimed := buildExistingMap(dir)
-			for p := range claimed {
-				if filepath.Dir(p) == dir {
-					dirClaimed[filepath.Base(p)] = true
+// mergeInto moves every entry of the folder from into the folder into,
+// merging folders that exist on both sides. Anything else already there is
+// replaced with "replace", kept next to the new entry with "rename" (which
+// gets " (n)"), and otherwise left alone, failing the merge.
+func mergeInto(from, into, mode string) error {
+	if err := os.MkdirAll(into, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(from)
+	if err != nil {
+		return err
+	}
+	existing, claimed := buildExistingMap(into)
+	for _, entry := range entries {
+		source, target := filepath.Join(from, entry.Name()), filepath.Join(into, entry.Name())
+		if info, err := os.Lstat(target); err == nil {
+			if entry.IsDir() && info.IsDir() {
+				if err := mergeInto(source, target, mode); err != nil {
+					return err
 				}
+				continue
 			}
-			target = filepath.Join(dir, findFreeName(filepath.Base(target), existing, dirClaimed))
+			switch mode {
+			case "replace":
+				if err := os.RemoveAll(target); err != nil {
+					return err
+				}
+			case "rename":
+				target = filepath.Join(into, findFreeName(entry.Name(), existing, claimed))
+			default:
+				return fmt.Errorf("%s already exists", entry.Name())
+			}
 		}
-		claimed[target] = true
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		claimed[filepath.Base(target)] = true
+		if err := moveEntry(source, target); err != nil {
 			return err
 		}
-		if err := os.Rename(path, target); err != nil {
-			// Cross-device fallback: copy then remove.
-			if err2 := copyFile(path, target); err2 != nil {
-				return err2
-			}
-			return os.Remove(path)
-		}
-		return nil
-	})
-}
-
-// copyFile copies a single file from src to dst.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	return nil
 }
 
 // --- ZIP ---

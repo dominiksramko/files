@@ -6,10 +6,11 @@ const { visible, title, conflicts, choose } = useConflictDialog()
 </script>
 
 <template>
+  <!-- Above other modals (z-50): it can be asked from inside one, e.g. the archive viewer. -->
   <Transition name="fade">
     <div
       v-if="visible"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
       @mousedown.self="choose(null)"
     >
       <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">

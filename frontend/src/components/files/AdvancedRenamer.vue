@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { debounce } from '@/utils/debounce'
 import type { FileEntry, RenamePreset, RenamePreviewItem } from '@/types'
-import { renamer, ConflictError } from '@/utils/api'
+import { renamer } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const { show: showToast } = useToast()
-const { prompt: promptConflict } = useConflictDialog()
+const { runWithConflictPrompt } = useConflictDialog()
 
 // ── Variable / transform definitions ─────────────────────────────────────────
 
@@ -458,22 +458,20 @@ const canApply = computed(
     previewItems.value.some((item) => item.new_name !== item.original_name),
 )
 
-async function applyRenames(conflictMode?: 'replace' | 'rename') {
+async function applyRenames() {
   applying.value = true
   try {
     const renames = props.files.map((file, index) => ({
       from: file.path,
       to: previewItems.value[index]?.new_name ?? file.name,
     }))
-    await renamer.apply(renames, props.folder, template.value, conflictMode)
+    const renamed = await runWithConflictPrompt('Rename conflicts', (conflictMode) =>
+      renamer.apply(renames, props.folder, template.value, conflictMode),
+    )
+    if (renamed === null) return
     showToast(`Renamed ${renames.length} file${renames.length !== 1 ? 's' : ''}`, 'success')
     emit('close')
   } catch (error) {
-    if (error instanceof ConflictError) {
-      const choice = await promptConflict('Rename conflicts', error.conflicts)
-      if (choice) applyRenames(choice)
-      return
-    }
     showToast((error as Error).message, 'error')
   } finally {
     applying.value = false
