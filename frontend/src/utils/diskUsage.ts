@@ -1,5 +1,6 @@
+import type { LocationQuery } from 'vue-router'
 import type { SizeMeasure, UsageEntry, UsageTotals } from '@/types'
-import { parentOf } from '@/utils/paths'
+import { isWithin, parentOf } from '@/utils/paths'
 
 export function sizeOf(item: UsageTotals, measure: SizeMeasure): number {
   return measure === 'apparent' ? item.apparent : item.disk
@@ -43,15 +44,52 @@ export function filesLocation(entry: UsageEntry): { path?: string; preview?: str
   return query
 }
 
-// The page's URL query: the scanned folder, the folder shown, the tab and the
-// size measure, leaving out the defaults.
-export function usageQuery(state: { root: string; at: string; tab: 'contents' | 'largest'; measure: SizeMeasure }): Record<string, string> {
-  const query: Record<string, string> = {}
-  if (state.root) query.path = state.root
-  if (state.at !== state.root) query.at = state.at
-  if (state.tab === 'largest') query.tab = 'largest'
-  if (state.measure === 'apparent') query.size = 'apparent'
-  return query
+export type UsageTab = 'contents' | 'largest'
+
+// What the disk usage modal shows: the scanned folder root, the folder at
+// inside it, the tab and the size measure.
+export interface UsageState {
+  root: string
+  at: string
+  tab: UsageTab
+  measure: SizeMeasure
+}
+
+// The modal's keys in the file browser's URL: ?usage= the scanned folder
+// (empty for the home folder), ?usage_at=, ?usage_tab=largest,
+// ?usage_size=apparent.
+const usageKeys = ['usage', 'usage_at', 'usage_tab', 'usage_size']
+
+function queryString(value: LocationQuery[string] | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const first = Array.isArray(value) ? value[0] : value
+  return first ?? ''
+}
+
+// The modal's state in query, or null when it isn't open. A folder to look at
+// outside the scanned one shows the scanned one.
+export function usageStateFrom(query: LocationQuery): UsageState | null {
+  const root = queryString(query.usage)
+  if (root === undefined) return null
+  const at = queryString(query.usage_at)
+  return {
+    root,
+    at: at !== undefined && isWithin(root, at) ? at : root,
+    tab: query.usage_tab === 'largest' ? 'largest' : 'contents',
+    measure: query.usage_size === 'apparent' ? 'apparent' : 'disk',
+  }
+}
+
+// query with the modal showing state (null closes it), leaving out the
+// defaults; the file browser's own keys stay.
+export function withUsageState(query: LocationQuery, state: UsageState | null): LocationQuery {
+  const rest = Object.fromEntries(Object.entries(query).filter(([key]) => !usageKeys.includes(key)))
+  if (!state) return rest
+  const usage: LocationQuery = { usage: state.root }
+  if (state.at !== state.root) usage.usage_at = state.at
+  if (state.tab === 'largest') usage.usage_tab = 'largest'
+  if (state.measure === 'apparent') usage.usage_size = 'apparent'
+  return { ...rest, ...usage }
 }
 
 export interface SmallEntries {

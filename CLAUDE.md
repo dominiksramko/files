@@ -23,7 +23,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
 - Server-sent event streams (watch, search, sizes, disk usage scan) write through `startEventStream(c)` and `writeEvent(c, event, payload)` (`handlers/sse.go`; an empty event name sends an unnamed event). A long stream also stops on `h.streamsEnd` (server shutdown) and re-checks `sessionStillValid(c)` now and then.
 - Deleting goes through `removeEntries(c, fsys, names)` (`fileops.go`), shared by `DELETE /files` and `DELETE /files/usage`: it reports already-missing items with a 404 before deleting anything. Deletes are permanent (there is no trash).
-- Disk usage (`handlers/usage.go`, page `/usage`): `internal/diskusage` scans a folder through userfs (links not followed; `Disk` = blocks with hard links counted once, folders included; `Apparent` = file lengths) and keeps only folders plus the largest files; a folder's files are read again when it's shown. Each user has one scan, kept in memory (`usageStore`, dropped after 30 min unused; at most 2 scans run at once server-wide; a new scan stops the user's running one). `diskusage.Count` also measures the Details dialog's sizes.
+- Disk usage (`handlers/usage.go`, the disk usage modal over the file browser): `internal/diskusage` scans a folder through userfs (links not followed; `Disk` = blocks with hard links counted once, folders included; `Apparent` = file lengths) and keeps only folders plus the largest files; a folder's files are read again when it's shown. Each user has one scan, kept in memory (`usageStore`, dropped after 30 min unused; at most 2 scans run at once server-wide; a new scan stops the user's running one). `diskusage.Count` also measures the Details dialog's sizes.
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
 - Responses that return a user's file inline (stream, content, office link) call `setUserFileHeaders(c, name)` first: `nosniff` plus a `Content-Security-Policy: sandbox`, so an HTML/SVG file opened directly can't run as part of the app (PDFs exempt — browsers won't show them sandboxed). New endpoints serving file bytes must do the same.
@@ -61,16 +61,16 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - `components/layout/` — shell components (AppLayout, AppHeader)
 - `components/files/` — file-specific (FileList, FileIcon, FileBreadcrumb, FilePreview)
 - `components/archive/` — ArchiveContents
-- `components/usage/` — disk usage page parts (UsageList, UsageTreemap)
+- `components/usage/` — the disk usage modal (DiskUsageModal, opened from Details, rendered by FilesView) and its parts (UsageList, UsageTreemap)
 - `components/admin/` — UserFormModal
-- `views/` — page-level (LoginView, FilesView, AdminView, SettingsView, DiskUsageView)
+- `views/` — page-level (LoginView, FilesView, AdminView, SettingsView)
 
 ## UI Component Rules
 - **AppCheckbox.vue** — always use for checkboxes; supports `v-model`, `indeterminate` prop; never use native `<input type="checkbox">`
 - **SecretInput.vue** — ALWAYS use for passwords that aren't the user's account password (archive passwords); NEVER a native `type="password"` there — password managers autofill the login into those and offer to save what's typed. Supports `v-model`; other attributes fall through. Account password fields stay `type="password"` with the right `autocomplete` (`current-password` / `new-password`).
 - **AppSelect.vue** — ALWAYS use for dropdowns/selects; NEVER use native `<select>`. Supports `v-model`, `options: { label, value }[]`, `disabled`. Handles string and number values correctly. Usage: `<AppSelect v-model="val" :options="[{ label: 'Foo', value: 'foo' }]" />`
 - **AppAccordion.vue + AppAccordionItem.vue** — use for collapsible settings sections; only one item open at a time. Wrap items in `<AppAccordion>`, each section in `<AppAccordionItem title="…">`. Uses CSS grid-template-rows transition for smooth animation.
-- **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl/2xl
+- **AppModal.vue** — for larger complex modals with header X-button, title, footer slot; sizes sm/md/lg/xl/2xl; `close-on-escape` (only the dialog on top closes — `useEscapeToClose`, shared with AppDialog), `fixed-height` (90vh whatever the content). Dialogs opened from inside a modal go inside its slot, so they count as on top of it.
 - **PresetPill.vue** (`components/files/`) — full-width preset list row with left accent border when active, inline delete confirm; used in AdvancedRenamer presets popover. Props: `name`, `template`, `active` (blue left border + bg when current template matches). Emits: `select`, `delete`.
 - **AppIcon.vue** — ALWAYS use for icons; NEVER write inline SVGs. Registry: `frontend/src/utils/icons.ts`. Usage: `<AppIcon name="trash" class="size-4" />`. Optional `stroke-width` prop. To add a new icon, add it to `icons.ts` first.
 - **useToast** — ALWAYS use for user-facing messages (success, error, info). NEVER use `alert()`. Import: `import { useToast } from '@/composables/useToast'`. Usage: `const { show: showToast } = useToast()` then `showToast('message', 'success' | 'error' | 'info')`. `AppToast` is mounted once in `App.vue` (so messages show on the login page too) — no need to add it per-view.
@@ -96,7 +96,7 @@ Always use `debounce()` from `frontend/src/utils/debounce.ts` — never write ra
 
 Views that need to render content in the header call `useHeaderCenter(name, render)` (`composables/useHeaderCenter.ts`) with a render function that closes over their own reactive state; it sets the component while the view is mounted and clears it on unmount. AppHeader renders it blindly with `<component :is="layout.headerCenter">`.
 
-Used by `FilesView` and `DiskUsageView` to render `FileBreadcrumb` in place of the logo (`root` makes the trail start at a given folder, `hrefFor` sets the crumbs' links).
+Used by `FilesView` to render `FileBreadcrumb` in place of the logo. `FileBreadcrumb` also works elsewhere (the disk usage modal): `root` makes the trail start at a given folder, `hrefFor` sets the crumbs' links.
 
 ## File Operations Convention (IMPORTANT)
 When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/src/composables/useFileOps.ts` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
@@ -109,7 +109,7 @@ ALL browsing state must be reflected in the URL so page refresh restores it:
 - `?preview=` — open preview file path
 - `?q=` — search query
 - `?view=text` — current preview shown as raw text instead of its custom view (`.todo`, `.kanban`)
-- Disk usage page (`/usage`): `?path=` the scanned folder, `?at=` the folder looked at inside it, `?tab=largest`, `?size=apparent` — built by `usageQuery()` (`utils/diskUsage.ts`)
+- `?usage=` — disk usage modal open on that folder (empty = home folder), with `?usage_at=` the folder looked at inside it, `?usage_tab=largest`, `?usage_size=apparent`. Read with `usageStateFrom(query)`, written with `withUsageState(query, state | null)` (`utils/diskUsage.ts`), which keep the browser's own keys; `routeQuery()` in FilesView keeps the modal's.
 
 Any new state that should survive refresh MUST be added to the URL and synced bidirectionally with `watch(route.query.xxx)` + `watch(stateRef)`.
 

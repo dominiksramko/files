@@ -10,7 +10,8 @@ import {
   sizeOf,
   sortBySize,
   squarify,
-  usageQuery,
+  usageStateFrom,
+  withUsageState,
 } from '../diskUsage'
 
 function entry(path: string, disk: number, apparent = disk, extra: Partial<UsageEntry> = {}): UsageEntry {
@@ -74,12 +75,44 @@ describe('locations', () => {
     expect(filesLocation(entry('top.txt', 1))).toEqual({ preview: 'top.txt' })
     expect(filesLocation(entry('media/clips', 1, 1, { is_dir: true }))).toEqual({ path: 'media/clips' })
   })
+})
 
-  it('puts only what differs from the defaults in the URL', () => {
-    expect(usageQuery({ root: '', at: '', tab: 'contents', measure: 'disk' })).toEqual({})
-    expect(usageQuery({ root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' }))
-      .toEqual({ path: 'media', at: 'media/clips', tab: 'largest', size: 'apparent' })
-    expect(usageQuery({ root: 'media', at: 'media', tab: 'contents', measure: 'disk' })).toEqual({ path: 'media' })
+describe('the modal in the URL', () => {
+  it('is closed without ?usage, and opens on the home folder with it empty', () => {
+    expect(usageStateFrom({ path: 'docs' })).toBeNull()
+    expect(usageStateFrom({ usage: '' })).toEqual({ root: '', at: '', tab: 'contents', measure: 'disk' })
+    expect(usageStateFrom({ usage: null })).toEqual({ root: '', at: '', tab: 'contents', measure: 'disk' })
+  })
+
+  it('reads the folder looked at, the tab and the measure', () => {
+    expect(usageStateFrom({ usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' }))
+      .toEqual({ root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' })
+    expect(usageStateFrom({ usage: '', usage_at: 'media' })?.at).toBe('media')
+  })
+
+  it('shows the scanned folder for a folder outside it', () => {
+    expect(usageStateFrom({ usage: 'media', usage_at: 'docs' })?.at).toBe('media')
+    expect(usageStateFrom({ usage: 'media', usage_at: 'media-old/x' })?.at).toBe('media')
+    expect(usageStateFrom({ usage: 'media', usage_tab: 'other', usage_size: 'other' }))
+      .toEqual({ root: 'media', at: 'media', tab: 'contents', measure: 'disk' })
+  })
+
+  it('puts only what differs from the defaults in the URL, next to the browser\'s own keys', () => {
+    expect(withUsageState({ path: 'docs', preview: 'docs/a.txt' }, { root: '', at: '', tab: 'contents', measure: 'disk' }))
+      .toEqual({ path: 'docs', preview: 'docs/a.txt', usage: '' })
+    expect(withUsageState({ path: 'docs' }, { root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' }))
+      .toEqual({ path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' })
+  })
+
+  it('replaces the previous state, and closing removes it all', () => {
+    const open = { path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' }
+    expect(withUsageState(open, { root: 'media', at: 'media', tab: 'contents', measure: 'disk' })).toEqual({ path: 'docs', usage: 'media' })
+    expect(withUsageState(open, null)).toEqual({ path: 'docs' })
+  })
+
+  it('reads back what it writes', () => {
+    const state = { root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' } as const
+    expect(usageStateFrom(withUsageState({}, state))).toEqual(state)
   })
 })
 

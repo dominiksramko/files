@@ -30,11 +30,6 @@ const router = createRouter({
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
         },
-        {
-          path: 'usage',
-          name: 'usage',
-          component: () => import('@/views/DiskUsageView.vue'),
-        },
       ],
     },
     {
@@ -54,7 +49,6 @@ router.afterEach((to) => {
       login: 'Login',
       admin: 'Admin',
       settings: 'Settings',
-      usage: 'Disk usage',
     }
     const label = names[to.name as string]
     document.title = label ? `${label} - files` : 'files'

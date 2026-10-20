@@ -33,7 +33,9 @@ import { useFileOps } from '@/composables/useFileOps'
 import { useHeaderCenter } from '@/composables/useHeaderCenter'
 import { debounce } from '@/utils/debounce'
 import { parentOf } from '@/utils/paths'
+import { usageStateFrom, withUsageState } from '@/utils/diskUsage'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
+import DiskUsageModal from '@/components/usage/DiskUsageModal.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
 const filesStore = useFilesStore()
 const route = useRoute()
@@ -239,13 +241,14 @@ function nextPreview() {
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
+// The URL for what's shown, with the disk usage modal's keys kept.
 function routeQuery() {
   const q: Record<string, string> = {}
   if (filesStore.currentPath) q.path = filesStore.currentPath
   if (searchQuery.value) q.q = searchQuery.value
   if (previewEntry.value) q.preview = previewEntry.value.path
   if (previewEntry.value && previewRawText.value) q.view = 'text'
-  return q
+  return withUsageState(q, usageStateFrom(route.query))
 }
 
 async function navigate(path: string) {
@@ -823,6 +826,9 @@ function closeDetails() {
   detailsItems.value = []
 }
 
+// The disk usage modal, opened from Details; its state is in the URL.
+const usageState = computed(() => usageStateFrom(route.query))
+
 function onGlobalKeydown(event: KeyboardEvent) {
   if (!event.ctrlKey && !event.metaKey) return
   if (event.key !== 'a' && event.key !== 'A') return
@@ -1378,6 +1384,7 @@ onMounted(async () => {
 
     <!-- Details modal -->
     <FileDetailsModal :items="detailsItems" @close="closeDetails" />
+    <DiskUsageModal v-if="usageState" :state="usageState" />
 
   </div>
 </template>
