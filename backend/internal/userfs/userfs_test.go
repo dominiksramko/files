@@ -59,6 +59,20 @@ func TestClean(t *testing.T) {
 	}
 }
 
+func TestRequestPath(t *testing.T) {
+	for name, want := range map[string]string{".": "", "docs": "docs", filepath.FromSlash("docs/plan.md"): "docs/plan.md"} {
+		if got := RequestPath(name); got != want {
+			t.Errorf("RequestPath(%q) = %q, want %q", name, got, want)
+		}
+	}
+	for _, rel := range []string{"", "/", "docs", "/docs/plan.md"} {
+		name, _ := Clean(rel)
+		if back, _ := Clean(RequestPath(name)); back != name {
+			t.Errorf("Clean(RequestPath(%q)) = %q", name, back)
+		}
+	}
+}
+
 func TestCleanChild(t *testing.T) {
 	for _, rel := range []string{"", ".", "/", "docs/.."} {
 		if _, err := CleanChild(rel); !errors.Is(err, ErrRoot) {

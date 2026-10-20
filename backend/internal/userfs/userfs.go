@@ -55,6 +55,15 @@ func Clean(rel string) (string, error) {
 	return name, nil
 }
 
+// RequestPath is name as the app writes paths: slash-separated, "" for the
+// home folder. The reverse of Clean.
+func RequestPath(name string) string {
+	if name == "." {
+		return ""
+	}
+	return filepath.ToSlash(name)
+}
+
 // CleanChild is Clean for an item that gets created, replaced, renamed, moved
 // or deleted: the home folder itself is refused.
 func CleanChild(rel string) (string, error) {

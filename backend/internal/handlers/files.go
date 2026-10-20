@@ -102,7 +102,7 @@ func (h *FilesHandler) List(c *gin.Context) {
 					break
 				}
 			}
-			c.JSON(http.StatusNotFound, gin.H{"error": "Directory not found", "fallback_path": filepath.ToSlash(fallback)})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Directory not found", "fallback_path": userfs.RequestPath(fallback)})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -161,7 +161,7 @@ func (h *FilesHandler) newFileEntry(fsys *userfs.FS, realDir, name string, info 
 	}
 	fe := FileEntry{
 		Name:       info.Name(),
-		Path:       filepath.ToSlash(name),
+		Path:       userfs.RequestPath(name),
 		IsDir:      info.IsDir(),
 		Size:       info.Size(),
 		ModTime:    info.ModTime(),
@@ -682,7 +682,7 @@ func (h *FilesHandler) Search(c *gin.Context) {
 			}
 			entry := FileEntry{
 				Name:       d.Name(),
-				Path:       filepath.ToSlash(name),
+				Path:       userfs.RequestPath(name),
 				IsDir:      d.IsDir(),
 				Size:       info.Size(),
 				ModTime:    info.ModTime(),

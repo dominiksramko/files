@@ -270,8 +270,8 @@ func (h *FilesHandler) Usage(c *gin.Context) {
 			return
 		}
 		listing := usageListing{
-			Root:       filepath.ToSlash(result.Name),
-			At:         filepath.ToSlash(at),
+			Root:       userfs.RequestPath(result.Name),
+			At:         userfs.RequestPath(at),
 			ScannedAt:  result.ScannedAt,
 			Unreadable: result.Unreadable,
 			RootTotal:  result.Root.Totals,
@@ -359,7 +359,7 @@ func (h *FilesHandler) UsageDelete(c *gin.Context) {
 		var outside []string
 		for i, name := range names {
 			if name == result.Name || !result.Contains(name) {
-				outside = append(outside, filepath.ToSlash(name))
+				outside = append(outside, userfs.RequestPath(name))
 				continue
 			}
 			infos[i], _ = fsys.Lstat(name) // a missing one is reported by removeEntries

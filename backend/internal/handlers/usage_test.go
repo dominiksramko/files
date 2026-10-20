@@ -81,8 +81,8 @@ func TestUsageScanThenBrowse(t *testing.T) {
 	if !media.Scanned || media.Apparent != 23005 || media.Files != 3 || media.Dirs != 1 || media.Disk < media.Apparent {
 		t.Errorf("media = %+v", media)
 	}
-	if listing.Total.Apparent != 23005+11+6+10 || listing.RootTotal != listing.Total || listing.At != "." {
-		t.Errorf("listing totals %+v / %+v, at %q", listing.Total, listing.RootTotal, listing.At)
+	if listing.Total.Apparent != 23005+11+6+10 || listing.RootTotal != listing.Total || listing.At != "" || listing.Root != "" {
+		t.Errorf("listing totals %+v / %+v, root %q at %q", listing.Total, listing.RootTotal, listing.Root, listing.At)
 	}
 
 	response = usageGet(h.Usage, annRoot, url.Values{"path": {""}, "at": {"media"}})
