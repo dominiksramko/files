@@ -152,39 +152,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	publicDir := "./public"
-	indexPath := filepath.Join(publicDir, "index.html")
-	r.NoRoute(func(c *gin.Context) {
-		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
-			c.Status(http.StatusNotFound)
-			return
-		}
-
-		path := c.Request.URL.Path
-		if path == "" {
-			path = "/"
-		}
-
-		cleanPath := filepath.Clean(path)
-		if strings.HasPrefix(cleanPath, "..") {
-			c.Status(http.StatusBadRequest)
-			return
-		}
-		cleanPath = strings.TrimPrefix(cleanPath, "/")
-
-		requested := filepath.Join(publicDir, cleanPath)
-		if fi, err := os.Stat(requested); err == nil && !fi.IsDir() {
-			c.File(requested)
-			return
-		}
-
-		if strings.Contains(c.GetHeader("Accept"), "text/html") {
-			c.File(indexPath)
-			return
-		}
-
-		c.Status(http.StatusNotFound)
-	})
+	r.NoRoute(frontendHandler("./public"))
 
 	log.Printf("starting on :%s", cfg.Port)
 	if err := newHTTPServer(":"+cfg.Port, r).ListenAndServe(); err != nil {
@@ -203,5 +171,40 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
+	}
+}
+
+// frontendHandler serves the built frontend from publicDir: its files, and
+// index.html for any other page the browser asks for (client-side routes).
+// index.html is never cached, so a deploy's new asset names are picked up at
+// once; the files under assets/ have content hashes in their names and are
+// cached for good.
+func frontendHandler(publicDir string) gin.HandlerFunc {
+	indexPath := filepath.Join(publicDir, "index.html")
+	return func(c *gin.Context) {
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
+			return
+		}
+
+		cleanPath := strings.TrimPrefix(filepath.Clean("/"+c.Request.URL.Path), "/")
+		if cleanPath != "" && cleanPath != "index.html" {
+			requested := filepath.Join(publicDir, cleanPath)
+			if fi, err := os.Stat(requested); err == nil && !fi.IsDir() {
+				if strings.HasPrefix(cleanPath, "assets/") {
+					c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				}
+				c.File(requested)
+				return
+			}
+		}
+
+		if cleanPath == "" || cleanPath == "index.html" || strings.Contains(c.GetHeader("Accept"), "text/html") {
+			c.Header("Cache-Control", "no-cache")
+			c.File(indexPath)
+			return
+		}
+
+		c.Status(http.StatusNotFound)
 	}
 }

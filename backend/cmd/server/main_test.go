@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -120,5 +122,45 @@ func TestClientAddressBehindProxy(t *testing.T) {
 	}
 	if got := clientIP(t, nil, "172.18.0.5:41000", "198.51.100.7"); got != "172.18.0.5" {
 		t.Errorf("TRUSTED_PROXIES=none: client = %s, want the direct address", got)
+	}
+}
+
+func TestFrontendHandlerCaching(t *testing.T) {
+	publicDir := t.TempDir()
+	os.MkdirAll(filepath.Join(publicDir, "assets"), 0o755)
+	os.WriteFile(filepath.Join(publicDir, "index.html"), []byte("<html>app</html>"), 0o644)
+	os.WriteFile(filepath.Join(publicDir, "assets", "index-abc123.js"), []byte("js"), 0o644)
+	os.WriteFile(filepath.Join(publicDir, "favicon.ico"), []byte("ico"), 0o644)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.NoRoute(frontendHandler(publicDir))
+
+	get := func(path, accept string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if accept != "" {
+			request.Header.Set("Accept", accept)
+		}
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		return recorder
+	}
+	tests := []struct {
+		path, accept, cache, body string
+		status                    int
+	}{
+		{"/", "text/html", "no-cache", "<html>app</html>", http.StatusOK},
+		{"/index.html", "", "no-cache", "", http.StatusMovedPermanently},          // ServeFile sends it to /
+		{"/settings", "text/html", "no-cache", "<html>app</html>", http.StatusOK}, // client-side route
+		{"/assets/index-abc123.js", "", "public, max-age=31536000, immutable", "js", http.StatusOK},
+		{"/favicon.ico", "", "", "ico", http.StatusOK},
+		{"/missing.js", "", "", "", http.StatusNotFound},
+		{"/../etc/passwd", "", "", "", http.StatusNotFound},
+	}
+	for _, test := range tests {
+		response := get(test.path, test.accept)
+		if response.Code != test.status || response.Header().Get("Cache-Control") != test.cache ||
+			(test.body != "" && response.Body.String() != test.body) {
+			t.Errorf("%s: %d, Cache-Control %q, body %q", test.path, response.Code, response.Header().Get("Cache-Control"), response.Body)
+		}
 	}
 }
