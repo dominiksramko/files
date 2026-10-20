@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,7 @@ func TestInputGuardsEveryCall(t *testing.T) {
 }
 
 func TestMagickConvertSetsPolicy(t *testing.T) {
-	cmd := MagickConvert("in.png", "out.jpg")
+	cmd := MagickConvert(context.Background(), "in.png", "out.jpg")
 	var policyPath string
 	for _, env := range cmd.Env {
 		if strings.HasPrefix(env, "MAGICK_CONFIGURE_PATH=") {
@@ -93,14 +94,14 @@ func TestMagickConvertBlocksRemoteAndFileReads(t *testing.T) {
 		t.Skip("needs ImageMagick")
 	}
 	dir := t.TempDir()
-	out, err := MagickConvert("https://example.com/x.png", filepath.Join(dir, "out.png")).CombinedOutput()
+	out, err := MagickConvert(context.Background(), "https://example.com/x.png", filepath.Join(dir, "out.png")).CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "security policy") {
 		t.Errorf("https coder not blocked: %v %s", err, out)
 	}
 
 	list := filepath.Join(dir, "list.txt")
 	os.WriteFile(list, []byte("/etc/hostname\n"), 0o644)
-	out, err = MagickConvert("@"+list, filepath.Join(dir, "out2.png")).CombinedOutput()
+	out, err = MagickConvert(context.Background(), "@"+list, filepath.Join(dir, "out2.png")).CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "security policy") {
 		t.Errorf("@file read not blocked: %v %s", err, out)
 	}
@@ -116,7 +117,7 @@ func TestMagickConvertStillConverts(t *testing.T) {
 		t.Skipf("cannot make a test image: %s", out)
 	}
 	dst := filepath.Join(dir, "out.jpg")
-	if out, err := MagickConvert(src, "-resize", "20x20", dst).CombinedOutput(); err != nil {
+	if out, err := MagickConvert(context.Background(), src, "-resize", "20x20", dst).CombinedOutput(); err != nil {
 		t.Fatalf("convert under policy failed: %v %s", err, out)
 	}
 	if info, err := os.Stat(dst); err != nil || info.Size() == 0 {

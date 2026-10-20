@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // allowedFormats are ffmpeg/ffprobe demuxers for the audio, video and
@@ -46,7 +47,7 @@ func FFprobe(path string, options ...string) *exec.Cmd {
 func FFprobeContext(ctx context.Context, path string, options ...string) *exec.Cmd {
 	args := append(options, inputGuard()...)
 	args = append(args, "-i", path)
-	return exec.CommandContext(ctx, "ffprobe", args...)
+	return Command(ctx, "ffprobe", args...)
 }
 
 // Input is the guarded input options plus "-i", path, to drop into an ffmpeg
@@ -60,9 +61,26 @@ func Input(path string) []string {
 // other files or URLs (we don't need them: SVG goes through rsvg-convert and
 // PDF through pdftoppm). The policy is passed in the environment, so it also
 // covers the delegates ImageMagick may call.
-func MagickConvert(args ...string) *exec.Cmd {
-	cmd := exec.Command("convert", args...)
+func MagickConvert(ctx context.Context, args ...string) *exec.Cmd {
+	return magick(ctx, "convert", args...)
+}
+
+// MagickIdentify builds ImageMagick's `identify` command, under the same policy.
+func MagickIdentify(ctx context.Context, args ...string) *exec.Cmd {
+	return magick(ctx, "identify", args...)
+}
+
+func magick(ctx context.Context, tool string, args ...string) *exec.Cmd {
+	cmd := Command(ctx, tool, args...)
 	cmd.Env = append(cmd.Environ(), "MAGICK_CONFIGURE_PATH="+magickPolicyDir())
+	return cmd
+}
+
+// Command is exec.CommandContext that also stops waiting for the tool's
+// output shortly after ctx ends, so a hung tool can't hold its caller.
+func Command(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = 5 * time.Second
 	return cmd
 }
 

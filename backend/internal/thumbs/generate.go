@@ -1,6 +1,7 @@
 package thumbs
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	_ "image/png"
 	"io"
 	"os"
-	"os/exec"
 
 	"files/internal/media"
 	"path/filepath"
@@ -115,7 +115,7 @@ func generateThumb(srcPath, dstPath string, size int) error {
 //   - PSD/XCF: layered formats where all layers compose the final image; we load
 //     all layers and flatten them together.
 //   - Everything else: single-frame formats, [0] is used defensively.
-func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
+func generateMagickThumb(ctx context.Context, srcPath, dstPath, mime string, size int) error {
 	tmp, err := os.CreateTemp("", "magick-thumb-*.png")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
@@ -134,13 +134,13 @@ func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 	var args []string
 	switch mime {
 	case "image/x-icon":
-		args = icoConvertArgs(srcPath, rasterSize, tmp.Name())
+		args = icoConvertArgs(ctx, srcPath, rasterSize, tmp.Name())
 	case "image/vnd.adobe.photoshop", "image/x-xcf":
 		args = []string{"-background", "none", srcPath, "-flatten", "-resize", rasterSize + "x" + rasterSize + ">", tmp.Name()}
 	default:
 		args = []string{"-background", "none", srcPath + "[0]", "-flatten", "-resize", rasterSize + "x" + rasterSize + ">", tmp.Name()}
 	}
-	if out, err := media.MagickConvert(args...).CombinedOutput(); err != nil {
+	if out, err := media.MagickConvert(ctx, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
@@ -180,8 +180,8 @@ func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 //   - Variations: all frames share the same aspect ratio; use only the largest.
 //   - Composite: frames have different aspect ratios; place the largest first
 //     as the base canvas then append all others and flatten.
-func icoConvertArgs(srcPath, rasterSize, tmpPath string) []string {
-	largestIdx, frames := ICOFrameDimensions(srcPath)
+func icoConvertArgs(ctx context.Context, srcPath, rasterSize, tmpPath string) []string {
+	largestIdx, frames := ICOFrameDimensions(ctx, srcPath)
 
 	if ICOIsComposite(frames) {
 		args := []string{"-background", "none", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}
@@ -204,8 +204,8 @@ func icoConvertArgs(srcPath, rasterSize, tmpPath string) []string {
 
 // ICOFrameDimensions returns the dimensions of every frame in the ICO file and
 // the index of the largest frame by pixel area. Falls back to (0, nil) on error.
-func ICOFrameDimensions(srcPath string) (largestIdx int, frames []image.Point) {
-	out, err := exec.Command("identify", "-format", "%w %h\n", srcPath).Output()
+func ICOFrameDimensions(ctx context.Context, srcPath string) (largestIdx int, frames []image.Point) {
+	out, err := media.MagickIdentify(ctx, "-format", "%w %h\n", srcPath).Output()
 	if err != nil {
 		return 0, nil
 	}
@@ -259,7 +259,7 @@ func gcd(a, b int) int {
 
 // generatePDFThumb rasterises the first page of the PDF at srcPath via
 // pdftoppm, then crops and encodes to a JPEG thumbnail at dstPath.
-func generatePDFThumb(srcPath, dstPath string, size int) error {
+func generatePDFThumb(ctx context.Context, srcPath, dstPath string, size int) error {
 	dir, err := os.MkdirTemp("", "pdf-thumb-*")
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
@@ -269,7 +269,7 @@ func generatePDFThumb(srcPath, dstPath string, size int) error {
 	rasterSize := strconv.Itoa(size * 2)
 	// -r sets DPI; 150 is enough for a 320px thumbnail from a typical A4 page.
 	// -f 1 -l 1 renders only the first page. Output files are <prefix>-1.png.
-	if out, err := exec.Command(
+	if out, err := media.Command(ctx,
 		"pdftoppm", "-r", "150", "-f", "1", "-l", "1", "-png",
 		"-scale-to", rasterSize,
 		srcPath, filepath.Join(dir, "p"),
@@ -312,7 +312,7 @@ func generatePDFThumb(srcPath, dstPath string, size int) error {
 // generateSVGThumb rasterises the SVG at srcPath via rsvg-convert, composites
 // the result onto a checkerboard background (so transparent areas are visible
 // in the JPEG thumbnail), then crops and encodes to dstPath.
-func generateSVGThumb(srcPath, dstPath string, size int) error {
+func generateSVGThumb(ctx context.Context, srcPath, dstPath string, size int) error {
 	tmp, err := os.CreateTemp("", "svg-thumb-*.png")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
@@ -322,7 +322,7 @@ func generateSVGThumb(srcPath, dstPath string, size int) error {
 
 	// Rasterise at 2× the target size so the subsequent downscale is high quality.
 	rasterSize := strconv.Itoa(size * 2)
-	if out, err := exec.Command("rsvg-convert", "--width", rasterSize, srcPath, "-o", tmp.Name()).CombinedOutput(); err != nil {
+	if out, err := media.Command(ctx, "rsvg-convert", "--width", rasterSize, srcPath, "-o", tmp.Name()).CombinedOutput(); err != nil {
 		return fmt.Errorf("rsvg-convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
@@ -380,9 +380,9 @@ func flattenOnCheckerboard(src image.Image) image.Image {
 
 // generateVideoThumb extracts a frame from the middle of the video at srcPath
 // and writes a size×size JPEG thumbnail to dstPath using FFmpeg.
-func generateVideoThumb(srcPath, dstPath string, size int) error {
+func generateVideoThumb(ctx context.Context, srcPath, dstPath string, size int) error {
 	// Ask ffprobe for the duration so we can seek to the middle.
-	seekSec := videoDuration(srcPath) / 2
+	seekSec := videoDuration(ctx, srcPath) / 2
 
 	// Scale so the shortest side = size, then crop size×size from the top-centre.
 	// (iw-ow)/2 centres horizontally; y=0 anchors to the top.
@@ -401,15 +401,15 @@ func generateVideoThumb(srcPath, dstPath string, size int) error {
 		"-y", // overwrite output
 		dstPath,
 	)
-	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+	if out, err := media.Command(ctx, "ffmpeg", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
 // videoDuration returns the duration in seconds via ffprobe, or 0 on error.
-func videoDuration(path string) float64 {
-	out, err := media.FFprobe(path,
+func videoDuration(ctx context.Context, path string) float64 {
+	out, err := media.FFprobeContext(ctx, path,
 		"-v", "quiet",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",

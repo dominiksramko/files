@@ -1,6 +1,7 @@
 package thumbs
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -8,9 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 const maxConcurrent = 4
+
+// toolTimeout bounds the external tools making one thumbnail. A variable so
+// tests can shorten it.
+var toolTimeout = 2 * time.Minute
+
 const ThumbMaxDim = 320
 
 // IsThumbnailable reports whether the given MIME type can be thumbnailed.
@@ -177,16 +184,20 @@ func (s *Service) enqueue(t task) {
 
 func (s *Service) process(t task) {
 	thumbPath := filepath.Join(s.cacheDir, t.thumbFile)
+	// A file a tool hangs on would otherwise hold one of the few generation
+	// slots for good, and a handful of them would stop all thumbnails.
+	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
+	defer cancel()
 	err := runRecovered(func() error {
 		switch {
 		case strings.HasPrefix(t.mime, "video/"):
-			return generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
+			return generateVideoThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
 		case t.mime == "image/svg+xml":
-			return generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
+			return generateSVGThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
 		case t.mime == "application/pdf":
-			return generatePDFThumb(t.absPath, thumbPath, ThumbMaxDim)
+			return generatePDFThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
 		case isMagickThumbable(t.mime):
-			return generateMagickThumb(t.absPath, thumbPath, t.mime, ThumbMaxDim)
+			return generateMagickThumb(ctx, t.absPath, thumbPath, t.mime, ThumbMaxDim)
 		default:
 			return generateThumb(t.absPath, thumbPath, ThumbMaxDim)
 		}

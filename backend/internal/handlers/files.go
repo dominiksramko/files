@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -486,7 +487,7 @@ func needsImageConversion(mime string) bool {
 // convertAndStream converts srcPath to JPEG via ImageMagick and writes it to
 // the response. Results are cached by content hash for convCacheTTL (7 days).
 func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
-	args := buildConvertArgs(srcPath, mime)
+	args := buildConvertArgs(c.Request.Context(), srcPath, mime)
 
 	// Check cache first.
 	if h.convCache != nil {
@@ -496,7 +497,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 			return
 		} else if hash != "" {
 			// Hash computed but cache missed — convert and store.
-			out, err := media.MagickConvert(args...).Output()
+			out, err := media.MagickConvert(c.Request.Context(), args...).Output()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 				return
@@ -508,7 +509,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 	}
 
 	// No cache available — convert and serve without caching.
-	out, err := media.MagickConvert(args...).Output()
+	out, err := media.MagickConvert(c.Request.Context(), args...).Output()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 		return
@@ -593,10 +594,10 @@ func transcodeAudio(srcPath, destPath string) error {
 // srcPath as a JPEG. ICO handling mirrors thumbnail generation:
 //   - Composite ICO (frames have different aspect ratios): composite all layers.
 //   - Variations ICO (same aspect ratio at different sizes): use only the largest frame.
-func buildConvertArgs(srcPath, mime string) []string {
+func buildConvertArgs(ctx context.Context, srcPath, mime string) []string {
 	tail := []string{"-flatten", "-quality", "90", "jpeg:-"}
 	if mime == "image/x-icon" {
-		largestIdx, frames := thumbs.ICOFrameDimensions(srcPath)
+		largestIdx, frames := thumbs.ICOFrameDimensions(ctx, srcPath)
 		if thumbs.ICOIsComposite(frames) {
 			args := []string{"-background", "white", fmt.Sprintf("%s[%d]", srcPath, largestIdx)}
 			for i := range frames {
