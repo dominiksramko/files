@@ -27,6 +27,7 @@ import { useConflictDialog } from '@/composables/useConflictDialog'
 import { useArchiveExtract } from '@/composables/useArchiveExtract'
 import { isTypingTarget } from '@/utils/keyboard'
 import { droppedFiles } from '@/utils/drop'
+import { useJobSelection } from '@/composables/useJobSelection'
 import { useFileOps } from '@/composables/useFileOps'
 import { useLayoutStore } from '@/stores/layout'
 import { debounce } from '@/utils/debounce'
@@ -384,35 +385,7 @@ const {
 })
 
 // ── Selection-clear tracking for background jobs ────────────────────────────
-// Only the last-started job may clear selection, and only if the user hasn't
-// manually changed it since that job started.
-let lastBgJobId = -1
-let selectionChangedSinceLastJob = false
-let silentSelectionChange = false
-
-watch(selectedPaths, () => {
-  if (!silentSelectionChange) selectionChangedSinceLastJob = true
-})
-
-// When paths leave the listing (removed via the watch stream, or missing from a
-// fresh snapshot after a reconnect), silently drop them from selection.
-watch(() => filesStore.entries, (entries) => {
-  if (!selectedPaths.value.length) return
-  const presentPaths = new Set(entries.map((entry) => entry.path))
-  if (selectedPaths.value.every((path) => presentPaths.has(path))) return
-  silentSelectionChange = true
-  selectedPaths.value = selectedPaths.value.filter((path) => presentPaths.has(path))
-  silentSelectionChange = false
-})
-
-function startBgJobTracking(id: number) {
-  lastBgJobId = id
-  selectionChangedSinceLastJob = false
-}
-
-function canClearSelection(id: number): boolean {
-  return id === lastBgJobId && !selectionChangedSinceLastJob
-}
+const { trackJob, clearSelectionAfterJob } = useJobSelection(selectedPaths, () => filesStore.entries)
 
 // ── Download selection ─────────────────────────────────────────────────────
 async function downloadPaths(paths: string[]) {
@@ -428,7 +401,7 @@ async function downloadPaths(paths: string[]) {
     }
   }
   const id = nextJobId++
-  startBgJobTracking(id)
+  trackJob(id)
   bgJobs.value.push({ kind: 'zip', id })
   try {
     const blob = await fileops.downloadZip(paths)
@@ -441,7 +414,7 @@ async function downloadPaths(paths: string[]) {
     a.download = single ? `${single.name}.zip` : `${folderName}.zip`
     a.click()
     URL.revokeObjectURL(url)
-    if (canClearSelection(id)) selectedPaths.value = []
+    clearSelectionAfterJob(id)
   } catch (err) {
     showToast((err as Error).message, 'error')
   } finally {
@@ -767,14 +740,14 @@ function confirmCompress() {
 async function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean) {
   const name = dest.split('/').pop() ?? dest
   const id = nextJobId++
-  startBgJobTracking(id)
+  trackJob(id)
   bgJobs.value.push({ kind: 'compress', id, name })
   try {
     const created = await runWithConflictPrompt('Archive already exists', (conflictMode) =>
       fileops.compress(paths, dest, format, password, protect, conflictMode),
     )
     if (created === null) return
-    if (canClearSelection(id)) selectedPaths.value = []
+    clearSelectionAfterJob(id)
     showToast('Archive created', 'success')
   } catch (err) {
     showToast(err instanceof Error ? err.message : 'Failed to create archive', 'error')
