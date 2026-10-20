@@ -20,8 +20,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"files/internal/thumbs"
 	"files/internal/media"
+	"files/internal/thumbs"
 	"files/internal/userfs"
 )
 
@@ -58,16 +58,16 @@ func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandl
 }
 
 type FileEntry struct {
-	Name       string     `json:"name"`
-	Path       string     `json:"path"` // relative to user root
-	IsDir      bool       `json:"is_dir"`
-	Size       int64      `json:"size"`
-	ModTime    time.Time  `json:"mod_time"`
-	CreatedAt  *time.Time `json:"created_at,omitempty"`
-	Mime       string     `json:"mime"`
-	HasThumb    bool       `json:"has_thumb"`                // true when a ready thumbnail exists
-	ThumbHash   string     `json:"thumb_hash,omitempty"`     // content hash, present when has_thumb is true
-	ContentHash string     `json:"content_hash,omitempty"`   // content hash for all thumbnailable files
+	Name        string     `json:"name"`
+	Path        string     `json:"path"` // relative to user root
+	IsDir       bool       `json:"is_dir"`
+	Size        int64      `json:"size"`
+	ModTime     time.Time  `json:"mod_time"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	Mime        string     `json:"mime"`
+	HasThumb    bool       `json:"has_thumb"`              // true when a ready thumbnail exists
+	ThumbHash   string     `json:"thumb_hash,omitempty"`   // content hash, present when has_thumb is true
+	ContentHash string     `json:"content_hash,omitempty"` // content hash for all thumbnailable files
 	CanExtract  bool       `json:"can_extract,omitempty"`
 }
 
@@ -462,7 +462,6 @@ func (h *FilesHandler) DownloadZip(c *gin.Context) {
 		log.Printf("download-zip: %v", err)
 	}
 }
-
 
 // convertSizeLimit is the maximum file size for on-the-fly image conversion.
 // Files larger than this are served raw; the browser will show its own error.

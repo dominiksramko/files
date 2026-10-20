@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 
 	"files/internal/config"
 	"files/internal/database/migrations"

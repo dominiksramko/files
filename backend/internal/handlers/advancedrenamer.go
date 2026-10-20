@@ -394,12 +394,12 @@ func collectImageVars(absPath string, vars templateVars) {
 // ffprobeResult is a minimal subset of ffprobe JSON output used for media vars.
 type ffprobeResult struct {
 	Streams []struct {
-		CodecType   string `json:"codec_type"`
-		CodecName   string `json:"codec_name"`
-		Width       int    `json:"width"`
-		Height      int    `json:"height"`
-		RFrameRate  string `json:"r_frame_rate"` // e.g. "30/1" or "24000/1001"
-		Duration    string `json:"duration"`
+		CodecType  string `json:"codec_type"`
+		CodecName  string `json:"codec_name"`
+		Width      int    `json:"width"`
+		Height     int    `json:"height"`
+		RFrameRate string `json:"r_frame_rate"` // e.g. "30/1" or "24000/1001"
+		Duration   string `json:"duration"`
 	} `json:"streams"`
 	Format struct {
 		Duration string            `json:"duration"`

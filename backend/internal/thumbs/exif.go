@@ -33,7 +33,7 @@ func jpegOrientation(path string) int {
 		if _, err := io.ReadFull(f, buf); err != nil {
 			return 1
 		}
-		segLen := int(buf[0])<<8|int(buf[1]) - 2
+		segLen := int(buf[0])<<8 | int(buf[1]) - 2
 		if segLen < 0 {
 			return 1
 		}

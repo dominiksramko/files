@@ -856,8 +856,8 @@ func listUnrar(path, password string) ([]ArchiveEntry, error) {
 // parseUnrarList parses the output of "unrar l".
 // Output between the two "---" separator lines looks like:
 //
-//	 -rw-r--r--      1234  2023-01-01 12:00  file.txt
-//	 drwxr-xr-x         0  2023-01-01 12:00  folder/
+//	-rw-r--r--      1234  2023-01-01 12:00  file.txt
+//	drwxr-xr-x         0  2023-01-01 12:00  folder/
 func parseUnrarList(output string) []ArchiveEntry {
 	var entries []ArchiveEntry
 	scanner := bufio.NewScanner(strings.NewReader(output))

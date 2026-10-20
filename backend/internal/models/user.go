@@ -21,13 +21,13 @@ func DefaultSubtitlePrefs() SubtitlePrefs {
 }
 
 type User struct {
-	ID                int64  `json:"id"`
-	Username          string `json:"username"`
-	DisplayName       string `json:"display_name"`
-	Password          string `json:"-"` // bcrypt hash, never serialised
-	RootDir           string `json:"root_dir"`
-	IsAdmin           bool   `json:"is_admin"`
-	SubtitlePrefsRaw  string `json:"-"`
+	ID               int64  `json:"id"`
+	Username         string `json:"username"`
+	DisplayName      string `json:"display_name"`
+	Password         string `json:"-"` // bcrypt hash, never serialised
+	RootDir          string `json:"root_dir"`
+	IsAdmin          bool   `json:"is_admin"`
+	SubtitlePrefsRaw string `json:"-"`
 }
 
 // UserResponse is the safe subset sent to clients.
