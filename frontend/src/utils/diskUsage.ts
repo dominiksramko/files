@@ -1,6 +1,7 @@
 import type { LocationQuery } from 'vue-router'
 import type { UsageEntry, UsageTotals } from '@/types'
 import { isWithin, parentOf } from '@/utils/paths'
+import { queryString, withKeys } from '@/utils/query'
 
 // Largest on disk first, by name when equal.
 export function sortBySize(entries: UsageEntry[]): UsageEntry[] {
@@ -59,12 +60,6 @@ export interface UsageState {
 // (empty for the home folder), ?usage_at=, ?usage_tab=largest.
 const usageKeys = ['usage', 'usage_at', 'usage_tab']
 
-function queryString(value: LocationQuery[string] | undefined): string | undefined {
-  if (value === undefined) return undefined
-  const first = Array.isArray(value) ? value[0] : value
-  return first ?? ''
-}
-
 // The modal's state in query, or null when it isn't open. A folder to look at
 // outside the scanned one shows the scanned one.
 export function usageStateFrom(query: LocationQuery): UsageState | null {
@@ -81,12 +76,11 @@ export function usageStateFrom(query: LocationQuery): UsageState | null {
 // query with the modal showing state (null closes it), leaving out the
 // defaults; the file browser's own keys stay.
 export function withUsageState(query: LocationQuery, state: UsageState | null): LocationQuery {
-  const rest = Object.fromEntries(Object.entries(query).filter(([key]) => !usageKeys.includes(key)))
-  if (!state) return rest
-  const usage: LocationQuery = { usage: state.root }
-  if (state.at !== state.root) usage.usage_at = state.at
-  if (state.tab === 'largest') usage.usage_tab = 'largest'
-  return { ...rest, ...usage }
+  return withKeys(query, usageKeys, {
+    usage: state?.root,
+    usage_at: state && state.at !== state.root ? state.at : undefined,
+    usage_tab: state?.tab === 'largest' ? 'largest' : undefined,
+  })
 }
 
 export interface SmallEntries {

@@ -32,8 +32,9 @@ import { useJobSelection } from '@/composables/useJobSelection'
 import { useFileOps } from '@/composables/useFileOps'
 import { useHeaderCenter } from '@/composables/useHeaderCenter'
 import { debounce } from '@/utils/debounce'
-import { parentOf } from '@/utils/paths'
+import { nameOf, parentOf } from '@/utils/paths'
 import { usageStateFrom, withUsageState } from '@/utils/diskUsage'
+import { archiveStateFrom, withArchiveState } from '@/utils/archiveTree'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import DiskUsageModal from '@/components/usage/DiskUsageModal.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
@@ -191,7 +192,6 @@ const visibleEntries = computed(() =>
 const previewFilePath    = ref<string | null>(null)
 const previewTextEditMode = ref(false)
 const previewRawText      = ref(false) // custom-view files (.todo, .kanban) shown as plain text; ?view=text
-const archiveEntry       = ref<FileEntry | null>(null)
 
 const previewableEntries = computed(() => {
   const pool = searchQuery.value ? searchResults.value : visibleEntries.value
@@ -241,14 +241,14 @@ function nextPreview() {
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
-// The URL for what's shown, with the disk usage modal's keys kept.
+// The URL for what's shown, with the disk usage and archive modals' keys kept.
 function routeQuery() {
   const q: Record<string, string> = {}
   if (filesStore.currentPath) q.path = filesStore.currentPath
   if (searchQuery.value) q.q = searchQuery.value
   if (previewEntry.value) q.preview = previewEntry.value.path
   if (previewEntry.value && previewRawText.value) q.view = 'text'
-  return withUsageState(q, usageStateFrom(route.query))
+  return withArchiveState(withUsageState(q, usageStateFrom(route.query)), archiveStateFrom(route.query))
 }
 
 async function navigate(path: string) {
@@ -308,8 +308,11 @@ watch(
 )
 
 // ── Archive ────────────────────────────────────────────────────────────────
-function onExtracted() {
-  archiveEntry.value = null
+// The archive modal; its state is in the URL.
+const archiveState = computed(() => archiveStateFrom(route.query))
+
+function openArchive(entry: FileEntry) {
+  router.push({ query: withArchiveState(route.query, { path: entry.path, at: '' }) })
 }
 
 // ── Selection ──────────────────────────────────────────────────────────────
@@ -667,7 +670,7 @@ async function confirmRename() {
   if (!entry) return
   const trimmed = renameDialogName.value.trim()
   renameDialog.value = false
-  if (!trimmed || trimmed === (entry.path.split('/').pop() ?? '')) return
+  if (!trimmed || trimmed === nameOf(entry.path)) return
   const wasPreviewingThis = previewFilePath.value === entry.path
   try {
     const renamed = await runWithConflictPrompt('Name already taken', (conflictMode) => fileops.rename(entry.path, trimmed, conflictMode))
@@ -746,7 +749,7 @@ function confirmCompress() {
 }
 
 async function runCompress(paths: string[], dest: string, format: string, password: string | undefined, protect: boolean) {
-  const name = dest.split('/').pop() ?? dest
+  const name = nameOf(dest)
   const id = nextJobId++
   trackJob(id)
   bgJobs.value.push({ kind: 'compress', id, name })
@@ -1116,7 +1119,7 @@ onMounted(async () => {
         :query="searchQuery"
         @navigate="(p) => { navigate(p); clearSearch() }"
         @preview="openPreview"
-        @archive-preview="archiveEntry = $event"
+        @archive-preview="openArchive"
       />
       <FileGrid
         v-else-if="viewMode === 'grid'"
@@ -1126,7 +1129,7 @@ onMounted(async () => {
 
         @navigate="navigate"
         @preview="openPreview"
-        @archive-preview="archiveEntry = $event"
+        @archive-preview="openArchive"
         @toggle-select="toggleSelect"
         @context-menu="onContextMenu"
         @folder-context-menu="onFolderContextMenu"
@@ -1142,7 +1145,7 @@ onMounted(async () => {
         :selected="selectedPaths"
         @navigate="navigate"
         @preview="openPreview"
-        @archive-preview="archiveEntry = $event"
+        @archive-preview="openArchive"
         @toggle-sort="toggleSort"
         @toggle-select="toggleSelect"
         @select-all="selectAll"
@@ -1171,12 +1174,7 @@ onMounted(async () => {
       @toggle-raw-text="previewRawText = !previewRawText"
     />
 
-    <ArchiveContents
-      v-if="archiveEntry"
-      :entry="archiveEntry"
-      @close="archiveEntry = null"
-      @extracted="onExtracted"
-    />
+    <ArchiveContents v-if="archiveState" :key="archiveState.path" :state="archiveState" />
 
     <!-- New folder dialog -->
     <AppDialog :open="newFolderDialog" @close="newFolderDialog = false">

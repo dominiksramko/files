@@ -6,8 +6,9 @@ import { debounce } from '@/utils/debounce'
 import { breadcrumbTrail } from '@/utils/paths'
 
 // root: the first crumb (default: the home folder); nothing above it is shown.
+// rootLabel: what the first crumb says (default: Home, or root's name).
 // hrefFor: the link of a crumb (default: that folder in the file browser).
-const props = defineProps<{ path: string; root?: string; hrefFor?: (path: string) => string }>()
+const props = defineProps<{ path: string; root?: string; rootLabel?: string; hrefFor?: (path: string) => string }>()
 const emit = defineEmits<{
   navigate: [path: string]
   dropToFolder: [destPath: string, paths: string[]]
@@ -58,7 +59,7 @@ function cancelEdit() {
   editing.value = false
 }
 
-const allCrumbs = computed(() => breadcrumbTrail(props.path, props.root))
+const allCrumbs = computed(() => breadcrumbTrail(props.path, props.root, props.rootLabel))
 
 const hiddenCrumbs = computed(() => allCrumbs.value.slice(0, hiddenCount.value))
 const shownCrumbs = computed(() => allCrumbs.value.slice(hiddenCount.value))

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { breadcrumbTrail, isWithin, parentOf, relativeTo } from '@/utils/paths'
+import { breadcrumbTrail, isWithin, nameOf, parentOf, relativeTo } from '@/utils/paths'
 
 describe('paths', () => {
+  it('finds the name a path leads to', () => {
+    expect(nameOf('a/b/c.txt')).toBe('c.txt')
+    expect(nameOf('c.txt')).toBe('c.txt')
+    expect(nameOf('')).toBe('')
+  })
+
   it('finds the parent folder', () => {
     expect(parentOf('a/b/c.txt')).toBe('a/b')
     expect(parentOf('c.txt')).toBe('')
@@ -39,5 +45,12 @@ describe('breadcrumbTrail', () => {
     ])
     expect(breadcrumbTrail('media/clips', 'media/clips')).toHaveLength(1)
     expect(breadcrumbTrail('other', 'media')).toEqual([{ label: 'media', path: 'media', isHome: true }])
+  })
+
+  it('labels the first crumb as asked', () => {
+    expect(breadcrumbTrail('docs', '', 'photos.zip')).toEqual([
+      { label: 'photos.zip', path: '', isHome: true },
+      { label: 'docs', path: 'docs', isHome: false },
+    ])
   })
 })

@@ -1,5 +1,10 @@
 // Paths in the user's folder: relative, '/'-separated, '' for the folder itself.
 
+// The last part of path: the name of the file or folder it leads to.
+export function nameOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
 // The folder holding path ('' for something in the home folder).
 export function parentOf(path: string): string {
   const slash = path.lastIndexOf('/')
@@ -23,10 +28,10 @@ export interface Crumb {
   isHome: boolean
 }
 
-// The breadcrumb trail to path, starting at root (labelled Home when it's the
-// home folder).
-export function breadcrumbTrail(path: string, root = ''): Crumb[] {
-  const crumbs: Crumb[] = [{ label: root ? root.split('/').pop()! : 'Home', path: root, isHome: true }]
+// The breadcrumb trail to path, starting at root (labelled rootLabel if given,
+// else Home when it's the home folder, else its name).
+export function breadcrumbTrail(path: string, root = '', rootLabel?: string): Crumb[] {
+  const crumbs: Crumb[] = [{ label: rootLabel ?? (root ? nameOf(root) : 'Home'), path: root, isHome: true }]
   const below = isWithin(root, path) ? relativeTo(root, path) : ''
   below
     .split('/')

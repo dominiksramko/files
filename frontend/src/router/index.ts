@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { nameOf } from '@/utils/paths'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -42,7 +43,7 @@ const router = createRouter({
 router.afterEach((to) => {
   if (to.name === 'files') {
     const path = to.query.path as string | undefined
-    const folder = path ? path.split('/').pop()! : 'Home'
+    const folder = path ? nameOf(path) : 'Home'
     document.title = `${folder} - files`
   } else {
     const names: Record<string, string> = {

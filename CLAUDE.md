@@ -110,6 +110,7 @@ ALL browsing state must be reflected in the URL so page refresh restores it:
 - `?q=` — search query
 - `?view=text` — current preview shown as raw text instead of its custom view (`.todo`, `.kanban`)
 - `?usage=` — disk usage modal open on that folder (empty = home folder), with `?usage_at=` the folder looked at inside it, `?usage_tab=largest`. Read with `usageStateFrom(query)`, written with `withUsageState(query, state | null)` (`utils/diskUsage.ts`), which keep the browser's own keys; `routeQuery()` in FilesView keeps the modal's.
+- `?archive=` — archive modal open on that archive, with `?archive_at=` the folder looked at inside it. Read with `archiveStateFrom(query)`, written with `withArchiveState(query, state | null)` (`utils/archiveTree.ts`); both modals build on `queryString` / `withKeys` (`utils/query.ts`).
 
 Any new state that should survive refresh MUST be added to the URL and synced bidirectionally with `watch(route.query.xxx)` + `watch(stateRef)`.
 
