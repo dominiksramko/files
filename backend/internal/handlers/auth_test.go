@@ -204,7 +204,7 @@ func TestHLSPlaylistHasNoToken(t *testing.T) {
 	response := serve(NewHLSHandler(t.TempDir()).Playlist, annRoot, request)
 	assertStatus(t, response, http.StatusOK)
 	playlist := response.Body.String()
-	if !strings.Contains(playlist, "segment?path=clip.mp4&seq=1\n") || strings.Contains(playlist, "token") {
+	if !strings.Contains(playlist, "segment?path=clip.mp4&seq=0\n") || strings.Contains(playlist, "token") {
 		t.Errorf("playlist:\n%s", playlist)
 	}
 }
