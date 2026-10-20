@@ -21,6 +21,7 @@ run() { # run COMMAND... with the test volume's paths
 		THUMB_CACHE_DIR=/tmp/entrypoint-test/data/thumbs \
 		HLS_CACHE_DIR=/tmp/entrypoint-test/data/hls \
 		CONV_CACHE_DIR=/tmp/entrypoint-test/data/conv \
+		USERS_ROOT=/tmp/entrypoint-test/data/users \
 		"$entrypoint" "$@"
 }
 
@@ -31,7 +32,8 @@ check "database WAL handed over" "1000:1000" "$(owner /tmp/entrypoint-test/data/
 check "data folder handed over" "1000:1000" "$(owner /tmp/entrypoint-test/data)"
 check "cache contents handed over" "1000:1000" "$(owner /tmp/entrypoint-test/data/thumbs/ab/1.jpg)"
 check "user folders untouched" "0:0" "$(owner /tmp/entrypoint-test/data/users/ann/root-owned.txt)"
-check "users folder untouched" "0:0" "$(owner /tmp/entrypoint-test/data/users)"
+check "users folder handed over (new users' folders go there)" "1000:1000" "$(owner /tmp/entrypoint-test/data/users)"
+check "a user's folder inside untouched" "0:0" "$(owner /tmp/entrypoint-test/data/users/ann)"
 check "server can write its data" "written" "$(run sh -c 'touch /tmp/entrypoint-test/data/files.db-shm /tmp/entrypoint-test/data/thumbs/new.jpg && mkdir /tmp/entrypoint-test/data/conv && echo written')"
 
 setup

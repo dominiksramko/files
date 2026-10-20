@@ -16,7 +16,10 @@ import (
 // applied (and the seeded admin user).
 func OpenDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
+	dir := t.TempDir()
+	// Seeding creates the admin's folder in USERS_ROOT: keep it in the temp dir.
+	t.Setenv("USERS_ROOT", filepath.Join(dir, "users"))
+	db, err := database.Open(filepath.Join(dir, "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

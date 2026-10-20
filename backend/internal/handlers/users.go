@@ -3,6 +3,8 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"files/internal/models"
@@ -67,9 +69,19 @@ func (h *UsersHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Without a folder given, the user gets one named after them in USERS_ROOT,
+	// created now so their first visit doesn't find it missing.
 	rootDir := req.RootDir
 	if rootDir == "" {
-		rootDir = h.usersRoot + "/" + req.Username
+		if err := validateNewFilename(req.Username); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "username can't be used as a folder name: " + err.Error()})
+			return
+		}
+		rootDir = filepath.Join(h.usersRoot, req.Username)
+		if err := os.MkdirAll(rootDir, 0o755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not create the user's folder: " + err.Error()})
+			return
+		}
 	}
 
 	result, err := h.db.Exec(

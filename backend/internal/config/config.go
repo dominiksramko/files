@@ -14,6 +14,9 @@ import (
 // From anyone else those headers are ignored, as any client could send them.
 var DefaultTrustedProxies = []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"}
 
+// DefaultUsersRoot is USERS_ROOT when unset (the Docker image sets /data/users).
+const DefaultUsersRoot = "./data/users"
+
 type Config struct {
 	Port          string
 	JWTSecret     string
@@ -38,7 +41,7 @@ func Load() *Config {
 		Port:           getEnv("PORT", "8080"),
 		JWTSecret:      jwtSecret,
 		DBPath:         getEnv("DB_PATH", "./data/files.db"),
-		UsersRoot:      getEnv("USERS_ROOT", "./data/users"),
+		UsersRoot:      getEnv("USERS_ROOT", DefaultUsersRoot),
 		GinMode:        getEnv("GIN_MODE", "debug"),
 		ThumbCacheDir:  getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
 		HLSCacheDir:    getEnv("HLS_CACHE_DIR", "./data/hls"),

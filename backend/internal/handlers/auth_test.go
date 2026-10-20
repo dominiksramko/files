@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -342,4 +343,29 @@ func TestShortPasswordsRefused(t *testing.T) {
 	}
 	// The old passwords still work: ann's was set before the rule and is 13 characters anyway.
 	assertStatus(t, loginFrom(t, router, "198.51.100.1", "ann", testutil.Password), http.StatusOK)
+}
+
+func TestNewUserGetsAFolder(t *testing.T) {
+	db := testutil.OpenDB(t)
+	testutil.CreateUser(t, db, "boss", true, "")
+	usersRoot := t.TempDir()
+	store := sessions.NewStore(db)
+	router := gin.New()
+	router.POST("/login", NewAuthHandler(db, store).Login)
+	router.POST("/users", middleware.Auth(store), middleware.AdminOnly(), NewUsersHandler(db, usersRoot, store).Create)
+	boss := login(t, router, "boss")
+
+	response := call(t, router, http.MethodPost, "/users", boss, map[string]any{"username": "cat", "password": "long enough"})
+	assertStatus(t, response, http.StatusCreated)
+	if info, err := os.Stat(filepath.Join(usersRoot, "cat")); err != nil || !info.IsDir() {
+		t.Errorf("new user's folder not created: %v", err)
+	}
+
+	// A folder given by the admin is used as is, not created.
+	given := filepath.Join(t.TempDir(), "elsewhere")
+	assertStatus(t, call(t, router, http.MethodPost, "/users", boss, map[string]any{"username": "dog", "password": "long enough", "root_dir": given}), http.StatusCreated)
+	assertMissing(t, given)
+
+	// A username that can't be a folder name needs a folder given.
+	assertStatus(t, call(t, router, http.MethodPost, "/users", boss, map[string]any{"username": "..", "password": "long enough"}), http.StatusBadRequest)
 }

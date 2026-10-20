@@ -87,7 +87,7 @@ COPY --chmod=755 backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.s
 RUN --mount=type=bind,source=backend/docker-entrypoint_test.sh,target=/tmp/docker-entrypoint_test.sh \
     sh /tmp/docker-entrypoint_test.sh
 
-RUN mkdir -p /data/users && chown 1000:1000 /data
+RUN mkdir -p /data/users && chown 1000:1000 /data /data/users
 
 ENV PORT=8080 \
     DB_PATH=/data/files.db \

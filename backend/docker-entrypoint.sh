@@ -2,11 +2,12 @@
 # Starts the server as PUID:PGID (default 1000:1000) instead of root.
 #
 # It begins as root only to hand the app's own data to that user: the
-# database, its folder, and the thumbnail, video and conversion caches. On a
-# new volume there's nothing to do; after an upgrade from an image that ran as
-# root it's a one-time fix. Folders mounted for users are never touched (they
-# may sit on the same disk, so nothing under the data folder is changed
-# recursively) — PUID:PGID must be able to read and write them.
+# database, its folder, the thumbnail, video and conversion caches, and the
+# users folder itself (where new users' folders are created) unless it's a
+# mount. On a new volume there's nothing to do; after an upgrade from an image
+# that ran as root it's a one-time fix. Folders mounted for users are never
+# touched (they may sit on the same disk, so nothing under the data or users
+# folder is changed recursively) — PUID:PGID must be able to read and write them.
 set -eu
 
 PUID="${PUID:-1000}"
@@ -34,5 +35,9 @@ done
 for cache_dir in "${THUMB_CACHE_DIR:-./data/thumbs}" "${HLS_CACHE_DIR:-./data/hls}" "${CONV_CACHE_DIR:-./data/conv}"; do
 	give_to_user "$cache_dir" -xdev
 done
+users_root="${USERS_ROOT:-./data/users}"
+if ! mountpoint -q "$users_root" 2>/dev/null; then
+	give_to_user "$users_root" -maxdepth 0
+fi
 
 exec su-exec "$PUID:$PGID" "$@"
