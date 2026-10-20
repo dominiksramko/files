@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"files/internal/media"
 	"files/internal/userfs"
@@ -124,9 +125,9 @@ func applyTransform(value, transform string) string {
 	case "title":
 		words := strings.Fields(value)
 		for i, word := range words {
-			if len(word) > 0 {
-				words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
-			}
+			// The first character, not byte: "šramko" → "Šramko".
+			first, size := utf8.DecodeRuneInString(word)
+			words[i] = string(unicode.ToTitle(first)) + strings.ToLower(word[size:])
 		}
 		return strings.Join(words, " ")
 	case "snake":

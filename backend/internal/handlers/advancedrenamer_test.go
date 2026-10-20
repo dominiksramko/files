@@ -174,3 +174,19 @@ func TestRenameAllRestoresOnFailure(t *testing.T) {
 	assertFileContent(t, filepath.Join(dir, "b"), "b")  // put back
 	assertNoTempNames(t, dir)
 }
+
+func TestTitleCase(t *testing.T) {
+	for value, want := range map[string]string{
+		"šramko":          "Šramko",
+		"élan vital":      "Élan Vital",
+		"hello WORLD":     "Hello World",
+		"ǆungla":          "ǅungla", // title case differs from upper case
+		"a":               "A",
+		"čaj a  káva":     "Čaj A Káva",
+		"123 main street": "123 Main Street",
+	} {
+		if got := applyTransform(value, "title"); got != want {
+			t.Errorf("title(%q) = %q, want %q", value, got, want)
+		}
+	}
+}
