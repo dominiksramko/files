@@ -47,3 +47,26 @@ func TestWatchEndsWhenSessionEnds(t *testing.T) {
 		t.Errorf("stream body:\n%s", recorder.Body)
 	}
 }
+
+func TestWatchEndsOnShutdown(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	handler := NewFilesHandler(nil, "")
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/?path=docs", nil)
+	ctx.Set("rootDir", annRoot)
+
+	done := make(chan struct{})
+	go func() {
+		handler.Watch(ctx)
+		close(done)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	handler.EndStreams()
+	handler.EndStreams() // safe to call twice
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watch stream still open after EndStreams")
+	}
+}

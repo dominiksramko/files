@@ -32,10 +32,20 @@ type FilesHandler struct {
 	// Serialises the compare-and-write in WriteContent, so two saves based on the
 	// same version can't both pass the check.
 	contentWriteMu sync.Mutex
+
+	// Closed by EndStreams when the server shuts down: open watch streams end
+	// so they don't hold the shutdown up (clients reconnect to the new server).
+	streamsEnd     chan struct{}
+	endStreamsOnce sync.Once
+}
+
+// EndStreams tells open watch streams to end; for http.Server.RegisterOnShutdown.
+func (h *FilesHandler) EndStreams() {
+	h.endStreamsOnce.Do(func() { close(h.streamsEnd) })
 }
 
 func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandler {
-	h := &FilesHandler{thumbs: thumbsSvc}
+	h := &FilesHandler{thumbs: thumbsSvc, streamsEnd: make(chan struct{})}
 	if convCacheDir != "" {
 		cache, err := newConvCache(convCacheDir)
 		if err != nil {

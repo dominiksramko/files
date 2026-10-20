@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"files/internal/config"
@@ -148,15 +153,55 @@ func main() {
 	r.GET("/public/office/:token", officeH.ServeFile)
 
 	// Health check
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	r.GET("/health", healthHandler(db))
 
 	r.NoRoute(frontendHandler("./public"))
 
-	log.Printf("starting on :%s", cfg.Port)
-	if err := newHTTPServer(":"+cfg.Port, r).ListenAndServe(); err != nil {
+	server := newHTTPServer(":"+cfg.Port, r)
+	server.RegisterOnShutdown(filesH.EndStreams)
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
 		log.Fatalf("server: %v", err)
+	}
+	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	log.Printf("starting on :%s", cfg.Port)
+	if err := serveUntilStopped(stop, server, listener, shutdownTimeout); err != nil {
+		log.Fatalf("server: %v", err)
+	}
+	log.Printf("stopped")
+}
+
+// shutdownTimeout is how long requests in progress (uploads, extractions)
+// get to finish on shutdown. docker-compose.yml's stop_grace_period allows
+// a little more before the container is killed.
+const shutdownTimeout = 100 * time.Second
+
+// serveUntilStopped serves on listener until stop is done (a stop signal),
+// then shuts the server down: no new connections, and requests in progress
+// get up to timeout to finish.
+func serveUntilStopped(stop context.Context, server *http.Server, listener net.Listener, timeout time.Duration) error {
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+	select {
+	case err := <-served:
+		return err
+	case <-stop.Done():
+	}
+	log.Printf("stopping: waiting up to %v for requests in progress", timeout)
+	shutdown, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return server.Shutdown(shutdown)
+}
+
+// healthHandler answers /health: 200 while the database answers, 503 otherwise.
+func healthHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if err := db.PingContext(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "database unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	}
 }
 

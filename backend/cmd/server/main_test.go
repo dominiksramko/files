@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"files/internal/config"
+	"files/internal/testutil"
 
 	"github.com/gin-gonic/gin"
 )
@@ -162,5 +164,68 @@ func TestFrontendHandlerCaching(t *testing.T) {
 			(test.body != "" && response.Body.String() != test.body) {
 			t.Errorf("%s: %d, Cache-Control %q, body %q", test.path, response.Code, response.Header().Get("Cache-Control"), response.Body)
 		}
+	}
+}
+
+func TestShutdownLetsRequestsFinish(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	server := newHTTPServer("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		time.Sleep(300 * time.Millisecond) // e.g. the end of an upload
+		w.Write([]byte("finished"))
+	}))
+	stop, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- serveUntilStopped(stop, server, listener, 5*time.Second) }()
+
+	type result struct {
+		body string
+		err  error
+	}
+	response := make(chan result, 1)
+	go func() {
+		resp, err := http.Get("http://" + listener.Addr().String())
+		if err != nil {
+			response <- result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		response <- result{body: string(body)}
+	}()
+	<-started
+	cancel() // the stop signal arrives mid-request
+
+	if got := <-response; got.err != nil || got.body != "finished" {
+		t.Errorf("request in progress: %q, %v", got.body, got.err)
+	}
+	if err := <-served; err != nil {
+		t.Errorf("serveUntilStopped: %v", err)
+	}
+	if _, err := http.Get("http://" + listener.Addr().String()); err == nil {
+		t.Error("new connections still accepted after shutdown")
+	}
+}
+
+func TestHealthChecksDatabase(t *testing.T) {
+	db := testutil.OpenDB(t)
+	gin.SetMode(gin.TestMode)
+	check := func() int {
+		router := gin.New()
+		router.GET("/health", healthHandler(db))
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+		return recorder.Code
+	}
+	if code := check(); code != http.StatusOK {
+		t.Errorf("healthy database: %d", code)
+	}
+	db.Close()
+	if code := check(); code != http.StatusServiceUnavailable {
+		t.Errorf("closed database: %d, want 503", code)
 	}
 }

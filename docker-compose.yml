@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
+    # On stop, uploads and extractions in progress get up to 100 s to finish
+    # (the server's shutdown timeout) before the container is killed.
+    stop_grace_period: 110s
     environment:
       PORT: "8080"
       # Required: signs the short-lived links Office previews use; keep it stable.

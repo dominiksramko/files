@@ -99,5 +99,9 @@ ENV PORT=8080 \
     PUID=1000 \
     PGID=1000
 
+# Healthy while the server answers and its database works.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -qO /dev/null "http://127.0.0.1:${PORT}/health" || exit 1
+
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["./server"]

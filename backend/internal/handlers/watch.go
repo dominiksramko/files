@@ -199,6 +199,9 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 				return
 			}
 
+		case <-h.streamsEnd:
+			return
+
 		case <-c.Request.Context().Done():
 			return
 		}
