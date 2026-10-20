@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -18,6 +17,7 @@ import (
 	"time"
 	"unicode"
 
+	"files/internal/media"
 	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
@@ -407,11 +407,9 @@ type ffprobeResult struct {
 }
 
 func runFFprobe(absPath string) (*ffprobeResult, error) {
-	out, err := exec.Command(
-		"ffprobe", "-v", "quiet",
+	out, err := media.FFprobe(absPath, "-v", "quiet",
 		"-print_format", "json",
 		"-show_streams", "-show_format",
-		absPath,
 	).Output()
 	if err != nil {
 		return nil, err

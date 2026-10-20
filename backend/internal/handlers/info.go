@@ -10,11 +10,11 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"files/internal/media"
 	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
@@ -164,12 +164,11 @@ func imageSize(content io.Reader) (int, int, error) {
 }
 
 func probeVideo(path string) (*VideoMeta, error) {
-	out, err := exec.Command("ffprobe",
+	out, err := media.FFprobe(path,
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_streams",
 		"-show_format",
-		path,
 	).Output()
 	if err != nil {
 		return nil, err

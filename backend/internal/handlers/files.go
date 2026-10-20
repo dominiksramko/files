@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"files/internal/thumbs"
+	"files/internal/media"
 	"files/internal/userfs"
 )
 
@@ -449,7 +450,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 			return
 		} else if hash != "" {
 			// Hash computed but cache missed — convert and store.
-			out, err := exec.Command("convert", args...).Output()
+			out, err := media.MagickConvert(args...).Output()
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 				return
@@ -461,7 +462,7 @@ func (h *FilesHandler) convertAndStream(c *gin.Context, srcPath, mime string) {
 	}
 
 	// No cache available — convert and serve without caching.
-	out, err := exec.Command("convert", args...).Output()
+	out, err := media.MagickConvert(args...).Output()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "image conversion failed"})
 		return
@@ -527,14 +528,15 @@ func transcodeAudio(srcPath, destPath string) error {
 	defer os.Remove(part.Name()) // no-op once renamed
 
 	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
-	cmd := exec.Command("nice", "-n", "10",
-		"ffmpeg", "-y", "-v", "error",
-		"-i", srcPath,
+	ffmpegArgs := []string{"-n", "10", "ffmpeg", "-y", "-v", "error"}
+	ffmpegArgs = append(ffmpegArgs, media.Input(srcPath)...)
+	ffmpegArgs = append(ffmpegArgs,
 		"-map", "0:a:0", "-vn",
 		"-c:a", "aac", "-b:a", "256k",
 		"-movflags", "+faststart",
 		"-f", "mp4", part.Name(),
 	)
+	cmd := exec.Command("nice", ffmpegArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}

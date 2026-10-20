@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"files/internal/media"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,13 +60,14 @@ func (handler *ScreenshotHandler) Take(ctx *gin.Context) {
 	outputFilename := fmt.Sprintf("%s_%s_%s.png", videoStem, videoTimestamp, capturedAt)
 
 	var stderr bytes.Buffer
-	cmd := exec.Command("ffmpeg",
-		"-ss", fmt.Sprintf("%.3f", req.Timestamp),
-		"-i", realVideo,
+	ffmpegArgs := []string{"-ss", fmt.Sprintf("%.3f", req.Timestamp)}
+	ffmpegArgs = append(ffmpegArgs, media.Input(realVideo)...)
+	ffmpegArgs = append(ffmpegArgs,
 		"-frames:v", "1",
 		"-f", "image2pipe", "-c:v", "png",
 		"pipe:1",
 	)
+	cmd := exec.Command("ffmpeg", ffmpegArgs...)
 	cmd.Stderr = &stderr
 	image, err := cmd.Output()
 	if err != nil || len(image) == 0 {

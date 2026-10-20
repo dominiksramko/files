@@ -7,18 +7,20 @@ import (
 	"image"
 	"image/color"
 	stdraw "image/draw"
-	"image/jpeg"
 	_ "image/gif"
+	"image/jpeg"
 	_ "image/png"
 	"io"
 	"os"
 	"os/exec"
+
+	"files/internal/media"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"golang.org/x/image/draw"
 	_ "golang.org/x/image/bmp"
+	"golang.org/x/image/draw"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 )
@@ -138,7 +140,7 @@ func generateMagickThumb(srcPath, dstPath, mime string, size int) error {
 	default:
 		args = []string{"-background", "none", srcPath + "[0]", "-flatten", "-resize", rasterSize + "x" + rasterSize + ">", tmp.Name()}
 	}
-	if out, err := exec.Command("convert", args...).CombinedOutput(); err != nil {
+	if out, err := media.MagickConvert(args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
@@ -390,15 +392,15 @@ func generateVideoThumb(srcPath, dstPath string, size int) error {
 	)
 
 	// -ss before -i uses fast keyframe seeking (fine for thumbnails).
-	args := []string{
-		"-ss", fmt.Sprintf("%.3f", seekSec),
-		"-i", srcPath,
+	args := []string{"-ss", fmt.Sprintf("%.3f", seekSec)}
+	args = append(args, media.Input(srcPath)...)
+	args = append(args,
 		"-vframes", "1",
 		"-vf", filter,
 		"-q:v", "2", // JPEG quality (2 = high)
-		"-y",        // overwrite output
+		"-y", // overwrite output
 		dstPath,
-	}
+	)
 	if out, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -407,12 +409,10 @@ func generateVideoThumb(srcPath, dstPath string, size int) error {
 
 // videoDuration returns the duration in seconds via ffprobe, or 0 on error.
 func videoDuration(path string) float64 {
-	out, err := exec.Command(
-		"ffprobe",
+	out, err := media.FFprobe(path,
 		"-v", "quiet",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
-		path,
 	).Output()
 	if err != nil {
 		return 0

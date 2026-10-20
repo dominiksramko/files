@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"files/internal/media"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -176,12 +178,11 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 
 	// Copy audio only if it's already TS-compatible, otherwise transcode to AAC.
 	audioCodec := "aac"
-	if probe, err := exec.Command("ffprobe",
+	if probe, err := media.FFprobe(absPath,
 		"-v", "error",
 		"-select_streams", "a:0",
 		"-show_entries", "stream=codec_name",
 		"-of", "default=noprint_wrappers=1:nokey=1",
-		absPath,
 	).Output(); err == nil {
 		switch strings.TrimSpace(string(probe)) {
 		case "aac", "mp3":
@@ -193,12 +194,11 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 	// browsers. MPEG-4 Part 2 (DivX/Xvid), MPEG-2 (DVD, .mpg, broadcast .m2ts),
 	// WMV and others must be transcoded to H.264.
 	videoCodec := "libx264"
-	if probe, err := exec.Command("ffprobe",
+	if probe, err := media.FFprobe(absPath,
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=codec_name",
 		"-of", "default=noprint_wrappers=1:nokey=1",
-		absPath,
 	).Output(); err == nil {
 		switch strings.TrimSpace(string(probe)) {
 		case "h264", "hevc":
@@ -211,12 +211,14 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
 	// -fflags +genpts: regenerate missing presentation timestamps, required for
 	// AVI files where pre-input seeking leaves the first packets without PTS/DTS.
-	cmd := exec.Command("nice", "-n", "10",
+	cmdArgs := []string{"-n", "10",
 		"ffmpeg",
 		"-y",
 		"-fflags", "+genpts",
 		"-ss", fmt.Sprintf("%.3f", startAt),
-		"-i", absPath,
+	}
+	cmdArgs = append(cmdArgs, media.Input(absPath)...)
+	cmdArgs = append(cmdArgs,
 		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
 		"-c:v", videoCodec,
 		"-c:a", audioCodec,
@@ -228,6 +230,7 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		"-hls_segment_filename", filepath.Join(cacheDir, "chunk_%03d.ts"),
 		filepath.Join(cacheDir, "playlist.m3u8"),
 	)
+	cmd := exec.Command("nice", cmdArgs...)
 
 	if err := cmd.Start(); err != nil {
 		return err
@@ -258,8 +261,8 @@ func probeDuration(ctx context.Context, absPath string) (float64, error) {
 		{"-select_streams", "a:0", "-show_entries", "stream=duration"},
 	}
 	for _, args := range strategies {
-		baseArgs := []string{"-v", "error", "-of", "default=noprint_wrappers=1:nokey=1"}
-		out, err := exec.CommandContext(ctx, "ffprobe", append(baseArgs, append(args, absPath)...)...).Output()
+		baseArgs := append([]string{"-v", "error", "-of", "default=noprint_wrappers=1:nokey=1"}, args...)
+		out, err := media.FFprobeContext(ctx, absPath, baseArgs...).Output()
 		if err != nil {
 			continue
 		}

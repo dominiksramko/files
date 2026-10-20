@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"files/internal/media"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -166,7 +168,9 @@ func (h *SubtitlesHandler) Stream(c *gin.Context) {
 		c.Data(http.StatusOK, "text/vtt; charset=utf-8", srtToVTT(data))
 	default:
 		// ASS / SSA / anything else — let ffmpeg convert from the file
-		cmd := exec.Command("ffmpeg", "-v", "quiet", "-i", abs, "-f", "webvtt", "pipe:1")
+		ffmpegArgs := append([]string{"-v", "quiet"}, media.Input(abs)...)
+		ffmpegArgs = append(ffmpegArgs, "-f", "webvtt", "pipe:1")
+		cmd := exec.Command("ffmpeg", ffmpegArgs...)
 		out, err := cmd.Output()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "subtitle conversion failed"})
@@ -185,8 +189,8 @@ type embeddedSub struct {
 }
 
 func probeSubtitles(path string) ([]embeddedSub, error) {
-	cmd := exec.Command("ffprobe", "-v", "quiet",
-		"-print_format", "json", "-show_streams", "-select_streams", "s", path)
+	cmd := media.FFprobe(path, "-v", "quiet",
+		"-print_format", "json", "-show_streams", "-select_streams", "s")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
