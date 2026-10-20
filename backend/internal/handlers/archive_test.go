@@ -2,12 +2,17 @@ package handlers
 
 import (
 	"archive/zip"
+	"bytes"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"files/internal/userfs"
 )
 
 // writeTestZip creates a zip archive at path holding files (name → content).
@@ -244,4 +249,43 @@ func TestExtractToExplicitDestination(t *testing.T) {
 	assertStatus(t, response, http.StatusOK)
 	assertFileContent(t, filepath.Join(annRoot, "docs/out/only.txt"), "only")
 	assertNoStaging(t, filepath.Join(annRoot, "docs"))
+}
+
+// fullDisk accepts limit bytes, then fails every write, as a full disk does.
+type fullDisk struct{ written, limit int }
+
+func (disk *fullDisk) Write(data []byte) (int, error) {
+	if disk.written+len(data) > disk.limit {
+		return 0, errors.New("no space left on device")
+	}
+	disk.written += len(data)
+	return len(data), nil
+}
+
+func TestArchiveWritersReportAFullDisk(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeFiles(t, annRoot, map[string]string{"docs/big.txt": strings.Repeat("x", 64<<10)})
+	fsys, err := userfs.Open(annRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+
+	writers := map[string]func(out io.Writer) error{
+		"zip":    func(out io.Writer) error { return writeZip(fsys, []string{"docs"}, out) },
+		"tar":    func(out io.Writer) error { return writeTar(fsys, []string{"docs"}, out, false) },
+		"tar.gz": func(out io.Writer) error { return writeTar(fsys, []string{"docs"}, out, true) },
+	}
+	for format, write := range writers {
+		// Every failure point from the first byte to near the end must be reported.
+		var full bytes.Buffer
+		if err := write(&full); err != nil {
+			t.Fatalf("%s with room: %v", format, err)
+		}
+		for limit := 0; limit < full.Len(); limit += full.Len()/20 + 1 {
+			if err := write(&fullDisk{limit: limit}); err == nil {
+				t.Errorf("%s: disk full after %d of %d bytes, reported as success", format, limit, full.Len())
+			}
+		}
+	}
 }

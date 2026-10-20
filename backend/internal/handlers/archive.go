@@ -200,19 +200,24 @@ func compressTar(fsys *userfs.FS, inputs []string, dest string, gzipped bool) er
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	var tw *tar.Writer
-	if gzipped {
-		gz := gzip.NewWriter(f)
-		defer gz.Close()
-		tw = tar.NewWriter(gz)
-	} else {
-		tw = tar.NewWriter(f)
+	err = writeTar(fsys, inputs, f, gzipped)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
 	}
-	defer tw.Close()
+	return err
+}
 
-	return walkInputs(fsys, inputs, func(e compressEntry) error {
+// writeTar writes a tar (gzipped if asked) of the inputs to out. Errors
+// closing the tar and gzip streams are returned: that's where the last of
+// the archive is written, and a full disk shows up there.
+func writeTar(fsys *userfs.FS, inputs []string, out io.Writer, gzipped bool) error {
+	var gz *gzip.Writer
+	if gzipped {
+		gz = gzip.NewWriter(out)
+		out = gz
+	}
+	tw := tar.NewWriter(out)
+	err := walkInputs(fsys, inputs, func(e compressEntry) error {
 		header, err := tar.FileInfoHeader(e.info, "")
 		if err != nil {
 			return err
@@ -232,6 +237,15 @@ func compressTar(fsys *userfs.FS, inputs []string, dest string, gzipped bool) er
 		_, err = io.Copy(tw, src)
 		return err
 	})
+	if closeErr := tw.Close(); err == nil {
+		err = closeErr
+	}
+	if gz != nil {
+		if closeErr := gz.Close(); err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 // --- Compress: 7z / ZIP-with-password (CLI) ---
