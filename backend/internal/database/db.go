@@ -21,7 +21,10 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// foreign_keys is a per-connection setting, off by default in SQLite; in
+	// the DSN it applies to every connection, so ON DELETE CASCADE removes a
+	// deleted user's prefs, progress, presets and sessions.
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
