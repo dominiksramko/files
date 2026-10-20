@@ -116,6 +116,14 @@ func TestHardLinksTakeSpaceOnce(t *testing.T) {
 	if err := os.Link(filepath.Join(dir, "two", "big.bin"), filepath.Join(dir, "two", "again.bin")); err != nil {
 		t.Skip("no hard links here:", err)
 	}
+	info, err := os.Lstat(filepath.Join(dir, "two", "again.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	folderInfo, _ := os.Lstat(filepath.Join(dir, "two"))
+	if HardLinks(info) != 2 || HardLinks(folderInfo) != 1 {
+		t.Errorf("hard links: file %d, folder %d", HardLinks(info), HardLinks(folderInfo))
+	}
 	one, two := scan(t, fsys, "one"), scan(t, fsys, "two")
 	if two.Root.Files != 2 || two.Root.Apparent != 2*one.Root.Apparent {
 		t.Errorf("apparent: %+v, one link %+v", two.Root.Totals, one.Root.Totals)

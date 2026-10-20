@@ -105,12 +105,22 @@ func (s *usageStore) use(userID int64, homeDir, name string, fn func(*diskusage.
 
 // UsageEntry is an item of the folder looked at, with what it takes. A folder
 // the scan doesn't have (made since, or a link) isn't Scanned: its sizes are
-// its own only.
+// its own only. HardLinks is the number of names a file has when more than
+// one: they share the space, which the scan's totals count once.
 type UsageEntry struct {
 	FileEntry
 	diskusage.Totals
-	Link    bool `json:"link,omitempty"`
-	Scanned bool `json:"scanned"`
+	Link      bool `json:"link,omitempty"`
+	HardLinks int  `json:"hard_links,omitempty"`
+	Scanned   bool `json:"scanned"`
+}
+
+// hardLinks is info's number of names when it has more than one.
+func hardLinks(info os.FileInfo) int {
+	if links := diskusage.HardLinks(info); links > 1 {
+		return links
+	}
+	return 0
 }
 
 type usageListing struct {
@@ -277,7 +287,7 @@ func (h *FilesHandler) Usage(c *gin.Context) {
 			if err != nil {
 				continue // removed since it was listed
 			}
-			entry := UsageEntry{FileEntry: file, Link: info.Mode()&os.ModeSymlink != 0}
+			entry := UsageEntry{FileEntry: file, Link: info.Mode()&os.ModeSymlink != 0, HardLinks: hardLinks(info)}
 			var scanned *diskusage.Dir
 			if folder != nil && info.IsDir() {
 				scanned = folder.Children[info.Name()]
@@ -319,6 +329,7 @@ func (h *FilesHandler) UsageLargest(c *gin.Context) {
 				FileEntry: h.newFileEntry(fsys, "", file.Path, info),
 				Totals:    diskusage.Totals{Disk: file.Disk, Apparent: file.Apparent},
 				Link:      info.Mode()&os.ModeSymlink != 0,
+				HardLinks: hardLinks(info),
 				Scanned:   true,
 			})
 		}

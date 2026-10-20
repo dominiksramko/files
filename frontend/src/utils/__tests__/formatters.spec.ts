@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatSizeProgress } from '@/utils/formatters'
+import { formatDuration, formatSizeProgress, formatTimeAgo } from '@/utils/formatters'
 
 describe('formatDuration', () => {
   it('shows minutes and seconds, hours from an hour on', () => {
@@ -26,5 +26,16 @@ describe('formatSizeProgress', () => {
   it('says a scan that stopped early is incomplete', () => {
     expect(formatSizeProgress({ ...progress, failed: true })).toBe('2.0 KB (incomplete: 3 files, 1 folder)')
     expect(formatSizeProgress({ files: 0, dirs: 0, bytes: 0, done: false, failed: true })).toBe("Couldn't measure")
+  })
+})
+
+describe('formatTimeAgo', () => {
+  const now = Date.parse('2026-10-20T12:00:00Z')
+  it('says how long ago', () => {
+    expect(formatTimeAgo('2026-10-20T11:59:40Z', now)).toBe('just now')
+    expect(formatTimeAgo('2026-10-20T11:55:00Z', now)).toBe('5 min ago')
+    expect(formatTimeAgo('2026-10-20T09:00:00Z', now)).toBe('3 h ago')
+    expect(formatTimeAgo('2026-10-19T12:00:00Z', now)).toBe('1 day ago')
+    expect(formatTimeAgo('2026-10-17T11:00:00Z', now)).toBe('3 days ago')
   })
 })

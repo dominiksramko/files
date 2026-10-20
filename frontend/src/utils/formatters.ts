@@ -66,6 +66,17 @@ export function formatSizeProgress({ files, dirs, bytes, done, failed }: SizePro
   return size ? `${size} ${counts}` : counts
 }
 
+// How long ago iso was: "just now", "5 min ago", "3 h ago", "2 days ago".
+export function formatTimeAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days !== 1 ? 's' : ''} ago`
+}
+
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     year: 'numeric',

@@ -29,3 +29,13 @@ func (links linkSet) allocated(info fs.FileInfo) int64 {
 	}
 	return int64(stat.Blocks) * 512
 }
+
+// HardLinks returns how many names the file info describes has (1 for a
+// folder or where that isn't known).
+func HardLinks(info fs.FileInfo) int {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || info.IsDir() {
+		return 1
+	}
+	return int(stat.Nlink)
+}

@@ -33,6 +33,38 @@ export interface FileEntry {
   can_extract?: boolean
 }
 
+// What a folder (or file) takes, from a disk usage scan: disk is the space
+// taken on disk, apparent the files' lengths added up.
+export interface UsageTotals {
+  files: number
+  dirs: number
+  disk: number
+  apparent: number
+}
+
+// An item of the folder shown on the disk usage page. A folder that isn't
+// scanned (made since the scan, or a link) carries only its own size.
+// hard_links: a file's number of names when it has several (they share its
+// space, which the scan's totals count once).
+export interface UsageEntry extends FileEntry, UsageTotals {
+  link?: boolean
+  hard_links?: number
+  scanned: boolean
+}
+
+export interface UsageListing {
+  root: string
+  at: string
+  scanned_at: string
+  unreadable: number
+  root_total: UsageTotals
+  total: UsageTotals
+  entries: UsageEntry[]
+}
+
+// Which size the disk usage page ranks by.
+export type SizeMeasure = 'disk' | 'apparent'
+
 export interface ArchiveEntry {
   name: string
   size: number

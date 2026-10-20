@@ -126,6 +126,23 @@ func TestUsageListsLinksAsThemselves(t *testing.T) {
 	}
 }
 
+func TestUsageMarksHardLinks(t *testing.T) {
+	annRoot, _ := usageFolders(t)
+	if err := os.Link(filepath.Join(annRoot, "media", "big.bin"), filepath.Join(annRoot, "media", "again.bin")); err != nil {
+		t.Skip("no hard links here:", err)
+	}
+	h := NewFilesHandler(nil, "")
+	scanUsage(t, h, annRoot, "")
+	listing := decodeResponse[usageListing](t, usageGet(h.Usage, annRoot, url.Values{"path": {""}, "at": {"media"}}))
+	links := map[string]int{}
+	for _, entry := range listing.Entries {
+		links[entry.Name] = entry.HardLinks
+	}
+	if links["big.bin"] != 2 || links["again.bin"] != 2 || links["small.txt"] != 0 || links["clips"] != 0 {
+		t.Errorf("hard links = %v", links)
+	}
+}
+
 func TestUsageRefusesOutsideTheScan(t *testing.T) {
 	annRoot, annaRoot := usageFolders(t)
 	h := NewFilesHandler(nil, "")

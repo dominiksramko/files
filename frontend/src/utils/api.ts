@@ -1,4 +1,4 @@
-import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePreviewItem, SubtitlePrefs, User } from '@/types'
+import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePreviewItem, SizeMeasure, SubtitlePrefs, UsageEntry, UsageListing, UsageTotals, User } from '@/types'
 
 const BASE = '/api/v1'
 
@@ -22,6 +22,10 @@ export class NotFoundError extends Error {
     this.fallbackPath = fallbackPath
   }
 }
+
+// The disk usage page asked about a folder the user hasn't scanned (or whose
+// scan has expired): start a scan.
+export class ScanNeededError extends Error {}
 
 // A versioned save was refused because the file changed since the version it
 // was based on; carries the file's current content and version for merging.
@@ -78,6 +82,7 @@ async function request<T>(
     if (res.status === 404 && 'fallback_path' in err) {
       throw new NotFoundError(err.error ?? res.statusText, err.fallback_path as string)
     }
+    if (res.status === 404 && err.scan_needed === true) throw new ScanNeededError(err.error)
     throw new Error(err.error ?? res.statusText)
   }
 
@@ -208,6 +213,23 @@ export const files = {
       'GET',
       `/files/info${qs({ path })}`,
     ),
+}
+
+// --- Disk usage ---
+// A scan of the folder root is kept on the server (the user's latest one);
+// the other calls browse and change it.
+export const usage = {
+  // SSE: queued, progress (UsageTotals), done, failed ({ error }).
+  scanStreamUrl: (root: string) => `${BASE}/files/usage/scan${qs({ path: root })}`,
+
+  list: (root: string, at: string) => request<UsageListing>('GET', `/files/usage${qs({ path: root, at })}`),
+
+  largest: (root: string, measure: SizeMeasure) =>
+    request<UsageEntry[]>('GET', `/files/usage/largest${qs({ path: root, size: measure })}`),
+
+  // Deletes for good, like fileops.delete.
+  delete: (root: string, paths: string[]) =>
+    request<{ freed: UsageTotals; root_total: UsageTotals }>('DELETE', '/files/usage', { path: root, paths }),
 }
 
 // --- File operations ---

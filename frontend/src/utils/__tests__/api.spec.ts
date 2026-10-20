@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConflictError, fileops, files, onSessionEnded } from '@/utils/api'
+import { ConflictError, fileops, files, onSessionEnded, ScanNeededError, usage } from '@/utils/api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -68,6 +68,7 @@ describe('no login token in requests', () => {
       files.thumbUrl('a/b.png', 'hash'),
       files.searchStreamUrl('query', 'a'),
       files.sizeStreamUrl(['a']),
+      usage.scanStreamUrl('a'),
     ]
     for (const url of urls) expect(url).not.toMatch(/token/i)
   })
@@ -116,5 +117,37 @@ describe('files.archiveContents', () => {
     expect(url).toBe('/api/v1/files/archive')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ path: 'docs/locked.7z', password: 'hunter2' })
+  })
+})
+
+describe('usage', () => {
+  it('asks for a folder of the scan', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ entries: [] })))
+    vi.stubGlobal('fetch', fetchMock)
+    await usage.list('media', 'media/clips')
+    await usage.largest('media', 'apparent')
+    const urls = fetchMock.mock.calls.map((call) => (call as unknown as [string])[0])
+    expect(urls).toEqual(['/api/v1/files/usage?path=media&at=media%2Fclips', '/api/v1/files/usage/largest?path=media&size=apparent'])
+    expect(usage.scanStreamUrl('media/clips')).toBe('/api/v1/files/usage/scan?path=media%2Fclips')
+  })
+
+  it('throws ScanNeededError for a folder without a scan', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not scanned', scan_needed: true }), { status: 404 })))
+    await expect(usage.list('media', 'media')).rejects.toBeInstanceOf(ScanNeededError)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'this folder no longer exists' }), { status: 404 })))
+    const error = await usage.list('media', 'media/gone').catch((err) => err)
+    expect(error).not.toBeInstanceOf(ScanNeededError)
+    expect(error.message).toBe('this folder no longer exists')
+  })
+
+  it('deletes inside the scanned folder', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ freed: { files: 1, dirs: 0, disk: 4096, apparent: 10 } })))
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await usage.delete('media', ['media/big.bin'])
+    expect(result.freed.disk).toBe(4096)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/v1/files/usage')
+    expect(init.method).toBe('DELETE')
+    expect(JSON.parse(init.body as string)).toEqual({ path: 'media', paths: ['media/big.bin'] })
   })
 })

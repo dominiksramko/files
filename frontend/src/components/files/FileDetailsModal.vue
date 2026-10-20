@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { fileCategory, formatDate, formatDuration, formatSize, formatSizeProgress, type SizeProgress } from '@/utils/formatters'
 import { parentOf } from '@/utils/paths'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
+import AppIcon from '@/components/ui/AppIcon.vue'
 
 const props = defineProps<{ items: FileEntry[] }>()
 const emit = defineEmits<{ close: [] }>()
+const router = useRouter()
+
+// A single folder can be looked into on the disk usage page.
+const usageFolder = computed(() => (props.items.length === 1 && props.items[0]!.is_dir ? props.items[0]! : null))
+
+function openDiskUsage(folder: FileEntry) {
+  emit('close')
+  router.push({ name: 'usage', query: folder.path ? { path: folder.path } : {} })
+}
 
 type MediaMeta = {
   image?: { width: number; height: number }
@@ -152,7 +163,10 @@ onUnmounted(stopStream)
       </template>
     </dl>
 
-    <div class="flex justify-end mt-4">
+    <div class="flex justify-end gap-2 mt-4">
+      <AppButton v-if="usageFolder" variant="secondary" @click="openDiskUsage(usageFolder)">
+        <span class="flex items-center gap-1.5"><AppIcon name="chartPie" class="size-4" />Disk usage</span>
+      </AppButton>
       <AppButton @click="emit('close')">Close</AppButton>
     </div>
   </AppDialog>
