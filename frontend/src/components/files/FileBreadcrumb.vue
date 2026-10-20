@@ -2,13 +2,18 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import type { IconName } from '@/utils/icons'
 import { debounce } from '@/utils/debounce'
 import { breadcrumbTrail } from '@/utils/paths'
 
 // root: the first crumb (default: the home folder); nothing above it is shown.
-// rootLabel: what the first crumb says (default: Home, or root's name).
+// rootLabel / rootIcon: what the first crumb says and shows (default: Home,
+// or root's name, with a folder).
 // hrefFor: the link of a crumb (default: that folder in the file browser).
-const props = defineProps<{ path: string; root?: string; rootLabel?: string; hrefFor?: (path: string) => string }>()
+const props = withDefaults(
+  defineProps<{ path: string; root?: string; rootLabel?: string; rootIcon?: IconName; hrefFor?: (path: string) => string }>(),
+  { root: '', rootLabel: undefined, rootIcon: 'folder', hrefFor: undefined },
+)
 const emit = defineEmits<{
   navigate: [path: string]
   dropToFolder: [destPath: string, paths: string[]]
@@ -249,7 +254,7 @@ onUnmounted(() => {
             @dragleave="onCrumbDragLeave($event, crumb)"
             @drop="onCrumbDrop($event, crumb)"
           >
-            <AppIcon v-if="crumb.isHome" name="folder" class="size-3.5 shrink-0 text-zinc-400" />
+            <AppIcon v-if="crumb.isHome" :name="rootIcon" class="size-3.5 shrink-0 text-zinc-400" />
             <span class="truncate">{{ crumb.label }}</span>
           </a>
         </div>
@@ -272,14 +277,16 @@ onUnmounted(() => {
           'shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded transition-colors',
           !isCurrent(crumb) && dragOverCrumb === crumb.path
             ? 'bg-blue-800/50 text-white'
-            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70',
+            : isCurrent(crumb)
+              ? 'text-zinc-100 hover:text-white hover:bg-zinc-800/70'
+              : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70',
         ]"
         @click.prevent="emit('navigate', crumb.path)"
         @dragover="onCrumbDragOver($event, crumb)"
         @dragleave="onCrumbDragLeave($event, crumb)"
         @drop="onCrumbDrop($event, crumb)"
       >
-        <AppIcon name="folder" class="size-4 shrink-0" />
+        <AppIcon :name="rootIcon" class="size-4 shrink-0" />
         <span>{{ crumb.label }}</span>
       </a>
 

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { useEscapeToClose } from '@/composables/useEscapeToClose'
 
+// The header shows title, or the title slot (e.g. a breadcrumb) in its place.
 // closeOnEscape: Escape closes it (when no dialog is open over it).
 // fixedHeight: always 90% of the screen tall, so it doesn't change size with
 // its content.
@@ -47,10 +48,12 @@ useEscapeToClose(card, () => props.closeOnEscape, () => emit('close'))
         ]"
       >
         <!-- Header -->
-        <div v-if="title" class="flex items-center justify-between px-5 py-4 border-b border-zinc-700 shrink-0">
-          <h2 class="text-base font-semibold text-white">{{ title }}</h2>
+        <div v-if="title || $slots.title" class="flex items-center justify-between gap-3 px-5 py-4 border-b border-zinc-700 shrink-0">
+          <slot name="title">
+            <h2 class="text-base font-semibold text-white">{{ title }}</h2>
+          </slot>
           <button
-            class="text-zinc-400 hover:text-white transition-colors"
+            class="shrink-0 text-zinc-400 hover:text-white transition-colors"
             @click="emit('close')"
             aria-label="Close"
           >

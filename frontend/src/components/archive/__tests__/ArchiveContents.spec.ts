@@ -207,4 +207,20 @@ describe('ArchiveContents', () => {
     expect(document.body.textContent).not.toContain('Password required')
     expect(extract.mock.calls[0]![2]).toBe('hunter2')
   })
+
+  it('names the archive once, as the first crumb of the breadcrumb in the header', async () => {
+    await mountArchive('/?archive=old/Archive.tar.gz&archive_at=WTF')
+    expect(card().textContent!.split('Archive.tar.gz')).toHaveLength(2)
+    expect(crumb('Archive.tar.gz')).toBeTruthy()
+    expect(crumb('WTF')).toBeTruthy()
+  })
+
+  it('says it is reading the archive while the listing loads', async () => {
+    let finish: (listing: ArchiveEntry[]) => void = () => {}
+    await mountArchive('/?archive=Archive.tar.gz', () => new Promise((resolve) => { finish = resolve }))
+    expect(document.querySelector('[role="status"]')!.textContent).toContain('Reading the archive…')
+    finish(entries())
+    await shows(['WTF', 'readme.txt'])
+    expect(document.querySelector('[role="status"]')).toBeNull()
+  })
 })

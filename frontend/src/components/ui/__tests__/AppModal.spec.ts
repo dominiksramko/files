@@ -30,4 +30,16 @@ describe('AppModal', () => {
     cleanups.splice(0).forEach((cleanup) => cleanup())
     expect(mountModal('xl').className).toContain('2xl:max-w-6xl')
   })
+
+  it('shows the title slot in place of the title, with the close button', () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({ render: () => h(AppModal, { title: 'Plain title' }, { title: () => h('nav', 'a › b') }) })
+    app.mount(root)
+    cleanups.push(() => { app.unmount(); root.remove() })
+    const card = document.querySelector<HTMLElement>('[role="dialog"]')!
+    expect(card.querySelector('nav')!.textContent).toBe('a › b')
+    expect(card.textContent).not.toContain('Plain title')
+    expect(card.querySelector('button[aria-label="Close"]')).not.toBeNull()
+  })
 })

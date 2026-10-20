@@ -12,7 +12,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import AppSpinner from '@/components/ui/AppSpinner.vue'
+import AppLoading from '@/components/ui/AppLoading.vue'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import UsageList from '@/components/usage/UsageList.vue'
 import UsageTreemap from '@/components/usage/UsageTreemap.vue'
@@ -153,14 +153,16 @@ function plural(count: number, word: string): string {
       </div>
 
       <!-- Scanning -->
-      <div v-if="scanning" class="rounded-xl bg-zinc-900 border border-zinc-800 p-6 flex flex-col items-center gap-3 text-center">
-        <AppSpinner size="lg" class="text-blue-500" />
-        <p class="text-sm text-zinc-200">{{ queued ? 'Waiting for another scan to finish…' : 'Scanning…' }}</p>
+      <AppLoading
+        v-if="scanning"
+        :label="queued ? 'Waiting for another scan to finish…' : 'Scanning…'"
+        class="rounded-xl bg-zinc-900 border border-zinc-800 px-6"
+      >
         <p v-if="progress" class="text-xs text-zinc-500 tabular-nums">
           {{ plural(progress.files, 'file') }} · {{ plural(progress.dirs, 'folder') }} · {{ formatSize(progress.disk) }}
         </p>
         <AppButton @click="close">Cancel</AppButton>
-      </div>
+      </AppLoading>
 
       <!-- Couldn't scan or load -->
       <div v-else-if="error" class="rounded-xl bg-zinc-900 border border-zinc-800 p-6 flex flex-col items-center gap-3 text-center">
@@ -171,7 +173,7 @@ function plural(count: number, word: string): string {
         </div>
       </div>
 
-      <div v-else-if="!listing && loading" class="flex justify-center py-12 text-zinc-500"><AppSpinner /></div>
+      <AppLoading v-else-if="!listing && loading" label="Loading the folder…" />
 
       <div v-else-if="listing" :class="['space-y-4 transition-opacity', stale && 'opacity-50']">
         <UsageTreemap
@@ -201,7 +203,7 @@ function plural(count: number, word: string): string {
           </div>
         </div>
 
-        <div v-if="tab === 'largest' && !largest" class="flex justify-center py-8 text-zinc-500"><AppSpinner /></div>
+        <AppLoading v-if="tab === 'largest' && !largest" label="Finding the largest files…" />
         <p v-else-if="!shownEntries.length" class="py-8 text-center text-sm text-zinc-500">
           {{ tab === 'largest' ? 'No files found.' : 'This folder is empty.' }}
         </p>

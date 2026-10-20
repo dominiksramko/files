@@ -7,6 +7,7 @@ import { archiveTree, searchArchive, withArchiveState, type ArchiveItem, type Ar
 import { nameOf, parentOf, relativeTo } from '@/utils/paths'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppLoading from '@/components/ui/AppLoading.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -122,7 +123,14 @@ onMounted(() => load())
 <template>
   <!-- The same height in every folder, so moving between them doesn't make
        the modal jump; a password to type or an error needs only its own. -->
-  <AppModal :title="name" size="lg" :fixed-height="!passwordRequired && !error" @close="close">
+  <AppModal size="lg" :fixed-height="!passwordRequired && !error" @close="close">
+    <!-- The archive's name once: the breadcrumb's first crumb is the title -->
+    <template #title>
+      <div class="min-w-0 flex-1 -my-2 -ml-2 flex">
+        <FileBreadcrumb :path="folder" :root-label="name" root-icon="archive" :href-for="crumbHref" @navigate="openFolder" />
+      </div>
+    </template>
+
     <!-- Password prompt -->
     <div v-if="passwordRequired" class="space-y-3">
       <p class="flex items-center gap-1.5 text-sm text-zinc-400">
@@ -136,15 +144,17 @@ onMounted(() => load())
           class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           @keydown.enter="unlock"
         />
-        <AppButton variant="primary" :disabled="!password || loading" @click="unlock">Unlock</AppButton>
+        <AppButton variant="primary" :disabled="!password || loading" @click="unlock">
+          <span class="flex items-center gap-1.5"><AppSpinner v-if="loading" size="sm" />Unlock</span>
+        </AppButton>
       </div>
       <p v-if="wrongPassword" class="text-xs text-red-400">Wrong password</p>
     </div>
 
     <!-- Loading -->
-    <div v-else-if="loading" class="flex justify-center py-8">
-      <AppSpinner size="lg" class="text-blue-500" />
-    </div>
+    <AppLoading v-else-if="loading" label="Reading the archive…" class="h-full">
+      <p class="text-xs text-zinc-500">Large archives can take a few seconds.</p>
+    </AppLoading>
 
     <!-- Error -->
     <div v-else-if="error" class="text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2">
@@ -153,9 +163,6 @@ onMounted(() => load())
 
     <!-- Contents: the list takes the height left and scrolls -->
     <div v-else class="h-full flex flex-col">
-      <div class="shrink-0 flex items-center gap-2 mb-2 -ml-2 min-w-0">
-        <FileBreadcrumb :path="folder" :root-label="name" :href-for="crumbHref" @navigate="openFolder" />
-      </div>
       <!-- Search -->
       <div class="shrink-0 relative mb-2">
         <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
