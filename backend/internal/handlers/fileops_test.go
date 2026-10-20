@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files/internal/userfs"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -178,36 +180,41 @@ func TestCreateRejectsRootAndOutsidePaths(t *testing.T) {
 func TestResolveDestConflict(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"a.txt": "a", "a (1).txt": "a1", "b": "b"})
+	fsys, err := userfs.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
 
 	t.Run("free name is kept", func(t *testing.T) {
-		resolved, conflict, err := resolveDestConflict(filepath.Join(dir, "new.txt"), "error")
-		if resolved != filepath.Join(dir, "new.txt") || conflict || err != nil {
+		resolved, conflict, err := resolveDestConflict(fsys, "new.txt", "error")
+		if resolved != "new.txt" || conflict || err != nil {
 			t.Errorf("= %q, %v, %v", resolved, conflict, err)
 		}
 	})
 	t.Run("error mode reports the conflict", func(t *testing.T) {
-		resolved, conflict, err := resolveDestConflict(filepath.Join(dir, "a.txt"), "error")
-		if resolved != filepath.Join(dir, "a.txt") || !conflict || err != nil {
+		resolved, conflict, err := resolveDestConflict(fsys, "a.txt", "error")
+		if resolved != "a.txt" || !conflict || err != nil {
 			t.Errorf("= %q, %v, %v", resolved, conflict, err)
 		}
 		assertFileContent(t, filepath.Join(dir, "a.txt"), "a")
 	})
 	t.Run("rename picks the next free name", func(t *testing.T) {
-		resolved, conflict, err := resolveDestConflict(filepath.Join(dir, "a.txt"), "rename")
-		if resolved != filepath.Join(dir, "a (2).txt") || conflict || err != nil {
+		resolved, conflict, err := resolveDestConflict(fsys, "a.txt", "rename")
+		if resolved != "a (2).txt" || conflict || err != nil {
 			t.Errorf("= %q, %v, %v", resolved, conflict, err)
 		}
 	})
 	t.Run("replace removes the existing file", func(t *testing.T) {
-		resolved, conflict, err := resolveDestConflict(filepath.Join(dir, "b"), "replace")
-		if resolved != filepath.Join(dir, "b") || conflict || err != nil {
+		resolved, conflict, err := resolveDestConflict(fsys, "b", "replace")
+		if resolved != "b" || conflict || err != nil {
 			t.Errorf("= %q, %v, %v", resolved, conflict, err)
 		}
 		assertMissing(t, filepath.Join(dir, "b"))
 	})
 	t.Run("replace never removes a non-empty folder", func(t *testing.T) {
 		writeFiles(t, dir, map[string]string{"folder/inside.txt": "kept"})
-		if _, _, err := resolveDestConflict(filepath.Join(dir, "folder"), "replace"); err == nil {
+		if _, _, err := resolveDestConflict(fsys, "folder", "replace"); err == nil {
 			t.Error("replace removed a folder")
 		}
 		assertFileContent(t, filepath.Join(dir, "folder/inside.txt"), "kept")

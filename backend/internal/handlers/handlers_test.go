@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files/internal/userfs"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -101,7 +103,7 @@ func jsonRequest(t *testing.T, method, target string, body any) *http.Request {
 }
 
 // serve runs handler on request as a logged-in user whose home folder is root,
-// as the auth middleware would set it up.
+// as the auth and CloseUserFS middleware would set it up.
 func serve(handler gin.HandlerFunc, root string, request *http.Request) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -110,6 +112,9 @@ func serve(handler gin.HandlerFunc, root string, request *http.Request) *httptes
 	ctx.Set("username", "ann")
 	ctx.Set("rootDir", root)
 	handler(ctx)
+	if opened, ok := ctx.Get(userFSKey); ok {
+		opened.(*userfs.FS).Close()
+	}
 	return recorder
 }
 

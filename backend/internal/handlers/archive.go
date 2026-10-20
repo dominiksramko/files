@@ -7,13 +7,17 @@ import (
 	"bytes"
 	"compress/bzip2"
 	"compress/gzip"
+	"crypto/rand"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,8 +26,6 @@ import (
 // Body: { paths, dest, format, password? }
 // Supported formats: zip, tar, tar.gz, 7z
 func (h *ArchiveHandler) Compress(c *gin.Context) {
-	root := userRoot(c)
-
 	var req struct {
 		Paths            []string `json:"paths" binding:"required"`
 		Dest             string   `json:"dest" binding:"required"`
@@ -44,95 +46,100 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		req.ConflictMode = "error"
 	}
 
-	destAbs, err := safeChildPath(root, req.Dest)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	fsys, dest, ok := requestChildName(c, req.Dest)
+	if !ok {
 		return
 	}
-
-	destAbs, conflict, err := resolveDestConflict(destAbs, req.ConflictMode)
-	if conflict {
-		c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{filepath.Base(destAbs)}})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var absInputs []string
-	for _, rel := range req.Paths {
-		abs, err := safePath(root, rel)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	inputs := make([]string, len(req.Paths))
+	for i, rel := range req.Paths {
+		if inputs[i], ok = requestName(c, rel); !ok {
 			return
 		}
-		absInputs = append(absInputs, abs)
 	}
-
 	switch req.Format {
-	case "zip":
-		if req.Password != "" {
-			err = compress7zFormat(absInputs, destAbs, "zip", req.Password, false)
-		} else {
-			err = compressZip(absInputs, destAbs)
-		}
-	case "tar":
-		err = compressTar(absInputs, destAbs, false)
-	case "tar.gz":
-		err = compressTar(absInputs, destAbs, true)
-	case "7z":
-		err = compress7zFormat(absInputs, destAbs, "7z", req.Password, req.ProtectFilenames)
+	case "zip", "tar", "tar.gz", "7z":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported format: " + req.Format})
 		return
 	}
 
+	dest, conflict, err := resolveDestConflict(fsys, dest, req.ConflictMode)
+	if conflict {
+		c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": []string{filepath.Base(dest)}})
+		return
+	}
 	if err != nil {
-		os.Remove(destAbs)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "compressed", "dest": filepath.Base(destAbs)})
+	switch {
+	case req.Format == "zip" && req.Password == "":
+		err = compressZip(fsys, inputs, dest)
+	case req.Format == "tar":
+		err = compressTar(fsys, inputs, dest, false)
+	case req.Format == "tar.gz":
+		err = compressTar(fsys, inputs, dest, true)
+	default: // 7z, or zip with a password
+		err = compress7zFormat(fsys, inputs, dest, req.Format, req.Password, req.Format == "7z" && req.ProtectFilenames)
+	}
+	if err != nil {
+		fsys.Remove(dest)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "compressed", "dest": filepath.Base(dest)})
 }
 
 // --- Compress helpers ---
 
-// compressEntry holds the resolved info for a single entry to be archived.
+// compressEntry is one file or folder to be archived.
 type compressEntry struct {
-	absPath string
-	name    string // path within the archive (slash-separated; dirs end with /)
-	info    os.FileInfo
+	name        string // in the user's folder
+	archiveName string // path within the archive (slash-separated; folders end with /)
+	info        os.FileInfo
 }
 
-// walkInputs iterates over each input path and calls fn for every file and
-// directory entry (including descendants of directories).
-func walkInputs(inputs []string, fn func(compressEntry) error) error {
-	for _, absPath := range inputs {
-		info, err := os.Stat(absPath)
+// walkInputs calls fn for each input and, for folders, everything inside.
+// Symbolic links inside folders are archived as the file they point to; links
+// to folders (which could loop) and links that can't be followed (outside
+// the user's folder, or broken) are left out.
+func walkInputs(fsys *userfs.FS, inputs []string, fn func(compressEntry) error) error {
+	for _, input := range inputs {
+		info, err := fsys.Stat(input)
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() {
-			if err := fn(compressEntry{absPath, info.Name(), info}); err != nil {
+			if err := fn(compressEntry{input, info.Name(), info}); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := filepath.Walk(absPath, func(path string, fi os.FileInfo, err error) error {
+		parent := filepath.Dir(input)
+		if err := fsys.WalkDir(input, func(name string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			rel, err := filepath.Rel(filepath.Dir(absPath), path)
+			info, err := entry.Info()
 			if err != nil {
 				return err
 			}
-			rel = filepath.ToSlash(rel)
-			if fi.IsDir() {
-				rel += "/"
+			if entry.Type()&fs.ModeSymlink != 0 {
+				if info, err = fsys.Stat(name); err != nil || info.IsDir() {
+					return nil
+				}
 			}
-			return fn(compressEntry{path, rel, fi})
+			archiveName, err := filepath.Rel(parent, name)
+			if err != nil {
+				return err
+			}
+			archiveName = filepath.ToSlash(archiveName)
+			if info.IsDir() {
+				archiveName += "/"
+			}
+			return fn(compressEntry{name, archiveName, info})
 		}); err != nil {
 			return err
 		}
@@ -142,8 +149,8 @@ func walkInputs(inputs []string, fn func(compressEntry) error) error {
 
 // --- Compress: ZIP (pure Go) ---
 
-func compressZip(inputs []string, dest string) error {
-	f, err := os.Create(dest)
+func compressZip(fsys *userfs.FS, inputs []string, dest string) error {
+	f, err := fsys.Create(dest)
 	if err != nil {
 		return err
 	}
@@ -151,12 +158,12 @@ func compressZip(inputs []string, dest string) error {
 	zw := zip.NewWriter(f)
 	defer zw.Close()
 
-	return walkInputs(inputs, func(e compressEntry) error {
+	return walkInputs(fsys, inputs, func(e compressEntry) error {
 		header, err := zip.FileInfoHeader(e.info)
 		if err != nil {
 			return err
 		}
-		header.Name = e.name
+		header.Name = e.archiveName
 		if e.info.IsDir() {
 			_, err = zw.CreateHeader(header)
 			return err
@@ -166,7 +173,7 @@ func compressZip(inputs []string, dest string) error {
 		if err != nil {
 			return err
 		}
-		src, err := os.Open(e.absPath)
+		src, err := fsys.Open(e.name)
 		if err != nil {
 			return err
 		}
@@ -178,8 +185,8 @@ func compressZip(inputs []string, dest string) error {
 
 // --- Compress: TAR / TAR.GZ (pure Go) ---
 
-func compressTar(inputs []string, dest string, gzipped bool) error {
-	f, err := os.Create(dest)
+func compressTar(fsys *userfs.FS, inputs []string, dest string, gzipped bool) error {
+	f, err := fsys.Create(dest)
 	if err != nil {
 		return err
 	}
@@ -195,19 +202,19 @@ func compressTar(inputs []string, dest string, gzipped bool) error {
 	}
 	defer tw.Close()
 
-	return walkInputs(inputs, func(e compressEntry) error {
+	return walkInputs(fsys, inputs, func(e compressEntry) error {
 		header, err := tar.FileInfoHeader(e.info, "")
 		if err != nil {
 			return err
 		}
-		header.Name = e.name
+		header.Name = e.archiveName
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 		if e.info.IsDir() {
 			return nil
 		}
-		src, err := os.Open(e.absPath)
+		src, err := fsys.Open(e.name)
 		if err != nil {
 			return err
 		}
@@ -219,16 +226,29 @@ func compressTar(inputs []string, dest string, gzipped bool) error {
 
 // --- Compress: 7z / ZIP-with-password (CLI) ---
 
-func compress7zFormat(inputs []string, dest string, format string, password string, protectFilenames bool) error {
-	args := []string{"a", "-t" + format}
+// compress7zFormat runs 7z on the inputs' real locations (checked to be in
+// the user's folder), writing the archive to dest's real folder. -snl stores
+// symbolic links as links rather than following them.
+func compress7zFormat(fsys *userfs.FS, inputs []string, dest string, format string, password string, protectFilenames bool) error {
+	realDir, err := fsys.RealPath(filepath.Dir(dest))
+	if err != nil {
+		return err
+	}
+	args := []string{"a", "-t" + format, "-snl"}
 	if password != "" {
 		args = append(args, "-p"+password)
 		if protectFilenames {
 			args = append(args, "-mhe=on")
 		}
 	}
-	args = append(args, dest)
-	args = append(args, inputs...)
+	args = append(args, filepath.Join(realDir, filepath.Base(dest)))
+	for _, input := range inputs {
+		realInput, err := fsys.RealPath(input)
+		if err != nil {
+			return err
+		}
+		args = append(args, realInput)
+	}
 
 	var stderr bytes.Buffer
 	cmd := exec.Command("7z", args...)
@@ -254,13 +274,15 @@ type ArchiveEntry struct {
 
 // GET /api/v1/files/archive?path=&password=
 func (h *ArchiveHandler) Contents(c *gin.Context) {
-	root := userRoot(c)
-	rel := c.Query("path")
 	password := c.Query("password")
-
-	abs, err := safePath(root, rel)
+	fsys, name, ok := requestFolderName(c, c.Query("path"))
+	if !ok {
+		return
+	}
+	// Read from its real location, checked to be inside the folder.
+	abs, err := fsys.RealPath(name)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "archive not found"})
 		return
 	}
 
@@ -310,8 +332,6 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 // conflict_mode defaults to "error": HTTP 409 listing the files that are
 // already there, before anything is moved into place.
 func (h *ArchiveHandler) Extract(c *gin.Context) {
-	root := userRoot(c)
-
 	var req struct {
 		Path         string `json:"path" binding:"required"`
 		Dest         string `json:"dest"`
@@ -326,20 +346,24 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		req.ConflictMode = "error"
 	}
 
-	abs, err := safePath(root, req.Path)
+	fsys, archive, ok := requestFolderName(c, req.Path)
+	if !ok {
+		return
+	}
+	archivePath, err := fsys.RealPath(archive)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "archive not found"})
 		return
 	}
 
 	// Destination: explicit override or a folder named after the archive. Never
-	// root itself: extraction is staged in the destination's parent, and a
-	// single item goes there too.
+	// the home folder itself: extraction is staged in the destination's
+	// parent, and a single item goes there too.
 	destRel := req.Dest
 	if destRel == "" {
-		destRel = filepath.Join(filepath.Dir(req.Path), archiveBaseName(abs))
+		destRel = filepath.Join(filepath.Dir(archive), archiveBaseName(archive))
 	}
-	destAbs, err := safeChildPath(root, destRel)
+	dest, err := userfs.CleanChild(destRel)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -347,38 +371,44 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 
 	// Extract into a fresh folder next to the destination first, then move the
 	// result into place: a failed extract only ever removes that folder.
-	staging, err := os.MkdirTemp(filepath.Dir(destAbs), ".extract-tmp-*")
+	staging, err := createStagingFolder(fsys, filepath.Dir(dest), ".extract-tmp-")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	defer os.RemoveAll(staging)
-	contents := filepath.Join(staging, filepath.Base(destAbs))
-	if err := os.Mkdir(contents, 0o755); err != nil {
+	defer fsys.RemoveAll(staging)
+	contents := filepath.Join(staging, filepath.Base(dest))
+	if err := fsys.Mkdir(contents, 0o755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := extractArchive(abs, contents, req.Password); err != nil {
+	if err := extractArchive(fsys, archivePath, contents, req.Password); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Archives can hold symbolic links, which 7z and unrar recreate. None are
+	// kept: an extracted file is always a file of the user's own.
+	if err := removeLinks(fsys, staging); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// staging holds the folder named after the archive; a single item skips
 	// that folder, and an explicit destination receives the contents.
-	from, into := staging, filepath.Dir(destAbs)
+	from, into := staging, filepath.Dir(dest)
 	if req.Dest != "" {
-		from, into = contents, destAbs
-	} else if entries, err := os.ReadDir(contents); err == nil && len(entries) == 1 {
+		from, into = contents, dest
+	} else if entries, err := fsys.ReadDir(contents); err == nil && len(entries) == 1 {
 		from = contents
 	}
 
 	if req.ConflictMode == "error" {
-		if conflicts := mergeConflicts(from, into); len(conflicts) > 0 {
+		if conflicts := mergeConflicts(fsys, from, into); len(conflicts) > 0 {
 			c.JSON(http.StatusConflict, gin.H{"error": "conflict", "conflicts": conflicts})
 			return
 		}
 	}
-	if err := mergeInto(from, into, req.ConflictMode); err != nil {
+	if err := mergeInto(fsys, from, into, req.ConflictMode); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -409,32 +439,76 @@ func archiveBaseName(path string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
-// extractArchive extracts the archive at path into the folder dest.
-func extractArchive(path, dest, password string) error {
-	ext := strings.ToLower(filepath.Ext(path))
+// extractArchive extracts the archive at archivePath (its real location) into
+// the folder dest in the user's folder. Our own ZIP and TAR extraction writes
+// through fsys; 7z and unrar write to dest's real location — a fresh staging
+// folder created for them.
+func extractArchive(fsys *userfs.FS, archivePath, dest, password string) error {
+	ext := strings.ToLower(filepath.Ext(archivePath))
 	switch {
 	case ext == ".zip" && password == "":
-		return extractZip(path, dest)
-	case isTar(path) && password == "":
-		return extractTar(path, dest)
-	case ext == ".rar":
-		return extractUnrar(path, dest, password)
-	default:
-		return extract7z(path, dest, password)
+		return extractZip(fsys, archivePath, dest)
+	case isTar(archivePath) && password == "":
+		return extractTar(fsys, archivePath, dest)
 	}
+	realDest, err := fsys.RealPath(dest)
+	if err != nil {
+		return err
+	}
+	if ext == ".rar" {
+		return extractUnrar(archivePath, realDest, password)
+	}
+	return extract7z(archivePath, realDest, password)
+}
+
+// createStagingFolder creates a new folder with a random name starting with
+// prefix in the folder dir, and returns its name.
+func createStagingFolder(fsys *userfs.FS, dir, prefix string) (string, error) {
+	for attempt := 0; attempt < 100; attempt++ {
+		name := filepath.Join(dir, prefix+rand.Text())
+		err := fsys.Mkdir(name, 0o755)
+		if os.IsExist(err) {
+			continue
+		}
+		return name, err
+	}
+	return "", fmt.Errorf("no free temporary name in %s", dir)
+}
+
+// removeLinks deletes every symbolic link under the folder dir.
+func removeLinks(fsys *userfs.FS, dir string) error {
+	var links []string
+	err := fsys.WalkDir(dir, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			links = append(links, name)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, link := range links {
+		if err := fsys.Remove(link); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // mergeConflicts lists, as paths relative to into, the entries of the folder
 // from that mergeInto would put where something already is. Folders on both
 // sides are merged, so only what's inside them counts.
-func mergeConflicts(from, into string) []string {
+func mergeConflicts(fsys *userfs.FS, from, into string) []string {
 	var conflicts []string
 	var walk func(rel string)
 	walk = func(rel string) {
-		entries, _ := os.ReadDir(filepath.Join(from, rel))
+		entries, _ := fsys.ReadDir(filepath.Join(from, rel))
 		for _, entry := range entries {
 			entryRel := filepath.Join(rel, entry.Name())
-			target, err := os.Lstat(filepath.Join(into, entryRel))
+			target, err := fsys.Lstat(filepath.Join(into, entryRel))
 			switch {
 			case err != nil:
 			case entry.IsDir() && target.IsDir():
@@ -452,27 +526,27 @@ func mergeConflicts(from, into string) []string {
 // merging folders that exist on both sides. Anything else already there is
 // replaced with "replace", kept next to the new entry with "rename" (which
 // gets " (n)"), and otherwise left alone, failing the merge.
-func mergeInto(from, into, mode string) error {
-	if err := os.MkdirAll(into, 0o755); err != nil {
+func mergeInto(fsys *userfs.FS, from, into, mode string) error {
+	if err := fsys.MkdirAll(into, 0o755); err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(from)
+	entries, err := fsys.ReadDir(from)
 	if err != nil {
 		return err
 	}
-	existing, claimed := buildExistingMap(into)
+	existing, claimed := buildExistingMap(fsys, into)
 	for _, entry := range entries {
 		source, target := filepath.Join(from, entry.Name()), filepath.Join(into, entry.Name())
-		if info, err := os.Lstat(target); err == nil {
+		if info, err := fsys.Lstat(target); err == nil {
 			if entry.IsDir() && info.IsDir() {
-				if err := mergeInto(source, target, mode); err != nil {
+				if err := mergeInto(fsys, source, target, mode); err != nil {
 					return err
 				}
 				continue
 			}
 			switch mode {
 			case "replace":
-				if err := os.RemoveAll(target); err != nil {
+				if err := fsys.RemoveAll(target); err != nil {
 					return err
 				}
 			case "rename":
@@ -482,11 +556,34 @@ func mergeInto(from, into, mode string) error {
 			}
 		}
 		claimed[filepath.Base(target)] = true
-		if err := moveEntry(source, target); err != nil {
+		if err := moveEntry(fsys, source, target); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// archiveTarget is where an archive entry named entryName goes inside the
+// folder dest; false when the name would land outside it.
+func archiveTarget(dest, entryName string) (string, bool) {
+	target := filepath.Join(dest, filepath.Clean(filepath.FromSlash(entryName)))
+	return target, isWithin(dest, target) && target != dest
+}
+
+// writeEntry writes one extracted file to name in the user's folder.
+func writeEntry(fsys *userfs.FS, name string, content io.Reader) error {
+	if err := fsys.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		return err
+	}
+	out, err := fsys.Create(name)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, content); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // --- ZIP ---
@@ -509,28 +606,27 @@ func listZip(path string) ([]ArchiveEntry, error) {
 	return entries, nil
 }
 
-func extractZip(src, dest string) error {
-	r, err := zip.OpenReader(src)
+// extractZip extracts the zip at archivePath into the folder dest, writing
+// only regular files and folders (a link entry is written as a plain file
+// holding its target's name).
+func extractZip(fsys *userfs.FS, archivePath, dest string) error {
+	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
 
 	for _, f := range r.File {
-		target := filepath.Join(dest, filepath.Clean(f.Name))
-		if !strings.HasPrefix(target, filepath.Clean(dest)+string(os.PathSeparator)) && target != filepath.Clean(dest) {
-			continue // path traversal
+		target, ok := archiveTarget(dest, f.Name)
+		if !ok {
+			continue // would land outside dest
 		}
-
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(target, 0o755)
+			if err := fsys.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
 			continue
 		}
-
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-
 		rc, err := f.Open()
 		if err != nil {
 			if err == zip.ErrAlgorithm || f.FileHeader.Flags&0x1 != 0 {
@@ -538,14 +634,8 @@ func extractZip(src, dest string) error {
 			}
 			return err
 		}
-		out, err := os.Create(target)
-		if err != nil {
-			rc.Close()
-			return err
-		}
-		_, err = io.Copy(out, rc)
+		err = writeEntry(fsys, target, rc)
 		rc.Close()
-		out.Close()
 		if err != nil {
 			if f.FileHeader.Flags&0x1 != 0 {
 				return fmt.Errorf("archive is password protected")
@@ -629,8 +719,10 @@ func listTar(path string) ([]ArchiveEntry, error) {
 	return entries, nil
 }
 
-func extractTar(src, dest string) error {
-	tr, closer, err := openTar(src)
+// extractTar extracts the tar at archivePath into the folder dest, writing
+// only regular files and folders: links and special entries are skipped.
+func extractTar(fsys *userfs.FS, archivePath, dest string) error {
+	tr, closer, err := openTar(archivePath)
 	if err != nil {
 		return err
 	}
@@ -645,27 +737,19 @@ func extractTar(src, dest string) error {
 			return err
 		}
 
-		target := filepath.Join(dest, filepath.Clean(hdr.Name))
-		if !strings.HasPrefix(target, filepath.Clean(dest)) {
-			continue // path traversal
+		target, ok := archiveTarget(dest, hdr.Name)
+		if !ok {
+			continue // would land outside dest
 		}
-
-		if hdr.Typeflag == tar.TypeDir {
-			os.MkdirAll(target, 0o755)
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		out, err := os.Create(target)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(out, tr)
-		out.Close()
-		if err != nil {
-			return err
+		switch mode := hdr.FileInfo().Mode(); {
+		case mode.IsDir():
+			if err := fsys.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+		case mode.IsRegular():
+			if err := writeEntry(fsys, target, tr); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

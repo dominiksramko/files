@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"files/internal/thumbs"
+	"files/internal/userfs"
 )
 
 type FilesHandler struct {
@@ -663,6 +664,93 @@ func (h *FilesHandler) Search(c *gin.Context) {
 
 func userRoot(c *gin.Context) string {
 	return c.GetString("rootDir")
+}
+
+// ── The user's folder ─────────────────────────────────────────────────────────
+// Handlers reach a user's files only through userfs (see that package): names
+// relative to the user's folder, every operation kept inside it.
+
+const userFSKey = "userFS"
+
+// userFS returns the request's user folder, opened on first use and closed by
+// CloseUserFS when the request ends.
+func userFS(c *gin.Context) (*userfs.FS, error) {
+	if opened, ok := c.Get(userFSKey); ok {
+		return opened.(*userfs.FS), nil
+	}
+	fsys, err := userfs.Open(userRoot(c))
+	if err != nil {
+		return nil, err
+	}
+	c.Set(userFSKey, fsys)
+	return fsys, nil
+}
+
+// CloseUserFS is middleware that closes the user folder userFS opened, once
+// the request is done.
+func CloseUserFS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+		if opened, ok := c.Get(userFSKey); ok {
+			opened.(*userfs.FS).Close()
+		}
+	}
+}
+
+// requestName cleans a request path into a name in the user's folder. On
+// failure it has answered the request.
+func requestName(c *gin.Context, rel string) (string, bool) {
+	name, err := userfs.Clean(rel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return "", false
+	}
+	return name, true
+}
+
+// requestFolderName returns the user's folder and rel as a name in it — which
+// may be the folder itself. On failure it has answered the request.
+func requestFolderName(c *gin.Context, rel string) (*userfs.FS, string, bool) {
+	name, ok := requestName(c, rel)
+	if !ok {
+		return nil, "", false
+	}
+	fsys, err := userFS(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return nil, "", false
+	}
+	return fsys, name, true
+}
+
+// requestChildName is requestFolderName for an item that gets created,
+// replaced, renamed, moved or deleted: never the folder itself.
+func requestChildName(c *gin.Context, rel string) (*userfs.FS, string, bool) {
+	fsys, names, ok := requestChildNames(c, []string{rel})
+	if !ok {
+		return nil, "", false
+	}
+	return fsys, names[0], true
+}
+
+// requestChildNames is requestChildName for several items, all checked
+// before any is touched.
+func requestChildNames(c *gin.Context, rels []string) (*userfs.FS, []string, bool) {
+	names := make([]string, len(rels))
+	for i, rel := range rels {
+		name, err := userfs.CleanChild(rel)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return nil, nil, false
+		}
+		names[i] = name
+	}
+	fsys, err := userFS(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return nil, nil, false
+	}
+	return fsys, names, true
 }
 
 // sessionStillValid reports whether the request's session is still live, for

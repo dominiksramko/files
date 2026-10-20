@@ -82,6 +82,11 @@ func (f *FS) Remove(name string) error                     { return f.root.Remov
 func (f *FS) RemoveAll(name string) error                  { return f.root.RemoveAll(name) }
 func (f *FS) Rename(oldName, newName string) error         { return f.root.Rename(oldName, newName) }
 func (f *FS) Chmod(name string, mode os.FileMode) error    { return f.root.Chmod(name, mode) }
+func (f *FS) Readlink(name string) (string, error)         { return f.root.Readlink(name) }
+
+// Symlink creates the link name pointing at target. Like every link, it's
+// only followed while it stays inside the folder.
+func (f *FS) Symlink(target, name string) error { return f.root.Symlink(target, name) }
 func (f *FS) Chtimes(name string, atime, mtime time.Time) error {
 	return f.root.Chtimes(name, atime, mtime)
 }

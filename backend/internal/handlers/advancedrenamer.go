@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode"
 
+	"files/internal/userfs"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rwcarlsen/goexif/exif"
 )
@@ -530,8 +532,6 @@ func formatMediaDuration(seconds float64) string {
 // Evaluates the template against each provided file and returns the list of
 // computed new names without performing any actual renames.
 func (h *AdvancedRenamerHandler) Preview(c *gin.Context) {
-	root := userRoot(c)
-
 	var body renamePreviewRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -542,11 +542,21 @@ func (h *AdvancedRenamerHandler) Preview(c *gin.Context) {
 		return
 	}
 
+	fsys, err := userFS(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	referenced := referencedTemplateVars(body.Template)
 
 	items := make([]renamePreviewItem, 0, len(body.Paths))
 	for i, relPath := range body.Paths {
-		absPath, err := safePath(root, relPath)
+		// Metadata is read from the file's real location, checked to be inside the folder.
+		name, err := userfs.Clean(relPath)
+		var absPath string
+		if err == nil {
+			absPath, err = fsys.RealPath(name)
+		}
 		if err != nil {
 			items = append(items, renamePreviewItem{
 				OriginalName: filepath.Base(relPath),
@@ -579,7 +589,6 @@ func (h *AdvancedRenamerHandler) Preview(c *gin.Context) {
 // batch never replace each other: a name two of them would get is numbered.
 // On success, saves the template as the last-used template for the folder.
 func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
-	root := userRoot(c)
 	userID := c.GetInt64("userID")
 
 	var body renameApplyRequest
@@ -595,34 +604,38 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 		body.ConflictMode = "error"
 	}
 
-	// Resolve absolute paths once, skipping items that keep their name.
+	// Resolve names once, skipping items that keep their name.
 	type resolvedOp struct {
-		srcAbs  string
+		src     string
 		dstDir  string
 		toName  string
 		replace bool // an item outside the batch has the name and is replaced
 	}
-	ops := make([]resolvedOp, 0, len(body.Renames))
-	sources := map[string]bool{}
-	for _, op := range body.Renames {
+	froms := make([]string, len(body.Renames))
+	for i, op := range body.Renames {
 		if err := validateNewFilename(op.To); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination filename: " + err.Error()})
 			return
 		}
-		srcAbs, err := safeChildPath(root, op.From)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		if sources[srcAbs] {
+		froms[i] = op.From
+	}
+	fsys, srcNames, ok := requestChildNames(c, froms)
+	if !ok {
+		return
+	}
+	ops := make([]resolvedOp, 0, len(body.Renames))
+	sources := map[string]bool{}
+	for i, op := range body.Renames {
+		src := srcNames[i]
+		if sources[src] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "the same item is renamed twice: " + op.From})
 			return
 		}
-		sources[srcAbs] = true
-		if filepath.Base(srcAbs) == op.To {
+		sources[src] = true
+		if filepath.Base(src) == op.To {
 			continue
 		}
-		ops = append(ops, resolvedOp{srcAbs: srcAbs, dstDir: filepath.Dir(srcAbs), toName: op.To})
+		ops = append(ops, resolvedOp{src: src, dstDir: filepath.Dir(src), toName: op.To})
 	}
 
 	// Names in each folder, minus the ones this batch moves away: those are free
@@ -631,11 +644,11 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 	claimedByDir := map[string]map[string]bool{}
 	for _, op := range ops {
 		if _, ok := existingByDir[op.dstDir]; !ok {
-			existingByDir[op.dstDir], claimedByDir[op.dstDir] = buildExistingMap(op.dstDir)
+			existingByDir[op.dstDir], claimedByDir[op.dstDir] = buildExistingMap(fsys, op.dstDir)
 		}
 	}
 	for _, op := range ops {
-		delete(existingByDir[op.dstDir], filepath.Base(op.srcAbs))
+		delete(existingByDir[op.dstDir], filepath.Base(op.src))
 	}
 
 	// Pick every final name before touching anything.
@@ -657,9 +670,9 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 
 	moves := make([]pathMove, len(ops))
 	for i, op := range ops {
-		moves[i] = pathMove{from: op.srcAbs, to: filepath.Join(op.dstDir, op.toName), replaceExisting: op.replace}
+		moves[i] = pathMove{from: op.src, to: filepath.Join(op.dstDir, op.toName), replaceExisting: op.replace}
 	}
-	if err := renameAll(moves); err != nil {
+	if err := renameAll(fsys, moves); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -782,8 +795,8 @@ func (h *AdvancedRenamerHandler) GetFolderTemplate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"template": template})
 }
 
-// pathMove is one rename of a batch: from → to, removing what's at to first
-// when replaceExisting is set.
+// pathMove is one rename of a batch, as names in the user's folder: from → to,
+// removing what's at to first when replaceExisting is set.
 type pathMove struct {
 	from, to        string
 	replaceExisting bool
@@ -792,7 +805,7 @@ type pathMove struct {
 // renameAll performs a batch of renames, each within its own folder. Items
 // deeper in the tree go first, so renaming a folder never strands an item
 // inside it that's renamed too.
-func renameAll(moves []pathMove) error {
+func renameAll(fsys *userfs.FS, moves []pathMove) error {
 	byDepth := map[int][]pathMove{}
 	var depths []int
 	for _, move := range moves {
@@ -804,7 +817,7 @@ func renameAll(moves []pathMove) error {
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(depths)))
 	for _, depth := range depths {
-		if err := renameLevel(byDepth[depth]); err != nil {
+		if err := renameLevel(fsys, byDepth[depth]); err != nil {
 			return err
 		}
 	}
@@ -816,7 +829,7 @@ func renameAll(moves []pathMove) error {
 // final name — so names can pass along a chain (a→b, b→c) or be swapped. If a
 // step fails, items not yet at their final name go back to their original one
 // where it's still free.
-func renameLevel(moves []pathMove) error {
+func renameLevel(fsys *userfs.FS, moves []pathMove) error {
 	temps := make([]string, len(moves))
 	restoreFrom := func(first int) error {
 		var stranded []string
@@ -824,7 +837,7 @@ func renameLevel(moves []pathMove) error {
 			if temps[i] == "" {
 				continue
 			}
-			if _, err := os.Lstat(moves[i].from); err == nil || os.Rename(temps[i], moves[i].from) != nil {
+			if _, err := fsys.Lstat(moves[i].from); err == nil || fsys.Rename(temps[i], moves[i].from) != nil {
 				stranded = append(stranded, filepath.Base(temps[i]))
 			}
 		}
@@ -841,9 +854,9 @@ func renameLevel(moves []pathMove) error {
 	}
 
 	for i, move := range moves {
-		temp, err := unusedTempName(filepath.Dir(move.from))
+		temp, err := unusedTempName(fsys, filepath.Dir(move.from))
 		if err == nil {
-			err = os.Rename(move.from, temp)
+			err = fsys.Rename(move.from, temp)
 		}
 		if err != nil {
 			return fail(0, err)
@@ -852,13 +865,13 @@ func renameLevel(moves []pathMove) error {
 	}
 	for _, move := range moves {
 		if move.replaceExisting {
-			if err := os.RemoveAll(move.to); err != nil {
+			if err := fsys.RemoveAll(move.to); err != nil {
 				return fail(0, fmt.Errorf("could not overwrite: %w", err))
 			}
 		}
 	}
 	for i, move := range moves {
-		if err := os.Rename(temps[i], move.to); err != nil {
+		if err := fsys.Rename(temps[i], move.to); err != nil {
 			return fail(i, err)
 		}
 		temps[i] = ""
@@ -867,10 +880,10 @@ func renameLevel(moves []pathMove) error {
 }
 
 // unusedTempName returns a hidden name in dir that nothing has.
-func unusedTempName(dir string) (string, error) {
+func unusedTempName(fsys *userfs.FS, dir string) (string, error) {
 	for attempt := 0; attempt < 100; attempt++ {
 		candidate := filepath.Join(dir, ".~rename-"+rand.Text())
-		if _, err := os.Lstat(candidate); os.IsNotExist(err) {
+		if _, err := fsys.Lstat(candidate); os.IsNotExist(err) {
 			return candidate, nil
 		}
 	}

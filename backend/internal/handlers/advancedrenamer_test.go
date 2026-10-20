@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"files/internal/userfs"
 )
 
 func TestRenameApplyRejectsRootAndOutsideSources(t *testing.T) {
@@ -156,9 +158,14 @@ func TestRenameApplyFolderAndItemInside(t *testing.T) {
 func TestRenameAllRestoresOnFailure(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, map[string]string{"a": "a", "b": "b"})
-	err := renameAll([]pathMove{
-		{from: filepath.Join(dir, "a"), to: filepath.Join(dir, "a2")},
-		{from: filepath.Join(dir, "b"), to: filepath.Join(dir, "missing-folder", "b2")},
+	fsys, err := userfs.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsys.Close()
+	err = renameAll(fsys, []pathMove{
+		{from: "a", to: "a2"},
+		{from: "b", to: filepath.Join("missing-folder", "b2")},
 	})
 	if err == nil {
 		t.Fatal("renaming into a missing folder succeeded")
