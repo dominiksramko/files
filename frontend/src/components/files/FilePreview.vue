@@ -39,8 +39,17 @@ const emit = defineEmits<{
 // Name of the current file's custom view ("board"), if it has one — enables the raw-text toggle.
 const currentViewName = computed(() => (props.entry ? customViewName(props.entry.name) : null))
 
+// Viewers that fetch the whole file or hand it to an outside service: only the
+// panel on screen gets one, so merely being next to the open file costs nothing.
+const activeOnlyViewers = new Set([OfficeViewer, PdfViewer])
+
 // active: whether entry is the current panel (raw mode only applies to it).
 function viewerFor(entry: FileEntry, active: boolean) {
+  const viewer = chooseViewer(entry, active)
+  return active || !activeOnlyViewers.has(viewer) ? viewer : FileFallback
+}
+
+function chooseViewer(entry: FileEntry, active: boolean) {
   const mime = entry.mime
   if (active && props.rawText && customViewName(entry.name)) return TextViewer
   if (mime.startsWith('image/')) return ImageViewer

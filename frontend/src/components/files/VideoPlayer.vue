@@ -62,7 +62,16 @@ function scheduleControlsHide() {
 
 const { show: showToast } = useToast()
 
+// Streaming through the server starts a transcode there: a video in a panel
+// next to the open file waits until it's opened itself.
+let waitingUntilActive = false
+
 watch(() => props.active, (isActive) => {
+  if (isActive && waitingUntilActive) {
+    waitingUntilActive = false
+    void attachSource()
+    return
+  }
   if (!plyrInstance) return
   if (isActive) plyrInstance.play()?.catch(() => {})
   else plyrInstance.pause()
@@ -240,8 +249,16 @@ onMounted(async () => {
   await nextTick()
   if (!alive || !videoEl.value) return
 
+  if (needsRemux && !props.active) waitingUntilActive = true
+  else await attachSource()
+})
+
+async function attachSource() {
+  if (!alive || !videoEl.value) return
   if (needsRemux) {
     const Hls = (await import('hls.js')).default
+    // The panel may have closed while the library loaded.
+    if (!alive || !videoEl.value) return
     if (Hls.isSupported()) {
       hlsInstance = new Hls()
       hlsInstance.loadSource(filesApi.hlsPlaylistUrl(props.entry.path))
@@ -259,7 +276,7 @@ onMounted(async () => {
   } else {
     setupPlyr(videoEl.value)
   }
-})
+}
 
 // Destroy Plyr before the DOM element is removed, so Plyr can clean up its
 // own DOM manipulation before Vue unmounts the component.
