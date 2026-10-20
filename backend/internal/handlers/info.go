@@ -8,12 +8,12 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
-	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"files/internal/diskusage"
 	"files/internal/media"
 	"files/internal/userfs"
 
@@ -59,12 +59,11 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 		Done  bool  `json:"done,omitempty"`
 	}
 
-	var p Progress
+	var totals diskusage.Totals
 	n := 0
 
 	flush := func(done bool) {
-		p.Done = done
-		writeEvent(c, "", p)
+		writeEvent(c, "", Progress{Files: totals.Files, Dirs: totals.Dirs, Bytes: totals.Apparent, Done: done})
 	}
 
 	fsys, err := userFS(c)
@@ -72,45 +71,20 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 		flush(true)
 		return
 	}
+	ctx := c.Request.Context()
 	for _, rel := range rels {
 		name, err := userfs.Clean(rel)
 		if err != nil {
 			continue
 		}
-		fi, err := fsys.Stat(name)
-		if err != nil {
-			continue
-		}
-		if !fi.IsDir() {
-			p.Files++
-			p.Bytes += fi.Size()
-			n++
-			continue
-		}
-		fsys.WalkDir(name, func(path string, d fs.DirEntry, err error) error {
-			if c.Request.Context().Err() != nil {
-				return fs.SkipAll // the client is gone (dialog closed): stop walking
-			}
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				if path != name {
-					p.Dirs++
-				}
-			} else {
-				p.Files++
-				if info, err := d.Info(); err == nil {
-					p.Bytes += info.Size()
-				}
-			}
+		// The client is gone (dialog closed) when ctx ends: stop walking.
+		diskusage.Count(ctx, fsys, name, &totals, func() {
 			n++
 			if n%50 == 0 {
 				flush(false)
 			}
-			return nil
 		})
-		if c.Request.Context().Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 	}
