@@ -10,7 +10,7 @@ RUN npm test
 RUN npm run build
 
 
-FROM golang:1.25-alpine AS backend-builder
+FROM golang:1.26.9-alpine AS backend-builder
 
 RUN apk add --no-cache gcc musl-dev p7zip
 
@@ -47,7 +47,7 @@ RUN apk add --no-cache \
 # ---- dev: runtime tools + Go toolchain + air live reload (used by docker-compose.dev.yml) ----
 FROM runtime-base AS dev
 
-COPY --from=golang:1.25-alpine /usr/local/go /usr/local/go
+COPY --from=golang:1.26.9-alpine /usr/local/go /usr/local/go
 
 RUN GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOBIN=/usr/local/bin \
         /usr/local/go/bin/go install github.com/air-verse/air@v1.67.3 \
