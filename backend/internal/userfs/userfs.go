@@ -127,6 +127,21 @@ func (f *FS) RealPath(name string) (string, error) {
 	return real, nil
 }
 
+// ResolveName returns the name of what name really is, following symbolic
+// links (which stay inside the folder): for replacing a file's content
+// without replacing a link that points at it. The item must exist.
+func (f *FS) ResolveName(name string) (string, error) {
+	real, err := f.RealPath(name)
+	if err != nil {
+		return "", err
+	}
+	realDir, err := filepath.EvalSymlinks(f.dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Rel(realDir, real)
+}
+
 // slashName is name as io/fs wants it: slash-separated, "." for the root.
 func slashName(name string) string {
 	if name == "" {

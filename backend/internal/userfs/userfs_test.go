@@ -164,3 +164,15 @@ func TestReadDirAndWalkDir(t *testing.T) {
 		t.Errorf("WalkDir visited %q; want docs/plan.md and nothing through links", walked)
 	}
 }
+
+func TestResolveName(t *testing.T) {
+	fsys, _, _ := newHome(t)
+	for name, want := range map[string]string{"notes.txt": "notes.txt", "papers/plan.md": "docs/plan.md", "papers": "docs"} {
+		if got, err := fsys.ResolveName(name); err != nil || got != filepath.FromSlash(want) {
+			t.Errorf("ResolveName(%q) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	if _, err := fsys.ResolveName("to-anna"); err == nil {
+		t.Error("ResolveName followed a link out of the folder")
+	}
+}

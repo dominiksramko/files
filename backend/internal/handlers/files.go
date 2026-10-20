@@ -374,7 +374,7 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		}
 	}
 
-	if err := fsys.WriteFile(name, body, 0o644); err != nil {
+	if err := writeFileAtomically(fsys, name, body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -385,6 +385,42 @@ func (h *FilesHandler) WriteContent(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"version": contentVersion(body), "mod_time": info.ModTime()})
+}
+
+// writeFileAtomically replaces the content of the file name: it writes a
+// temporary file next to it and renames it into place, so a read meanwhile
+// sees the old content or the new, never half of it, and a crash mid-save
+// leaves the old file. An existing file keeps its permissions; a link keeps
+// pointing at the file, whose content is what's replaced.
+func writeFileAtomically(fsys *userfs.FS, name string, content []byte) error {
+	mode := os.FileMode(0o644)
+	if info, err := fsys.Stat(name); err == nil {
+		mode = info.Mode().Perm()
+		if name, err = fsys.ResolveName(name); err != nil {
+			return err
+		}
+	}
+	tmp, tmpName, err := createTempFile(fsys, filepath.Dir(name), ".~save_")
+	if err != nil {
+		return err
+	}
+	_, err = tmp.Write(content)
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = fsys.Chmod(tmpName, mode)
+	}
+	if err == nil {
+		err = fsys.Rename(tmpName, name)
+	}
+	if err != nil {
+		fsys.Remove(tmpName)
+	}
+	return err
 }
 
 // POST /api/v1/files/download-zip   body: { "paths": ["rel/path1", ...] }

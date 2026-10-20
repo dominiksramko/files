@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -146,4 +148,68 @@ func TestWriteContentRejects(t *testing.T) {
 	assertStatus(t, serve(handler, annRoot, writeContentRequest("big.txt", strings.Repeat("x", maxEditableSize+1), "")), http.StatusRequestEntityTooLarge)
 	assertUnchanged(t, annRoot, annaRoot)
 	assertMissing(t, filepath.Join(annRoot, "big.txt"))
+}
+
+func TestWriteContentIsAtomic(t *testing.T) {
+	// A reader during saves sees either the old or the new content in full.
+	annRoot, _ := newUserFolders(t)
+	old, updated := strings.Repeat("a", 1<<20), strings.Repeat("b", 1<<20)
+	writeFiles(t, annRoot, map[string]string{"big.txt": old})
+	handler := NewFilesHandler(nil, "").WriteContent
+
+	stop := make(chan struct{})
+	torn := make(chan string, 1)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			data, err := os.ReadFile(filepath.Join(annRoot, "big.txt"))
+			if err == nil && string(data) != old && string(data) != updated {
+				select {
+				case torn <- fmt.Sprintf("%d bytes", len(data)):
+				default:
+				}
+			}
+		}
+	}()
+	for i := 0; i < 20; i++ {
+		content := updated
+		if i%2 == 1 {
+			content = old
+		}
+		assertStatus(t, serve(handler, annRoot, writeContentRequest("big.txt", content, "")), http.StatusOK)
+	}
+	close(stop)
+	select {
+	case got := <-torn:
+		t.Errorf("a reader saw a half-written file (%s)", got)
+	default:
+	}
+	entries, _ := os.ReadDir(annRoot)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".~save_") {
+			t.Errorf("temporary file left: %s", entry.Name())
+		}
+	}
+}
+
+func TestWriteContentKeepsPermissionsAndLinks(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	os.Chmod(filepath.Join(annRoot, "notes.txt"), 0o600)
+	os.Symlink("docs/plan.md", filepath.Join(annRoot, "plan-link.md"))
+	handler := NewFilesHandler(nil, "").WriteContent
+
+	assertStatus(t, serve(handler, annRoot, writeContentRequest("notes.txt", "edited", "")), http.StatusOK)
+	if info, _ := os.Stat(filepath.Join(annRoot, "notes.txt")); info.Mode().Perm() != 0o600 {
+		t.Errorf("permissions now %v, want 0600", info.Mode().Perm())
+	}
+
+	assertStatus(t, serve(handler, annRoot, writeContentRequest("plan-link.md", "# new plan", "")), http.StatusOK)
+	if info, _ := os.Lstat(filepath.Join(annRoot, "plan-link.md")); info.Mode()&os.ModeSymlink == 0 {
+		t.Error("saving through a link replaced the link with a file")
+	}
+	assertFileContent(t, filepath.Join(annRoot, "docs/plan.md"), "# new plan")
 }
