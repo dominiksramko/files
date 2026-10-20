@@ -21,7 +21,8 @@ import (
 	"files/internal/userfs"
 )
 
-// LargestKept is how many of the largest files a scan remembers, per measure.
+// LargestKept is how many of the largest files (by space on disk) a scan
+// remembers.
 const LargestKept = 100
 
 // progressInterval is how often Scan reports progress (a variable for tests).
@@ -72,23 +73,7 @@ type Result struct {
 	Unreadable int // folders whose contents couldn't be read
 	ScannedAt  time.Time
 
-	largestDisk     []File
-	largestApparent []File
-}
-
-// Measure picks which size to rank by.
-type Measure int
-
-const (
-	ByDisk Measure = iota
-	ByApparent
-)
-
-func (m Measure) of(file File) int64 {
-	if m == ByApparent {
-		return file.Apparent
-	}
-	return file.Disk
+	largest []File
 }
 
 // walk calls visit for name and everything below it with its Lstat details
@@ -150,8 +135,7 @@ func Scan(ctx context.Context, fsys *userfs.FS, name string, onProgress func(Tot
 	result := &Result{Name: name, Root: &Dir{Children: map[string]*Dir{}}}
 	folders := map[string]*Dir{name: result.Root}
 	links := linkSet{}
-	byDisk := &fileHeap{measure: ByDisk}
-	byApparent := &fileHeap{measure: ByApparent}
+	largest := &fileHeap{}
 	lastReport := time.Now()
 
 	err := walk(ctx, fsys, name, func(path string, info fs.FileInfo) {
@@ -173,8 +157,7 @@ func Scan(ctx context.Context, fsys *userfs.FS, name string, onProgress func(Tot
 		} else {
 			added = Totals{Files: 1, Disk: disk, Apparent: info.Size()}
 			file := File{Path: path, Disk: disk, Apparent: info.Size(), ModTime: info.ModTime()}
-			byDisk.keep(file)
-			byApparent.keep(file)
+			largest.keep(file)
 		}
 		for folder := parent; folder != nil; folder = folder.parent {
 			folder.add(added)
@@ -190,8 +173,7 @@ func Scan(ctx context.Context, fsys *userfs.FS, name string, onProgress func(Tot
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	result.largestDisk = byDisk.sorted()
-	result.largestApparent = byApparent.sorted()
+	result.largest = largest.sorted()
 	result.ScannedAt = time.Now()
 	return result, nil
 }
@@ -240,12 +222,9 @@ func (r *Result) Find(name string) *Dir {
 	return folder
 }
 
-// Largest returns the largest files found, largest first.
-func (r *Result) Largest(measure Measure) []File {
-	if measure == ByApparent {
-		return r.largestApparent
-	}
-	return r.largestDisk
+// Largest returns the files taking the most space on disk, largest first.
+func (r *Result) Largest() []File {
+	return r.largest
 }
 
 // Remove takes name, which is being deleted, out of the scan: its sizes are
@@ -277,8 +256,7 @@ func (r *Result) Remove(name string, info fs.FileInfo) Totals {
 	for folder := parent; folder != nil; folder = folder.parent {
 		folder.subtract(removed)
 	}
-	r.largestDisk = withoutPath(r.largestDisk, name)
-	r.largestApparent = withoutPath(r.largestApparent, name)
+	r.largest = withoutPath(r.largest, name)
 	return removed
 }
 
@@ -293,15 +271,14 @@ func withoutPath(files []File, name string) []File {
 	return kept
 }
 
-// fileHeap keeps the LargestKept largest files by one measure (smallest on top,
-// so it's the one to drop).
+// fileHeap keeps the LargestKept largest files on disk (smallest on top, so
+// it's the one to drop).
 type fileHeap struct {
-	measure Measure
-	files   []File
+	files []File
 }
 
 func (h *fileHeap) Len() int           { return len(h.files) }
-func (h *fileHeap) Less(i, j int) bool { return h.measure.of(h.files[i]) < h.measure.of(h.files[j]) }
+func (h *fileHeap) Less(i, j int) bool { return h.files[i].Disk < h.files[j].Disk }
 func (h *fileHeap) Swap(i, j int)      { h.files[i], h.files[j] = h.files[j], h.files[i] }
 func (h *fileHeap) Push(item any)      { h.files = append(h.files, item.(File)) }
 func (h *fileHeap) Pop() any {
@@ -313,7 +290,7 @@ func (h *fileHeap) Pop() any {
 func (h *fileHeap) keep(file File) {
 	if h.Len() < LargestKept {
 		heap.Push(h, file)
-	} else if h.measure.of(file) > h.measure.of(h.files[0]) {
+	} else if file.Disk > h.files[0].Disk {
 		h.files[0] = file
 		heap.Fix(h, 0)
 	}
@@ -323,8 +300,8 @@ func (h *fileHeap) keep(file File) {
 func (h *fileHeap) sorted() []File {
 	files := append([]File(nil), h.files...)
 	sort.Slice(files, func(i, j int) bool {
-		if sizeI, sizeJ := h.measure.of(files[i]), h.measure.of(files[j]); sizeI != sizeJ {
-			return sizeI > sizeJ
+		if files[i].Disk != files[j].Disk {
+			return files[i].Disk > files[j].Disk
 		}
 		return files[i].Path < files[j].Path
 	})

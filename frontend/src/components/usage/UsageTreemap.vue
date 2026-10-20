@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import type { SizeMeasure, UsageEntry } from '@/types'
-import { canOpen, formatShare, groupSmallEntries, shareOf, sizeOf, squarify, type SmallEntries } from '@/utils/diskUsage'
+import type { UsageEntry } from '@/types'
+import { canOpen, formatShare, groupSmallEntries, shareOf, squarify, type SmallEntries } from '@/utils/diskUsage'
 import { catBg, catIconColor, catIconName, entryCategory, formatSize } from '@/utils/formatters'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
 // The folder's items as rectangles sized by what they take. Items too small
 // to see are added up into one tile.
-const props = defineProps<{ entries: UsageEntry[]; measure: SizeMeasure; total: number; selected: string[] }>()
+const props = defineProps<{ entries: UsageEntry[]; total: number; selected: string[] }>()
 const emit = defineEmits<{ open: [entry: UsageEntry]; select: [entry: UsageEntry] }>()
 
 // Below this part of the total an item joins the "smaller items" tile.
@@ -32,8 +32,8 @@ onUnmounted(() => resizeObserver?.disconnect())
 type Tile = { entry: UsageEntry; rest?: undefined } | { entry?: undefined; rest: SmallEntries }
 
 const tiles = computed(() => {
-  const { shown, rest } = groupSmallEntries(props.entries, props.measure, props.total, MIN_TILE_SHARE)
-  const items: { item: Tile; size: number }[] = shown.map((entry) => ({ item: { entry }, size: sizeOf(entry, props.measure) }))
+  const { shown, rest } = groupSmallEntries(props.entries, props.total, MIN_TILE_SHARE)
+  const items: { item: Tile; size: number }[] = shown.map((entry) => ({ item: { entry }, size: entry.disk }))
   if (rest) items.push({ item: { rest }, size: rest.size })
   return squarify(items, width.value, height.value)
 })
@@ -49,7 +49,7 @@ function tileClass(tile: Tile): string[] {
 }
 
 function tileTitle(tile: Tile): string {
-  const size = tile.entry ? sizeOf(tile.entry, props.measure) : tile.rest.size
+  const size = tile.entry ? tile.entry.disk : tile.rest.size
   const name = tile.entry ? tile.entry.name : `${tile.rest.count.toLocaleString()} smaller items`
   return `${name}: ${formatSize(size)} (${formatShare(shareOf(size, props.total))})`
 }
@@ -86,7 +86,7 @@ function onTileClick(tile: Tile) {
             </span>
           </div>
           <span class="text-[11px] text-zinc-400 tabular-nums">
-            {{ formatSize(tile.item.entry ? sizeOf(tile.item.entry, measure) : tile.item.rest.size) }}
+            {{ formatSize(tile.item.entry ? tile.item.entry.disk : tile.item.rest.size) }}
           </span>
         </template>
       </div>

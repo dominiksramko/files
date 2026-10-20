@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { UsageEntry } from '@/types'
 import { useDiskUsage } from '@/composables/useDiskUsage'
 import { useToast } from '@/composables/useToast'
-import { filesLocation, folderSize, sizeOf, sortBySize, withUsageState, type UsageState } from '@/utils/diskUsage'
+import { filesLocation, folderSize, sortBySize, totalSize, withUsageState, type UsageState } from '@/utils/diskUsage'
 import { formatSize, formatTimeAgo } from '@/utils/formatters'
 import { isTypingTarget, topModal } from '@/utils/keyboard'
 import { isWithin, parentOf } from '@/utils/paths'
@@ -28,7 +28,6 @@ const { show: showToast } = useToast()
 const root = computed(() => props.state.root)
 const at = computed(() => props.state.at)
 const tab = computed(() => props.state.tab)
-const measure = computed(() => props.state.measure)
 
 function usageLocation(changes: Partial<UsageState>) {
   return { query: withUsageState(route.query, { ...props.state, ...changes }) }
@@ -45,28 +44,28 @@ function close() {
 
 const { listing, largest, loading, error, scanning, queued, progress, rescan, loadLargest, remove } = useDiskUsage(root, at)
 
-const entries = computed(() => (listing.value ? sortBySize(listing.value.entries, measure.value) : []))
+const entries = computed(() => (listing.value ? sortBySize(listing.value.entries) : []))
 // What the bars are a part of: the folder looked at, or the whole scan for its
 // largest files.
-const folderTotal = computed(() => (listing.value ? folderSize(listing.value.total, entries.value, measure.value) : 0))
-const rootTotal = computed(() => (listing.value ? sizeOf(listing.value.root_total, measure.value) : 0))
+const folderTotal = computed(() => (listing.value ? folderSize(listing.value.total, entries.value) : 0))
+const rootTotal = computed(() => (listing.value ? listing.value.root_total.disk : 0))
 const shownEntries = computed(() => (tab.value === 'largest' ? largest.value ?? [] : entries.value))
 // A folder's listing still on screen while the next one loads.
 const stale = computed(() => loading.value && listing.value !== null && listing.value.at !== at.value)
 
-watch([tab, measure, listing], () => {
-  if (tab.value === 'largest' && listing.value) loadLargest(measure.value)
+watch([tab, listing], () => {
+  if (tab.value === 'largest' && listing.value) loadLargest()
 }, { immediate: true })
 
 // ── Selection and deleting ────────────────────────────────────────────────
 const selectedPaths = ref<string[]>([])
 watch([at, tab, root], () => { selectedPaths.value = [] })
 const selectedEntries = computed(() => shownEntries.value.filter((entry) => selectedPaths.value.includes(entry.path)))
-const selectedSize = computed(() => selectedEntries.value.reduce((sum, entry) => sum + sizeOf(entry, measure.value), 0))
+const selectedSize = computed(() => totalSize(selectedEntries.value))
 
 const deleteTargets = ref<UsageEntry[]>([])
 const deleting = ref(false)
-const deleteSize = computed(() => deleteTargets.value.reduce((sum, entry) => sum + sizeOf(entry, measure.value), 0))
+const deleteSize = computed(() => totalSize(deleteTargets.value))
 
 function askDelete(targets: UsageEntry[]) {
   if (targets.length) deleteTargets.value = targets
@@ -77,7 +76,7 @@ async function confirmDelete() {
   deleting.value = true
   try {
     const freed = await remove(paths)
-    showToast(`Freed ${formatSize(sizeOf(freed, measure.value))}`, 'success')
+    showToast(`Freed ${formatSize(freed.disk)}`, 'success')
     selectedPaths.value = selectedPaths.value.filter((path) => !paths.includes(path))
   } catch (err) {
     showToast((err as Error).message, 'error')
@@ -140,7 +139,7 @@ function plural(count: number, word: string): string {
       </div>
 
       <!-- Totals and controls -->
-      <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+      <div class="flex items-center gap-3 sm:gap-4">
         <p class="min-w-0 flex-1 text-xs text-zinc-500" data-usage-summary>
           <template v-if="listing">
             {{ formatSize(folderTotal) }} in {{ plural(listing.total.files, 'file') }}, {{ plural(listing.total.dirs, 'folder') }}
@@ -148,21 +147,9 @@ function plural(count: number, word: string): string {
             <span v-if="listing.unreadable" class="text-amber-400"> · {{ plural(listing.unreadable, 'folder') }} couldn't be read</span>
           </template>
         </p>
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-lg bg-zinc-950/60 border border-zinc-800 p-0.5 text-xs" role="group" aria-label="Size">
-            <button
-              v-for="option in ([['disk', 'On disk'], ['apparent', 'File sizes']] as const)"
-              :key="option[0]"
-              type="button"
-              :class="['px-2.5 py-1 rounded-md transition-colors', measure === option[0] ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white']"
-              :aria-pressed="measure === option[0]"
-              @click="go({ measure: option[0] })"
-            >{{ option[1] }}</button>
-          </div>
-          <AppButton variant="secondary" :disabled="scanning" @click="rescan">
-            <span class="flex items-center gap-1.5"><AppIcon name="refresh" class="size-4" />Rescan</span>
-          </AppButton>
-        </div>
+        <AppButton variant="secondary" class="shrink-0" :disabled="scanning" @click="rescan">
+          <span class="flex items-center gap-1.5"><AppIcon name="refresh" class="size-4" />Rescan</span>
+        </AppButton>
       </div>
 
       <!-- Scanning -->
@@ -170,7 +157,7 @@ function plural(count: number, word: string): string {
         <AppSpinner size="lg" class="text-blue-500" />
         <p class="text-sm text-zinc-200">{{ queued ? 'Waiting for another scan to finish…' : 'Scanning…' }}</p>
         <p v-if="progress" class="text-xs text-zinc-500 tabular-nums">
-          {{ plural(progress.files, 'file') }} · {{ plural(progress.dirs, 'folder') }} · {{ formatSize(sizeOf(progress, measure)) }}
+          {{ plural(progress.files, 'file') }} · {{ plural(progress.dirs, 'folder') }} · {{ formatSize(progress.disk) }}
         </p>
         <AppButton @click="close">Cancel</AppButton>
       </div>
@@ -191,7 +178,6 @@ function plural(count: number, word: string): string {
           v-if="tab === 'contents' && folderTotal > 0"
           class="h-48 sm:h-72"
           :entries="entries"
-          :measure="measure"
           :total="folderTotal"
           :selected="selectedPaths"
           @open="openFolder"
@@ -223,7 +209,6 @@ function plural(count: number, word: string): string {
           v-else
           v-model:selected="selectedPaths"
           :entries="shownEntries"
-          :measure="measure"
           :total="tab === 'largest' ? rootTotal : folderTotal"
           :show-paths="tab === 'largest'"
           :root="root"

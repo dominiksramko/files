@@ -231,14 +231,18 @@ func TestUsageLargest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	response := usageGet(h.UsageLargest, annRoot, url.Values{"path": {""}, "size": {"apparent"}})
+	response := usageGet(h.UsageLargest, annRoot, url.Values{"path": {""}})
 	assertStatus(t, response, http.StatusOK)
 	entries := decodeResponse[[]UsageEntry](t, response)
 	var paths []string
-	for _, entry := range entries {
+	for index, entry := range entries {
 		paths = append(paths, entry.Path)
+		if index > 0 && entry.Disk > entries[index-1].Disk {
+			t.Errorf("not largest on disk first: %v", entries)
+		}
 	}
-	if strings.Join(paths, ",") != "media/big.bin,notes.txt,docs/todo.todo,docs/plan.md,media/small.txt" {
+	// The rest are a block each, so they're in path order.
+	if strings.Join(paths, ",") != "media/big.bin,docs/plan.md,docs/todo.todo,media/small.txt,notes.txt" {
 		t.Errorf("largest = %v", paths)
 	}
 	if entries[0].Apparent != 20000 || entries[0].Name != "big.bin" || entries[0].Disk <= 0 {

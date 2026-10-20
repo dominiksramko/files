@@ -7,50 +7,47 @@ import {
   formatShare,
   groupSmallEntries,
   shareOf,
-  sizeOf,
   sortBySize,
   squarify,
+  totalSize,
   usageStateFrom,
   withUsageState,
 } from '../diskUsage'
 
-function entry(path: string, disk: number, apparent = disk, extra: Partial<UsageEntry> = {}): UsageEntry {
+function entry(path: string, disk: number, extra: Partial<UsageEntry> = {}): UsageEntry {
   return {
     name: path.split('/').pop()!,
     path,
     is_dir: false,
-    size: apparent,
+    size: disk,
     mod_time: '2026-10-20T10:00:00Z',
     mime: '',
     has_thumb: false,
     files: 0,
     dirs: 0,
     disk,
-    apparent,
     scanned: false,
     ...extra,
   }
 }
 
 describe('sizes', () => {
-  it('picks the measure', () => {
-    const item = entry('a', 4096, 10)
-    expect(sizeOf(item, 'disk')).toBe(4096)
-    expect(sizeOf(item, 'apparent')).toBe(10)
+  it('sorts largest on disk first, then by name', () => {
+    const entries = [entry('b', 100), entry('a', 100), entry('c', 500)]
+    expect(sortBySize(entries).map((item) => item.name)).toEqual(['c', 'a', 'b'])
+    expect(entries[0]!.name).toBe('b') // not sorted in place
   })
 
-  it('sorts largest first by the measure, then by name', () => {
-    const entries = [entry('b', 100, 5), entry('a', 100, 50), entry('c', 10, 500)]
-    expect(sortBySize(entries, 'disk').map((item) => item.name)).toEqual(['a', 'b', 'c'])
-    expect(sortBySize(entries, 'apparent').map((item) => item.name)).toEqual(['c', 'a', 'b'])
-    expect(entries[0]!.name).toBe('b') // not sorted in place
+  it('adds up what items take', () => {
+    expect(totalSize([entry('a', 4096), entry('b', 8192)])).toBe(12288)
+    expect(totalSize([])).toBe(0)
   })
 
   it('takes a folder\'s size from the scan, or adds up its items', () => {
     const sharing = [entry('big.iso', 2000), entry('hard.iso', 2000)] // hard links: one space
-    expect(folderSize({ files: 2, dirs: 0, disk: 2000, apparent: 4000 }, sharing, 'disk')).toBe(2000)
-    expect(folderSize({ files: 0, dirs: 0, disk: 0, apparent: 0 }, sharing, 'disk')).toBe(4000)
-    expect(folderSize({ files: 0, dirs: 0, disk: 0, apparent: 0 }, [], 'disk')).toBe(0)
+    expect(folderSize({ files: 2, dirs: 0, disk: 2000 }, sharing)).toBe(2000)
+    expect(folderSize({ files: 0, dirs: 0, disk: 0 }, sharing)).toBe(4000)
+    expect(folderSize({ files: 0, dirs: 0, disk: 0 }, [])).toBe(0)
   })
 
   it('gives shares of a total', () => {
@@ -65,53 +62,53 @@ describe('sizes', () => {
 
 describe('locations', () => {
   it('goes into folders, not into links to them', () => {
-    expect(canOpen(entry('media', 0, 0, { is_dir: true }))).toBe(true)
-    expect(canOpen(entry('to-media', 0, 0, { is_dir: true, link: true }))).toBe(false)
+    expect(canOpen(entry('media', 0, { is_dir: true }))).toBe(true)
+    expect(canOpen(entry('to-media', 0, { is_dir: true, link: true }))).toBe(false)
     expect(canOpen(entry('a.txt', 0))).toBe(false)
   })
 
   it('shows a file in its folder and opens a folder', () => {
     expect(filesLocation(entry('media/big.bin', 1))).toEqual({ path: 'media', preview: 'media/big.bin' })
     expect(filesLocation(entry('top.txt', 1))).toEqual({ preview: 'top.txt' })
-    expect(filesLocation(entry('media/clips', 1, 1, { is_dir: true }))).toEqual({ path: 'media/clips' })
+    expect(filesLocation(entry('media/clips', 1, { is_dir: true }))).toEqual({ path: 'media/clips' })
   })
 })
 
 describe('the modal in the URL', () => {
   it('is closed without ?usage, and opens on the home folder with it empty', () => {
     expect(usageStateFrom({ path: 'docs' })).toBeNull()
-    expect(usageStateFrom({ usage: '' })).toEqual({ root: '', at: '', tab: 'contents', measure: 'disk' })
-    expect(usageStateFrom({ usage: null })).toEqual({ root: '', at: '', tab: 'contents', measure: 'disk' })
+    expect(usageStateFrom({ usage: '' })).toEqual({ root: '', at: '', tab: 'contents' })
+    expect(usageStateFrom({ usage: null })).toEqual({ root: '', at: '', tab: 'contents' })
   })
 
-  it('reads the folder looked at, the tab and the measure', () => {
-    expect(usageStateFrom({ usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' }))
-      .toEqual({ root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' })
+  it('reads the folder looked at and the tab', () => {
+    expect(usageStateFrom({ usage: 'media', usage_at: 'media/clips', usage_tab: 'largest' }))
+      .toEqual({ root: 'media', at: 'media/clips', tab: 'largest' })
     expect(usageStateFrom({ usage: '', usage_at: 'media' })?.at).toBe('media')
   })
 
   it('shows the scanned folder for a folder outside it', () => {
     expect(usageStateFrom({ usage: 'media', usage_at: 'docs' })?.at).toBe('media')
     expect(usageStateFrom({ usage: 'media', usage_at: 'media-old/x' })?.at).toBe('media')
-    expect(usageStateFrom({ usage: 'media', usage_tab: 'other', usage_size: 'other' }))
-      .toEqual({ root: 'media', at: 'media', tab: 'contents', measure: 'disk' })
+    expect(usageStateFrom({ usage: 'media', usage_tab: 'other' }))
+      .toEqual({ root: 'media', at: 'media', tab: 'contents' })
   })
 
   it('puts only what differs from the defaults in the URL, next to the browser\'s own keys', () => {
-    expect(withUsageState({ path: 'docs', preview: 'docs/a.txt' }, { root: '', at: '', tab: 'contents', measure: 'disk' }))
+    expect(withUsageState({ path: 'docs', preview: 'docs/a.txt' }, { root: '', at: '', tab: 'contents' }))
       .toEqual({ path: 'docs', preview: 'docs/a.txt', usage: '' })
-    expect(withUsageState({ path: 'docs' }, { root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' }))
-      .toEqual({ path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' })
+    expect(withUsageState({ path: 'docs' }, { root: 'media', at: 'media/clips', tab: 'largest' }))
+      .toEqual({ path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest' })
   })
 
   it('replaces the previous state, and closing removes it all', () => {
-    const open = { path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest', usage_size: 'apparent' }
-    expect(withUsageState(open, { root: 'media', at: 'media', tab: 'contents', measure: 'disk' })).toEqual({ path: 'docs', usage: 'media' })
+    const open = { path: 'docs', usage: 'media', usage_at: 'media/clips', usage_tab: 'largest' }
+    expect(withUsageState(open, { root: 'media', at: 'media', tab: 'contents' })).toEqual({ path: 'docs', usage: 'media' })
     expect(withUsageState(open, null)).toEqual({ path: 'docs' })
   })
 
   it('reads back what it writes', () => {
-    const state = { root: 'media', at: 'media/clips', tab: 'largest', measure: 'apparent' } as const
+    const state = { root: 'media', at: 'media/clips', tab: 'largest' } as const
     expect(usageStateFrom(withUsageState({}, state))).toEqual(state)
   })
 })
@@ -119,13 +116,13 @@ describe('the modal in the URL', () => {
 describe('groupSmallEntries', () => {
   it('adds up what is too small for a tile', () => {
     const entries = [entry('big', 900), entry('mid', 80), entry('tiny1', 15), entry('tiny2', 5), entry('empty', 0)]
-    const { shown, rest } = groupSmallEntries(entries, 'disk', 1000, 0.05)
+    const { shown, rest } = groupSmallEntries(entries, 1000, 0.05)
     expect(shown.map((item) => item.name)).toEqual(['big', 'mid'])
     expect(rest).toEqual({ count: 2, size: 20 })
   })
 
   it('has no rest when everything shows', () => {
-    expect(groupSmallEntries([entry('a', 50), entry('b', 50)], 'disk', 100, 0.01).rest).toBeNull()
+    expect(groupSmallEntries([entry('a', 50), entry('b', 50)], 100, 0.01).rest).toBeNull()
   })
 })
 

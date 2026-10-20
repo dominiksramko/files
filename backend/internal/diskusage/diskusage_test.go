@@ -156,30 +156,46 @@ func TestLinksAreNotFollowed(t *testing.T) {
 }
 
 func TestLargestFiles(t *testing.T) {
-	files := map[string]int{}
-	for size := 1; size <= LargestKept+5; size++ {
-		files[fmt.Sprintf("d%d/f%03d", size%3, size)] = size
+	// A block or more apart, so they differ on disk too.
+	fsys, dir := folder(t, map[string]int{"a/small.bin": 100, "a/b/big.bin": 300_000, "mid.bin": 60_000})
+	if err := os.Link(filepath.Join(dir, "a", "b", "big.bin"), filepath.Join(dir, "z-big-again.bin")); err != nil {
+		t.Fatal(err)
 	}
-	fsys, _ := folder(t, files)
 	result := scan(t, fsys, ".")
+	largest := result.Largest()
+	want := []string{"a/b/big.bin", "mid.bin", "a/small.bin", "z-big-again.bin"}
+	if got := paths(largest); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("largest = %v, want %v (a second name for a file takes no more space)", got, want)
+	}
+	if largest[0].Apparent != 300_000 || largest[3].Disk != 0 {
+		t.Errorf("sizes = %+v", largest)
+	}
+}
 
-	largest := result.Largest(ByApparent)
+func TestLargestFilesKeepsTheLargest(t *testing.T) {
+	var kept fileHeap
+	for size := 1; size <= LargestKept+5; size++ {
+		kept.keep(File{Path: fmt.Sprintf("f%03d", size%7), Disk: int64(size * 4096)})
+	}
+	largest := kept.sorted()
 	if len(largest) != LargestKept {
 		t.Fatalf("kept %d files, want %d", len(largest), LargestKept)
 	}
-	if largest[0].Apparent != LargestKept+5 || largest[len(largest)-1].Apparent != 6 {
-		t.Errorf("range %d..%d, want %d..6", largest[0].Apparent, largest[len(largest)-1].Apparent, LargestKept+5)
+	if largest[0].Disk != (LargestKept+5)*4096 || largest[len(largest)-1].Disk != 6*4096 {
+		t.Errorf("range %d..%d, want the largest %d", largest[0].Disk, largest[len(largest)-1].Disk, LargestKept)
 	}
 	for i := 1; i < len(largest); i++ {
-		if largest[i].Apparent > largest[i-1].Apparent {
-			t.Fatalf("not largest first at %d: %v", i, paths(largest[:i+1]))
+		if largest[i].Disk > largest[i-1].Disk {
+			t.Fatalf("not largest first at %d", i)
 		}
 	}
-	if got := paths(largest[:1]); got[0] != fmt.Sprintf("d%d/f%03d", (LargestKept+5)%3, LargestKept+5) {
-		t.Errorf("largest = %v", got)
+
+	var tied fileHeap
+	for _, path := range []string{"c", "a", "b"} {
+		tied.keep(File{Path: path, Disk: 4096})
 	}
-	if len(result.Largest(ByDisk)) != LargestKept {
-		t.Errorf("by disk: kept %d", len(result.Largest(ByDisk)))
+	if got := paths(tied.sorted()); strings.Join(got, ",") != "a,b,c" {
+		t.Errorf("equal sizes = %v, want by path", got)
 	}
 }
 
@@ -239,7 +255,7 @@ func TestRemoveUpdatesTheScan(t *testing.T) {
 	if result.Root.Apparent != before.Apparent-300 || result.Root.Disk != before.Disk-removed.Disk {
 		t.Errorf("root = %+v, before %+v", result.Root.Totals, before)
 	}
-	for _, file := range result.Largest(ByApparent) {
+	for _, file := range result.Largest() {
 		if file.Path == two {
 			t.Error("a removed file is still among the largest")
 		}
@@ -258,7 +274,7 @@ func TestRemoveUpdatesTheScan(t *testing.T) {
 	if removed := result.Remove(filepath.Join("a", "b", "three.txt"), threeInfo); removed != (Totals{}) {
 		t.Errorf("a file in a removed folder took off %+v", removed)
 	}
-	if got := paths(result.Largest(ByDisk)); len(got) != 1 || got[0] != "c.txt" {
+	if got := paths(result.Largest()); len(got) != 1 || got[0] != "c.txt" {
 		t.Errorf("largest after removing a = %v", got)
 	}
 

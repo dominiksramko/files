@@ -1,4 +1,4 @@
-import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePreviewItem, SizeMeasure, SubtitlePrefs, UsageEntry, UsageListing, UsageTotals, User } from '@/types'
+import type { ArchiveEntry, FileEntry, LoginResponse, RenamePreset, RenamePreviewItem, SubtitlePrefs, UsageEntry, UsageListing, UsageTotals, User } from '@/types'
 
 const BASE = '/api/v1'
 
@@ -224,8 +224,8 @@ export const usage = {
 
   list: (root: string, at: string) => request<UsageListing>('GET', `/files/usage${qs({ path: root, at })}`),
 
-  largest: (root: string, measure: SizeMeasure) =>
-    request<UsageEntry[]>('GET', `/files/usage/largest${qs({ path: root, size: measure })}`),
+  largest: (root: string) =>
+    request<UsageEntry[]>('GET', `/files/usage/largest${qs({ path: root })}`),
 
   // Deletes for good, like fileops.delete.
   delete: (root: string, paths: string[]) =>

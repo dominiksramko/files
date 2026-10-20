@@ -34,12 +34,11 @@ export interface FileEntry {
 }
 
 // What a folder (or file) takes, from a disk usage scan: disk is the space
-// taken on disk, apparent the files' lengths added up.
+// taken on disk, with a file's hard links counted once.
 export interface UsageTotals {
   files: number
   dirs: number
   disk: number
-  apparent: number
 }
 
 // An item of the folder shown on the disk usage page. A folder that isn't
@@ -61,9 +60,6 @@ export interface UsageListing {
   total: UsageTotals
   entries: UsageEntry[]
 }
-
-// Which size the disk usage page ranks by.
-export type SizeMeasure = 'disk' | 'apparent'
 
 export interface ArchiveEntry {
   name: string

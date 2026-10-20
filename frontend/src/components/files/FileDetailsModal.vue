@@ -20,7 +20,7 @@ const usageFolder = computed(() => (props.items.length === 1 && props.items[0]!.
 
 function openDiskUsage(folder: FileEntry) {
   emit('close')
-  router.push({ query: withUsageState(route.query, { root: folder.path, at: folder.path, tab: 'contents', measure: 'disk' }) })
+  router.push({ query: withUsageState(route.query, { root: folder.path, at: folder.path, tab: 'contents' }) })
 }
 
 type MediaMeta = {

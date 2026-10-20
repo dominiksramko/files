@@ -1,5 +1,5 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue'
-import type { SizeMeasure, UsageEntry, UsageListing, UsageTotals } from '@/types'
+import type { UsageEntry, UsageListing, UsageTotals } from '@/types'
 import { ScanNeededError, usage as usageApi } from '@/utils/api'
 
 // The disk usage page's data: the folder at inside the scanned folder root,
@@ -50,7 +50,7 @@ export function useDiskUsage(root: Readonly<Ref<string>>, at: Readonly<Ref<strin
     largest.value = null
     error.value = null
     scanning.value = true
-    progress.value = { files: 0, dirs: 0, disk: 0, apparent: 0 }
+    progress.value = { files: 0, dirs: 0, disk: 0 }
     const source = new EventSource(usageApi.scanStreamUrl(root.value))
     scanSource = source
     source.addEventListener('queued', () => { queued.value = true })
@@ -75,9 +75,9 @@ export function useDiskUsage(root: Readonly<Ref<string>>, at: Readonly<Ref<strin
     }
   }
 
-  async function loadLargest(measure: SizeMeasure) {
+  async function loadLargest() {
     try {
-      largest.value = await usageApi.largest(root.value, measure)
+      largest.value = await usageApi.largest(root.value)
     } catch (err) {
       if (err instanceof ScanNeededError) scan()
       else error.value = (err as Error).message

@@ -1,22 +1,23 @@
 import type { LocationQuery } from 'vue-router'
-import type { SizeMeasure, UsageEntry, UsageTotals } from '@/types'
+import type { UsageEntry, UsageTotals } from '@/types'
 import { isWithin, parentOf } from '@/utils/paths'
 
-export function sizeOf(item: UsageTotals, measure: SizeMeasure): number {
-  return measure === 'apparent' ? item.apparent : item.disk
-}
-
-// Largest first by measure, by name when equal.
-export function sortBySize(entries: UsageEntry[], measure: SizeMeasure): UsageEntry[] {
-  return [...entries].sort((a, b) => sizeOf(b, measure) - sizeOf(a, measure) || a.name.localeCompare(b.name))
+// Largest on disk first, by name when equal.
+export function sortBySize(entries: UsageEntry[]): UsageEntry[] {
+  return [...entries].sort((a, b) => b.disk - a.disk || a.name.localeCompare(b.name))
 }
 
 // What a folder's items are parts of: the scan's total for it (which counts
 // space shared by hard links once), or its items added up when the scan
 // doesn't have the folder (made since).
-export function folderSize(total: UsageTotals, entries: UsageEntry[], measure: SizeMeasure): number {
-  if (total.files > 0 || total.dirs > 0 || sizeOf(total, measure) > 0) return sizeOf(total, measure)
-  return entries.reduce((sum, entry) => sum + sizeOf(entry, measure), 0)
+export function folderSize(total: UsageTotals, entries: UsageEntry[]): number {
+  if (total.files > 0 || total.dirs > 0 || total.disk > 0) return total.disk
+  return totalSize(entries)
+}
+
+// The space items take on disk, added up.
+export function totalSize(items: UsageTotals[]): number {
+  return items.reduce((sum, item) => sum + item.disk, 0)
 }
 
 // The part of total that size is, from 0 to 1.
@@ -47,18 +48,16 @@ export function filesLocation(entry: UsageEntry): { path?: string; preview?: str
 export type UsageTab = 'contents' | 'largest'
 
 // What the disk usage modal shows: the scanned folder root, the folder at
-// inside it, the tab and the size measure.
+// inside it, and the tab.
 export interface UsageState {
   root: string
   at: string
   tab: UsageTab
-  measure: SizeMeasure
 }
 
 // The modal's keys in the file browser's URL: ?usage= the scanned folder
-// (empty for the home folder), ?usage_at=, ?usage_tab=largest,
-// ?usage_size=apparent.
-const usageKeys = ['usage', 'usage_at', 'usage_tab', 'usage_size']
+// (empty for the home folder), ?usage_at=, ?usage_tab=largest.
+const usageKeys = ['usage', 'usage_at', 'usage_tab']
 
 function queryString(value: LocationQuery[string] | undefined): string | undefined {
   if (value === undefined) return undefined
@@ -76,7 +75,6 @@ export function usageStateFrom(query: LocationQuery): UsageState | null {
     root,
     at: at !== undefined && isWithin(root, at) ? at : root,
     tab: query.usage_tab === 'largest' ? 'largest' : 'contents',
-    measure: query.usage_size === 'apparent' ? 'apparent' : 'disk',
   }
 }
 
@@ -88,7 +86,6 @@ export function withUsageState(query: LocationQuery, state: UsageState | null): 
   const usage: LocationQuery = { usage: state.root }
   if (state.at !== state.root) usage.usage_at = state.at
   if (state.tab === 'largest') usage.usage_tab = 'largest'
-  if (state.measure === 'apparent') usage.usage_size = 'apparent'
   return { ...rest, ...usage }
 }
 
@@ -99,11 +96,11 @@ export interface SmallEntries {
 
 // Splits entries (largest first) into those big enough to show as tiles, at
 // least minShare of total, and the rest, added up into one tile.
-export function groupSmallEntries(entries: UsageEntry[], measure: SizeMeasure, total: number, minShare: number): { shown: UsageEntry[]; rest: SmallEntries | null } {
+export function groupSmallEntries(entries: UsageEntry[], total: number, minShare: number): { shown: UsageEntry[]; rest: SmallEntries | null } {
   const shown: UsageEntry[] = []
   const rest: SmallEntries = { count: 0, size: 0 }
   for (const entry of entries) {
-    const size = sizeOf(entry, measure)
+    const size = entry.disk
     if (size <= 0) continue
     if (shareOf(size, total) >= minShare) shown.push(entry)
     else {

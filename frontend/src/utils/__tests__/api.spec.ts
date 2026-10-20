@@ -125,9 +125,9 @@ describe('usage', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ entries: [] })))
     vi.stubGlobal('fetch', fetchMock)
     await usage.list('media', 'media/clips')
-    await usage.largest('media', 'apparent')
+    await usage.largest('media')
     const urls = fetchMock.mock.calls.map((call) => (call as unknown as [string])[0])
-    expect(urls).toEqual(['/api/v1/files/usage?path=media&at=media%2Fclips', '/api/v1/files/usage/largest?path=media&size=apparent'])
+    expect(urls).toEqual(['/api/v1/files/usage?path=media&at=media%2Fclips', '/api/v1/files/usage/largest?path=media'])
     expect(usage.scanStreamUrl('media/clips')).toBe('/api/v1/files/usage/scan?path=media%2Fclips')
   })
 
@@ -141,7 +141,7 @@ describe('usage', () => {
   })
 
   it('deletes inside the scanned folder', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ freed: { files: 1, dirs: 0, disk: 4096, apparent: 10 } })))
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ freed: { files: 1, dirs: 0, disk: 4096 } })))
     vi.stubGlobal('fetch', fetchMock)
     const result = await usage.delete('media', ['media/big.bin'])
     expect(result.freed.disk).toBe(4096)

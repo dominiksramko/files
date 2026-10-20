@@ -310,17 +310,14 @@ func (h *FilesHandler) Usage(c *gin.Context) {
 	})
 }
 
-// GET /api/v1/files/usage/largest?path=<scanned folder>&size=disk|apparent
+// GET /api/v1/files/usage/largest?path=<scanned folder>
 //
-// The largest files of the scan that are still there, largest first.
+// The files of the scan taking the most space on disk that are still there,
+// largest first.
 func (h *FilesHandler) UsageLargest(c *gin.Context) {
-	measure := diskusage.ByDisk
-	if c.Query("size") == "apparent" {
-		measure = diskusage.ByApparent
-	}
 	h.requestUsage(c, c.Query("path"), func(fsys *userfs.FS, result *diskusage.Result) {
 		entries := []UsageEntry{}
-		for _, file := range result.Largest(measure) {
+		for _, file := range result.Largest() {
 			info, err := fsys.Lstat(file.Path)
 			if err != nil || info.IsDir() {
 				continue // deleted or replaced since the scan

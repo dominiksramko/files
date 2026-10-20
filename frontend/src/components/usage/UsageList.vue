@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SizeMeasure, UsageEntry } from '@/types'
-import { canOpen, formatShare, shareOf, sizeOf } from '@/utils/diskUsage'
+import type { UsageEntry } from '@/types'
+import { canOpen, formatShare, shareOf } from '@/utils/diskUsage'
 import { formatDate, formatSize } from '@/utils/formatters'
 import { parentOf, relativeTo } from '@/utils/paths'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -11,7 +11,6 @@ import FileIcon from '@/components/files/FileIcon.vue'
 // shows where it is inside root (the largest files of a whole scan).
 const props = defineProps<{
   entries: UsageEntry[]
-  measure: SizeMeasure
   total: number
   showPaths?: boolean
   root: string
@@ -31,7 +30,7 @@ function onRowClick(entry: UsageEntry) {
 }
 
 function share(entry: UsageEntry): number {
-  return shareOf(sizeOf(entry, props.measure), props.total)
+  return shareOf(entry.disk, props.total)
 }
 
 function itemCount(entry: UsageEntry): string {
@@ -75,7 +74,7 @@ function folderOf(entry: UsageEntry): string {
           <div class="h-full rounded-full bg-blue-500/70" :style="{ width: `${share(entry) * 100}%` }" />
         </div>
       </div>
-      <span class="w-16 sm:w-20 shrink-0 text-right text-sm text-zinc-200 tabular-nums">{{ formatSize(sizeOf(entry, measure)) }}</span>
+      <span class="w-16 sm:w-20 shrink-0 text-right text-sm text-zinc-200 tabular-nums">{{ formatSize(entry.disk) }}</span>
       <span class="hidden sm:block w-9 shrink-0 text-right text-xs text-zinc-500 tabular-nums">{{ formatShare(share(entry)) }}</span>
       <span class="hidden md:block w-24 shrink-0 text-right text-xs text-zinc-500 tabular-nums">{{ itemCount(entry) }}</span>
       <span class="hidden lg:block w-36 shrink-0 text-right text-xs text-zinc-500">{{ formatDate(entry.mod_time) }}</span>

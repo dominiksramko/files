@@ -27,7 +27,7 @@ class FakeEventSource {
 }
 
 function listing(at: string): UsageListing {
-  const totals = { files: 1, dirs: 0, disk: 4096, apparent: 10 }
+  const totals = { files: 1, dirs: 0, disk: 4096 }
   return { root: 'media', at, scanned_at: '2026-10-20T12:00:00Z', unreadable: 0, root_total: totals, total: totals, entries: [] }
 }
 
@@ -73,7 +73,7 @@ describe('useDiskUsage', () => {
 
     source.emit('queued')
     expect(queued.value).toBe(true)
-    source.emit('progress', { files: 5, dirs: 1, disk: 8192, apparent: 500 })
+    source.emit('progress', { files: 5, dirs: 1, disk: 8192 })
     expect(queued.value).toBe(false)
     expect(progress.value?.files).toBe(5)
 
@@ -129,10 +129,10 @@ describe('useDiskUsage', () => {
       { ...listing('media').root_total, name: 'big.bin', path: 'media/clips/big.bin', is_dir: false, size: 10, mod_time: '', mime: '', has_thumb: false, scanned: true },
       { ...listing('media').root_total, name: 'keep.bin', path: 'media/keep.bin', is_dir: false, size: 10, mod_time: '', mime: '', has_thumb: false, scanned: true },
     ])
-    const remove = vi.spyOn(usageApi, 'delete').mockResolvedValue({ freed: { files: 1, dirs: 1, disk: 8192, apparent: 10 }, root_total: listing('media').root_total })
+    const remove = vi.spyOn(usageApi, 'delete').mockResolvedValue({ freed: { files: 1, dirs: 1, disk: 8192 }, root_total: listing('media').root_total })
     const state = setup()
     await vi.waitFor(() => expect(state.listing.value).not.toBeNull())
-    await state.loadLargest('disk')
+    await state.loadLargest()
     expect(state.largest.value).toHaveLength(2)
 
     const freed = await state.remove(['media/clips'])
