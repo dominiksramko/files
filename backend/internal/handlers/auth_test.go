@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"files/internal/testutil"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // sessionRouter wires the login, account and user endpoints the way main.go does.
@@ -276,5 +279,30 @@ func TestTooManyAttemptsMessage(t *testing.T) {
 		if got := tooManyAttemptsMessage(wait); !strings.HasSuffix(got, want) {
 			t.Errorf("%v: %q, want …%q", wait, got, want)
 		}
+	}
+}
+
+func TestUnknownUsernameTakesAsLongAsWrongPassword(t *testing.T) {
+	db := testutil.OpenDB(t)
+	hash, _ := bcrypt.GenerateFromPassword([]byte("real password"), bcrypt.DefaultCost) // as real accounts are hashed
+	db.Exec(`INSERT INTO users (username, password) VALUES ('ann', ?)`, string(hash))
+	router := sessionRouter(db)
+
+	attempt := 0
+	median := func(username string) time.Duration {
+		var durations []time.Duration
+		for i := 0; i < 5; i++ {
+			attempt++ // a new address each time, to stay under the attempt limit
+			start := time.Now()
+			assertStatus(t, loginFrom(t, router, fmt.Sprintf("198.51.100.%d", attempt), username, "wrong"), http.StatusUnauthorized)
+			durations = append(durations, time.Since(start))
+		}
+		slices.Sort(durations)
+		return durations[2]
+	}
+	median("warm-up")
+	known, unknown := median("ann"), median("nobody")
+	if unknown < known/2 || unknown > known*2 {
+		t.Errorf("wrong password for an existing user: %v; for an unknown user: %v", known, unknown)
 	}
 }

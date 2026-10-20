@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"files/internal/loginlimit"
@@ -55,6 +57,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := h.fetchUser(req.Username)
 	if err == nil {
 		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
+	} else {
+		bcrypt.CompareHashAndPassword(unknownUserHash(), []byte(req.Password))
 	}
 	if err != nil {
 		log.Printf("login failed: user %q from %s", req.Username, address)
@@ -72,6 +76,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	middleware.SetSessionCookie(c, token, expires)
 	c.JSON(http.StatusOK, gin.H{"user": user.ToResponse()})
 }
+
+// unknownUserHash is checked against when the username doesn't exist, so that
+// answer takes as long as a wrong password and doesn't reveal which usernames
+// exist. Made once, at the cost real passwords are hashed with.
+var unknownUserHash = sync.OnceValue(func() []byte {
+	hash, err := bcrypt.GenerateFromPassword([]byte(rand.Text()), bcrypt.DefaultCost)
+	if err != nil {
+		panic("hashing the unknown-user password: " + err.Error())
+	}
+	return hash
+})
 
 // tooManyAttemptsMessage tells the user how long to wait, in whole minutes.
 func tooManyAttemptsMessage(wait time.Duration) string {
