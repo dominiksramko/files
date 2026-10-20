@@ -13,7 +13,7 @@ import TextViewer   from '@/components/files/TextViewer.vue'
 import TodoViewer   from '@/components/files/TodoViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
 import AppIcon      from '@/components/ui/AppIcon.vue'
-import { isTypingTarget } from '@/utils/keyboard'
+import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
 
 const props = defineProps<{
   entry: FileEntry | null
@@ -219,8 +219,8 @@ function onCarouselWheel(e: WheelEvent) {
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
   if (isTypingTarget(e.target)) return
-  // A modal opened from inside a viewer (e.g. a kanban card) owns the keyboard.
-  if (document.querySelector('[aria-modal="true"]')) return
+  // A dialog opened over the preview (delete, rename, a kanban card) owns the keyboard.
+  if (isModalOpen()) return
   if (e.key === 'Escape') { emit('close'); return }
   const currentPanel = trackRef.value?.children[1] as HTMLElement | undefined
   const mediaEl = currentPanel?.querySelector<HTMLVideoElement | HTMLAudioElement>('video, audio')

@@ -20,6 +20,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import ConflictDialog from '@/components/ui/ConflictDialog.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 import AdvancedRenamer from '@/components/files/AdvancedRenamer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDropdown from '@/components/ui/AppDropdown.vue'
@@ -1180,109 +1181,74 @@ onMounted(async () => {
     />
 
     <!-- New folder dialog -->
-    <Transition name="fade">
-      <div
-        v-if="newFolderDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @mousedown.self="newFolderDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">New folder</h3>
-          <input
-            ref="newFolderInput"
-            v-model="newFolderName"
-            type="text"
-            placeholder="Folder name"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="confirmNewFolder"
-            @keydown.escape="newFolderDialog = false"
-          />
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="newFolderDialog = false">Cancel</AppButton>
-            <AppButton variant="primary" @click="confirmNewFolder">Create</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="newFolderDialog" @close="newFolderDialog = false">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-3">New folder</h3>
+      <input
+        ref="newFolderInput"
+        v-model="newFolderName"
+        type="text"
+        placeholder="Folder name"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+        @keydown.enter="confirmNewFolder"
+      />
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="newFolderDialog = false">Cancel</AppButton>
+        <AppButton variant="primary" @click="confirmNewFolder">Create</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <!-- New file dialog (text / todo) -->
-    <Transition name="fade">
-      <div
-        v-if="newFileDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @mousedown.self="newFileDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">{{ newFileConfig.title }}</h3>
-          <input
-            ref="newFileInput"
-            v-model="newFileName"
-            type="text"
-            :placeholder="`filename.${newFileConfig.extension}`"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="confirmNewFile"
-            @keydown.escape="newFileDialog = false"
-          />
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="newFileDialog = false">Cancel</AppButton>
-            <AppButton variant="primary" @click="confirmNewFile">Create</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="newFileDialog" @close="newFileDialog = false">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-3">{{ newFileConfig.title }}</h3>
+      <input
+        ref="newFileInput"
+        v-model="newFileName"
+        type="text"
+        :placeholder="`filename.${newFileConfig.extension}`"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+        @keydown.enter="confirmNewFile"
+      />
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="newFileDialog = false">Cancel</AppButton>
+        <AppButton variant="primary" @click="confirmNewFile">Create</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <!-- Rename dialog -->
-    <Transition name="fade">
-      <div
-        v-if="renameDialog"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @mousedown.self="cancelRename"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Rename</h3>
-          <input
-            ref="renameDialogInput"
-            v-model="renameDialogName"
-            type="text"
-            placeholder="New name"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="confirmRename"
-            @keydown.escape="cancelRename"
-          />
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="cancelRename">Cancel</AppButton>
-            <AppButton variant="primary" @click="confirmRename">Rename</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="renameDialog" @close="cancelRename">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-3">Rename</h3>
+      <input
+        ref="renameDialogInput"
+        v-model="renameDialogName"
+        type="text"
+        placeholder="New name"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+        @keydown.enter="confirmRename"
+      />
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="cancelRename">Cancel</AppButton>
+        <AppButton variant="primary" @click="confirmRename">Rename</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <!-- Delete confirmation dialog -->
-    <Transition name="fade">
-      <div
-        v-if="deleteDialog"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @mousedown.self="cancelDelete"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">
-            {{ deletePending && deletePending.paths.length === 1 ? 'Delete file?' : `Delete ${deletePending?.paths.length} files?` }}
-          </h3>
-          <p class="text-xs text-zinc-400 mb-3 break-all">
-            <template v-if="deletePending && deletePending.paths.length === 1">
-              This will delete <span class="text-zinc-200">{{ deletePending.name ?? 'this file' }}</span> from your files.
-            </template>
-            <template v-else>
-              This will delete {{ deletePending?.paths.length }} items from your files.
-            </template>
-          </p>
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="cancelDelete">Cancel</AppButton>
-            <AppButton variant="destructive" @click="confirmDelete">Delete</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="deleteDialog" @close="cancelDelete">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-1">
+        {{ deletePending && deletePending.paths.length === 1 ? 'Delete file?' : `Delete ${deletePending?.paths.length} files?` }}
+      </h3>
+      <p class="text-xs text-zinc-400 mb-3 break-all">
+        <template v-if="deletePending && deletePending.paths.length === 1">
+          This will delete <span class="text-zinc-200">{{ deletePending.name ?? 'this file' }}</span> from your files.
+        </template>
+        <template v-else>
+          This will delete {{ deletePending?.paths.length }} items from your files.
+        </template>
+      </p>
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="cancelDelete">Cancel</AppButton>
+        <AppButton variant="destructive" @click="confirmDelete">Delete</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <ConflictDialog />
 
@@ -1294,79 +1260,60 @@ onMounted(async () => {
     />
 
     <!-- Compress dialog -->
-    <Transition name="fade">
-      <div
-        v-if="compressDialog"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @mousedown.self="compressDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-80 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Compress</h3>
+    <AppDialog :open="compressDialog" width="w-80" @close="compressDialog = false">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-3">Compress</h3>
 
-          <label class="block text-xs text-zinc-400 mb-1">Archive name</label>
-          <input
-            v-model="compressName"
-            type="text"
-            placeholder="archive.zip"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors mb-3"
-            @keydown.enter="confirmCompress"
-            @keydown.escape="compressDialog = false"
-          />
+      <label class="block text-xs text-zinc-400 mb-1">Archive name</label>
+      <input
+        v-model="compressName"
+        type="text"
+        placeholder="archive.zip"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors mb-3"
+        @keydown.enter="confirmCompress"
+      />
 
-          <label class="block text-xs text-zinc-400 mb-1">Format</label>
-          <AppSelect v-model="compressFormat" :options="compressFormatOptions" class="mb-3" />
+      <label class="block text-xs text-zinc-400 mb-1">Format</label>
+      <AppSelect v-model="compressFormat" :options="compressFormatOptions" class="mb-3" />
 
-          <label class="block text-xs text-zinc-400 mb-1">
-            Password
-            <span class="text-zinc-600">(optional{{ compressFormat === 'tar' || compressFormat === 'tar.gz' ? ', not supported for TAR' : '' }})</span>
-          </label>
-          <SecretInput
-            v-model="compressPassword"
-            placeholder="No password"
-            :disabled="compressFormat === 'tar' || compressFormat === 'tar.gz'"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-40"
-            @keydown.enter="confirmCompress"
-            @keydown.escape="compressDialog = false"
-          />
+      <label class="block text-xs text-zinc-400 mb-1">
+        Password
+        <span class="text-zinc-600">(optional{{ compressFormat === 'tar' || compressFormat === 'tar.gz' ? ', not supported for TAR' : '' }})</span>
+      </label>
+      <SecretInput
+        v-model="compressPassword"
+        placeholder="No password"
+        :disabled="compressFormat === 'tar' || compressFormat === 'tar.gz'"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors disabled:opacity-40"
+        @keydown.enter="confirmCompress"
+      />
 
-          <div v-if="compressFormat === '7z' && compressPassword" class="flex items-center gap-2 mt-3">
-            <AppCheckbox v-model="compressProtectFilenames" />
-            <span class="text-xs text-zinc-300">Encrypt filenames</span>
-          </div>
-
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="compressDialog = false">Cancel</AppButton>
-            <AppButton variant="primary" :disabled="!compressName.trim()" @click="confirmCompress">Create</AppButton>
-          </div>
-        </div>
+      <div v-if="compressFormat === '7z' && compressPassword" class="flex items-center gap-2 mt-3">
+        <AppCheckbox v-model="compressProtectFilenames" />
+        <span class="text-xs text-zinc-300">Encrypt filenames</span>
       </div>
-    </Transition>
+
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="compressDialog = false">Cancel</AppButton>
+        <AppButton variant="primary" :disabled="!compressName.trim()" @click="confirmCompress">Create</AppButton>
+      </div>
+    </AppDialog>
 
     <!-- Extract password dialog -->
-    <Transition name="fade">
-      <div
-        v-if="extractPasswordDialog"
-        class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-        @mousedown.self="extractPasswordDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-72 shadow-2xl">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
-          <p class="text-xs text-zinc-400 mb-3">This archive is password protected.</p>
-          <SecretInput
-            v-model="extractPasswordInput"
-            placeholder="Enter password"
-            class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="confirmExtract"
-            @keydown.escape="extractPasswordDialog = false"
-          />
-          <p v-if="extractError" class="text-xs text-red-400 mt-2">{{ extractError }}</p>
-          <div class="flex gap-2 mt-3 justify-end">
-            <AppButton @click="extractPasswordDialog = false">Cancel</AppButton>
-            <AppButton variant="primary" :disabled="extracting || !extractPasswordInput" @click="confirmExtract">{{ extracting ? 'Extracting…' : 'Extract' }}</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="extractPasswordDialog" @close="extractPasswordDialog = false">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
+      <p class="text-xs text-zinc-400 mb-3">This archive is password protected.</p>
+      <SecretInput
+        v-model="extractPasswordInput"
+        placeholder="Enter password"
+        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
+        @keydown.enter="confirmExtract"
+      />
+      <p v-if="extractError" class="text-xs text-red-400 mt-2">{{ extractError }}</p>
+      <div class="flex gap-2 mt-3 justify-end">
+        <AppButton @click="extractPasswordDialog = false">Cancel</AppButton>
+        <AppButton variant="primary" :disabled="extracting || !extractPasswordInput" @click="confirmExtract">{{ extracting ? 'Extracting…' : 'Extract' }}</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <!-- Background jobs card (upload progress + zip download) -->
     <Transition name="slide-up">

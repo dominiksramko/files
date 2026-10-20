@@ -107,14 +107,12 @@ ALL browsing state must be reflected in the URL so page refresh restores it:
 
 Any new state that should survive refresh MUST be added to the URL and synced bidirectionally with `watch(route.query.xxx)` + `watch(stateRef)`.
 
-## Modal Design Rules (FilesView.vue inline modals)
-- Wrapper: `<Transition name="fade"><div v-if="..." class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="close">`
-- Card: `bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl`
-- Width: `w-72` for simple confirm/input; `max-w-sm` for modals with lists or more content
+## Modal Design Rules (small dialogs: confirmations, a name to type)
+- **AppDialog.vue** (`components/ui/`) — ALWAYS use for these; NEVER write the overlay + card by hand. `<AppDialog :open="showIt" @close="showIt = false">…</AppDialog>`; `width` prop for wider cards (default `w-72` for simple confirm/input; `w-80`/`max-w-sm` for lists or more content). It fades in, closes on a click outside and on Escape, and is marked `aria-modal`, so the preview and other shortcuts behind it ignore the keyboard (`isModalOpen()` in `utils/keyboard.ts` — check it in any new window-wide key handler).
 - Title: `<h3 class="text-sm font-semibold text-zinc-100 mb-3">`
 - Body text/description: `<p class="text-xs text-zinc-400 mb-3">`
 - Text input: `w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors`
-- Key handlers on inputs: `@keydown.enter` to confirm, `@keydown.escape` to close
+- Key handlers on inputs: `@keydown.enter` to confirm (AppDialog handles Escape)
 
 ## File Conflict Resolution Convention
 When a file operation (move, copy, rename, advanced rename, upload, extract, compress, new file) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The server always enforces this itself — never rely on a check in the app, the folder may have changed since it was listed. Nothing is written before the 409. The frontend then presents the user with a resolution modal offering:

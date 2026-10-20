@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { isTypingTarget } from '@/utils/keyboard'
+import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
 
 describe('isTypingTarget', () => {
   it('is true for fields that take text', () => {
@@ -21,5 +21,18 @@ describe('isTypingTarget', () => {
     expect(isTypingTarget(document.createElement('button'))).toBe(false)
     expect(isTypingTarget(null)).toBe(false)
     expect(isTypingTarget(window)).toBe(false)
+  })
+})
+
+describe('isModalOpen', () => {
+  it('is true only while a modal dialog is in the page', () => {
+    expect(isModalOpen()).toBe(false)
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    document.body.append(dialog)
+    expect(isModalOpen()).toBe(true)
+    dialog.remove()
+    expect(isModalOpen()).toBe(false)
   })
 })

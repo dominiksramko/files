@@ -4,6 +4,7 @@ import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { fileCategory, formatSize, formatDate } from '@/utils/formatters'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 
 const props = defineProps<{ items: FileEntry[] }>()
 const emit = defineEmits<{ close: [] }>()
@@ -91,93 +92,85 @@ onUnmounted(stopStream)
 </script>
 
 <template>
-  <Transition name="fade">
-    <div
-      v-if="items.length > 0"
-      class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50"
-      @mousedown.self="emit('close')"
-    >
-      <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 w-96 max-w-[calc(100vw-2rem)] shadow-2xl">
-        <!-- Header -->
-        <h3 class="text-sm font-semibold text-zinc-100 mb-3">
-          <template v-if="items.length === 1">Details</template>
-          <template v-else>
-            Details —
-            <span v-if="folderCount > 0">{{ folderCount.toLocaleString() }} folder{{ folderCount !== 1 ? 's' : '' }}</span>
-            <span v-if="folderCount > 0 && fileCount > 0">, </span>
-            <span v-if="fileCount > 0">{{ fileCount.toLocaleString() }} file{{ fileCount !== 1 ? 's' : '' }}</span>
-          </template>
-        </h3>
+  <AppDialog :open="items.length > 0" width="w-96 max-w-[calc(100vw-2rem)]" @close="emit('close')">
+    <!-- Header -->
+    <h3 class="text-sm font-semibold text-zinc-100 mb-3">
+      <template v-if="items.length === 1">Details</template>
+      <template v-else>
+        Details —
+        <span v-if="folderCount > 0">{{ folderCount.toLocaleString() }} folder{{ folderCount !== 1 ? 's' : '' }}</span>
+        <span v-if="folderCount > 0 && fileCount > 0">, </span>
+        <span v-if="fileCount > 0">{{ fileCount.toLocaleString() }} file{{ fileCount !== 1 ? 's' : '' }}</span>
+      </template>
+    </h3>
 
-        <dl class="space-y-2">
-          <!-- Name (single only) -->
-          <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Name</dt>
-            <dd class="text-xs text-zinc-200 break-all">{{ items[0]?.name }}</dd>
-          </div>
-
-          <!-- Location -->
-          <div class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Location</dt>
-            <dd class="text-xs text-zinc-400 break-all font-mono">{{ location }}</dd>
-          </div>
-
-          <!-- Type (single only) -->
-          <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Type</dt>
-            <dd class="text-xs text-zinc-200">{{ items[0]?.is_dir ? 'Folder' : (items[0]?.mime || 'Unknown') }}</dd>
-          </div>
-
-          <!-- Size -->
-          <div class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Size</dt>
-            <dd class="text-xs text-zinc-200">
-              <template v-if="items.length === 1 && !items[0]?.is_dir">
-                {{ formatSize(items[0]?.size ?? 0) }}
-              </template>
-              <template v-else>{{ sizeText }}</template>
-            </dd>
-          </div>
-
-          <!-- Created (single only, if filesystem provides it) -->
-          <div v-if="items.length === 1 && items[0]?.created_at" class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Created</dt>
-            <dd class="text-xs text-zinc-200">{{ formatDate(items[0]?.created_at ?? '') }}</dd>
-          </div>
-
-          <!-- Modified (single only) -->
-          <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Modified</dt>
-            <dd class="text-xs text-zinc-200">{{ formatDate(items[0]?.mod_time ?? '') }}</dd>
-          </div>
-
-          <!-- Image resolution -->
-          <div v-if="detailsMedia?.image" class="flex flex-col sm:flex-row sm:gap-2">
-            <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Resolution</dt>
-            <dd class="text-xs text-zinc-200">{{ detailsMedia.image.width }} × {{ detailsMedia.image.height }}</dd>
-          </div>
-
-          <!-- Video metadata -->
-          <template v-if="detailsMedia?.video">
-            <div class="flex flex-col sm:flex-row sm:gap-2">
-              <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Duration</dt>
-              <dd class="text-xs text-zinc-200">{{ formatDuration(detailsMedia.video.duration) }}</dd>
-            </div>
-            <div class="flex flex-col sm:flex-row sm:gap-2">
-              <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Resolution</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsMedia.video.width }} × {{ detailsMedia.video.height }}</dd>
-            </div>
-            <div v-if="detailsMedia.video.codec" class="flex flex-col sm:flex-row sm:gap-2">
-              <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Codec</dt>
-              <dd class="text-xs text-zinc-200">{{ detailsMedia.video.codec }}</dd>
-            </div>
-          </template>
-        </dl>
-
-        <div class="flex justify-end mt-4">
-          <AppButton @click="emit('close')">Close</AppButton>
-        </div>
+    <dl class="space-y-2">
+      <!-- Name (single only) -->
+      <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Name</dt>
+        <dd class="text-xs text-zinc-200 break-all">{{ items[0]?.name }}</dd>
       </div>
+
+      <!-- Location -->
+      <div class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Location</dt>
+        <dd class="text-xs text-zinc-400 break-all font-mono">{{ location }}</dd>
+      </div>
+
+      <!-- Type (single only) -->
+      <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Type</dt>
+        <dd class="text-xs text-zinc-200">{{ items[0]?.is_dir ? 'Folder' : (items[0]?.mime || 'Unknown') }}</dd>
+      </div>
+
+      <!-- Size -->
+      <div class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Size</dt>
+        <dd class="text-xs text-zinc-200">
+          <template v-if="items.length === 1 && !items[0]?.is_dir">
+            {{ formatSize(items[0]?.size ?? 0) }}
+          </template>
+          <template v-else>{{ sizeText }}</template>
+        </dd>
+      </div>
+
+      <!-- Created (single only, if filesystem provides it) -->
+      <div v-if="items.length === 1 && items[0]?.created_at" class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Created</dt>
+        <dd class="text-xs text-zinc-200">{{ formatDate(items[0]?.created_at ?? '') }}</dd>
+      </div>
+
+      <!-- Modified (single only) -->
+      <div v-if="items.length === 1" class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Modified</dt>
+        <dd class="text-xs text-zinc-200">{{ formatDate(items[0]?.mod_time ?? '') }}</dd>
+      </div>
+
+      <!-- Image resolution -->
+      <div v-if="detailsMedia?.image" class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Resolution</dt>
+        <dd class="text-xs text-zinc-200">{{ detailsMedia.image.width }} × {{ detailsMedia.image.height }}</dd>
+      </div>
+
+      <!-- Video metadata -->
+      <template v-if="detailsMedia?.video">
+        <div class="flex flex-col sm:flex-row sm:gap-2">
+          <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Duration</dt>
+          <dd class="text-xs text-zinc-200">{{ formatDuration(detailsMedia.video.duration) }}</dd>
+        </div>
+        <div class="flex flex-col sm:flex-row sm:gap-2">
+          <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Resolution</dt>
+          <dd class="text-xs text-zinc-200">{{ detailsMedia.video.width }} × {{ detailsMedia.video.height }}</dd>
+        </div>
+        <div v-if="detailsMedia.video.codec" class="flex flex-col sm:flex-row sm:gap-2">
+          <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">Codec</dt>
+          <dd class="text-xs text-zinc-200">{{ detailsMedia.video.codec }}</dd>
+        </div>
+      </template>
+    </dl>
+
+    <div class="flex justify-end mt-4">
+      <AppButton @click="emit('close')">Close</AppButton>
     </div>
-  </Transition>
+  </AppDialog>
 </template>

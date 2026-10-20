@@ -7,6 +7,7 @@ import UserFormModal from '@/components/admin/UserFormModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -222,24 +223,16 @@ onMounted(fetchUsers)
     </div>
 
     <!-- Clear cache dialog -->
-    <Transition name="fade">
-      <div
-        v-if="showClearDialog"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-        @mousedown.self="showClearDialog = false"
-      >
-        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl w-72">
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear cache?</h3>
-          <p class="text-xs text-zinc-400 mb-4">
-            All generated thumbnails, image previews and HLS video segments will be deleted.
-          </p>
-          <div class="flex gap-2 justify-end">
-            <AppButton @click="showClearDialog = false">Cancel</AppButton>
-            <AppButton variant="destructive" @click="confirmClearCache">Clear cache</AppButton>
-          </div>
-        </div>
+    <AppDialog :open="showClearDialog" @close="showClearDialog = false">
+      <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear cache?</h3>
+      <p class="text-xs text-zinc-400 mb-4">
+        All generated thumbnails, image previews and HLS video segments will be deleted.
+      </p>
+      <div class="flex gap-2 justify-end">
+        <AppButton @click="showClearDialog = false">Cancel</AppButton>
+        <AppButton variant="destructive" @click="confirmClearCache">Clear cache</AppButton>
       </div>
-    </Transition>
+    </AppDialog>
 
     <!-- Form modal -->
     <UserFormModal
@@ -250,14 +243,3 @@ onMounted(fetchUsers)
     />
   </div>
 </template>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import AppIcon from '@/components/ui/AppIcon.vue'
-import { isTypingTarget } from '@/utils/keyboard'
+import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
 
 // active: whether this is the image on screen (the preview also keeps its
 // neighbours mounted); only that one takes zoom keys.
@@ -227,7 +227,7 @@ function onTouchEnd(e: TouchEvent) {
 // --- Keyboard ---
 function onKey(e: KeyboardEvent) {
   // Ctrl/Cmd with - and = is the browser's own page zoom.
-  if (!props.active || isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
+  if (!props.active || isTypingTarget(e.target) || isModalOpen() || e.ctrlKey || e.metaKey || e.altKey) return
   if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn() }
   if (e.key === '-')                  { e.preventDefault(); zoomOut() }
   if (e.key === '0')                  { e.preventDefault(); resetZoom() }
