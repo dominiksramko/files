@@ -23,6 +23,10 @@ export class NotFoundError extends Error {
   }
 }
 
+// An archive can't be listed or extracted without a password, or not with the
+// one given.
+export class PasswordRequiredError extends Error {}
+
 // The disk usage page asked about a folder the user hasn't scanned (or whose
 // scan has expired): start a scan.
 export class ScanNeededError extends Error {}
@@ -83,6 +87,7 @@ async function request<T>(
       throw new NotFoundError(err.error ?? res.statusText, err.fallback_path as string)
     }
     if (res.status === 404 && err.scan_needed === true) throw new ScanNeededError(err.error)
+    if (err.password_required === true) throw new PasswordRequiredError(err.error)
     throw new Error(err.error ?? res.statusText)
   }
 

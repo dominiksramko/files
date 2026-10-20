@@ -499,3 +499,144 @@ func TestArchiveContentsRejects(t *testing.T) {
 	assertStatus(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "../anna/private.zip"})), http.StatusBadRequest)
 	assertStatus(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "missing.zip"})), http.StatusNotFound)
 }
+
+// makeLockedArchive creates the archive name in root with 7z, holding root's
+// notes.txt encrypted with password; extra arguments go to 7z (-tzip,
+// -mhe=on). Skips the test without 7z.
+func makeLockedArchive(t *testing.T, root, name, password string, extra ...string) {
+	t.Helper()
+	if _, err := exec.LookPath("7z"); err != nil {
+		t.Skip("needs 7z")
+	}
+	args := append([]string{"a", "-p" + password}, extra...)
+	args = append(args, filepath.Join(root, name), filepath.Join(root, "notes.txt"))
+	if out, err := exec.Command("7z", args...).CombinedOutput(); err != nil {
+		t.Fatalf("7z: %v %s", err, out)
+	}
+}
+
+func assertPasswordRequired(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	assertStatus(t, response, http.StatusBadRequest)
+	if body := decodeResponse[map[string]any](t, response); body["password_required"] != true {
+		t.Errorf("body = %v, want password_required", body)
+	}
+}
+
+func TestArchiveContentsMarksEncryptedFiles(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	makeLockedArchive(t, annRoot, "locked.zip", "hunter2", "-tzip")
+	makeLockedArchive(t, annRoot, "locked.7z", "hunter2")
+	writeTestZip(t, filepath.Join(annRoot, "open.zip"), map[string]string{"inside.txt": "x"})
+	handler := NewArchiveHandler().Contents
+
+	for _, name := range []string{"locked.zip", "locked.7z"} {
+		response := serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": name}))
+		assertStatus(t, response, http.StatusOK)
+		if entries := decodeResponse[[]ArchiveEntry](t, response); len(entries) != 1 || entries[0].Name != "notes.txt" || !entries[0].Encrypted {
+			t.Errorf("%s: entries = %+v, want notes.txt encrypted", name, entries)
+		}
+	}
+	response := serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "open.zip"}))
+	if entries := decodeResponse[[]ArchiveEntry](t, response); len(entries) != 1 || entries[0].Encrypted {
+		t.Errorf("open.zip: entries = %+v, want not encrypted", entries)
+	}
+}
+
+func TestArchiveContentsAsksForPasswordOfEncryptedNames(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	makeLockedArchive(t, annRoot, "locked.7z", "hunter2", "-mhe=on")
+	handler := NewArchiveHandler().Contents
+	assertPasswordRequired(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "locked.7z"})))
+	assertPasswordRequired(t, serve(handler, annRoot, archiveContentsRequest(t, map[string]string{"path": "locked.7z", "password": "wrong"})))
+}
+
+func TestExtractAsksForPassword(t *testing.T) {
+	for _, archive := range []struct{ name, format string }{{"locked.zip", "-tzip"}, {"locked.7z", "-t7z"}} {
+		t.Run(archive.name, func(t *testing.T) {
+			annRoot, _ := newUserFolders(t)
+			makeLockedArchive(t, annRoot, archive.name, "hunter2", archive.format)
+			handler := NewArchiveHandler().Extract
+			dest := filepath.Join(annRoot, "out")
+
+			assertPasswordRequired(t, serveJSON(t, handler, annRoot, map[string]any{"path": archive.name, "dest": "out"}))
+			assertPasswordRequired(t, serveJSON(t, handler, annRoot, map[string]any{"path": archive.name, "dest": "out", "password": "wrong"}))
+			assertMissing(t, filepath.Join(dest, "notes.txt"))
+
+			response := serveJSON(t, handler, annRoot, map[string]any{"path": archive.name, "dest": "out", "password": "hunter2"})
+			assertStatus(t, response, http.StatusOK)
+			assertFileContent(t, filepath.Join(dest, "notes.txt"), "ann's notes")
+		})
+	}
+}
+
+func TestExtractFailureWithoutPasswordProblem(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	if err := os.WriteFile(filepath.Join(annRoot, "broken.zip"), []byte("not a zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	response := serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "broken.zip"})
+	if response.Code == http.StatusOK {
+		t.Fatalf("extracted a broken archive")
+	}
+	if body := decodeResponse[map[string]any](t, response); body["password_required"] != nil {
+		t.Errorf("body = %v, a broken archive isn't a password problem", body)
+	}
+}
+
+func TestParseUnrarList(t *testing.T) {
+	// As unrar 7 prints it: a mark ('*' encrypted), attributes right-aligned
+	// in 10 columns, size, date, time, name.
+	output := strings.Join([]string{
+		"Archive: test.rar",
+		"Details: RAR 5",
+		"",
+		" Attributes      Size     Date    Time   Name",
+		"----------- ---------  ---------- -----  ----",
+		" -rw-r--r--         12  2026-01-01 10:00  plain.txt",
+		"*-rw-r--r--         34  2026-01-01 10:00  locked.txt",
+		"*   ..A....         56  2026-01-01 10:00  win/locked file.txt",
+		"    ...D...          0  2026-01-01 10:00  win",
+		" drwxr-xr-x          0  2026-01-01 10:00  unix",
+		"----------- ---------  ---------- -----  ----",
+		"                   102                    5",
+	}, "\n")
+	want := []ArchiveEntry{
+		{Name: "plain.txt", Size: 12},
+		{Name: "locked.txt", Size: 34, Encrypted: true},
+		{Name: "win/locked file.txt", Size: 56, Encrypted: true},
+		{Name: "win", IsDir: true},
+		{Name: "unix", IsDir: true},
+	}
+	got := parseUnrarList(output)
+	if len(got) != len(want) {
+		t.Fatalf("entries = %+v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Errorf("entry %d = %+v, want %+v", index, got[index], want[index])
+		}
+	}
+}
+
+func TestParse7zListMarksEncryptedFiles(t *testing.T) {
+	output := "----------\nPath = a.txt\nSize = 3\nAttributes = A -rw-r--r--\nEncrypted = +\n\nPath = sub\nSize = 0\nAttributes = D drwxr-xr-x\nEncrypted = -\n"
+	got := parse7zList(output)
+	want := []ArchiveEntry{{Name: "a.txt", Size: 3, Encrypted: true}, {Name: "sub", IsDir: true}}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("entries = %+v, want %+v", got, want)
+	}
+}
+
+func TestMentionsPassword(t *testing.T) {
+	for text, want := range map[string]bool{
+		"ERROR: Wrong password : notes.txt": true,
+		"Encrypted headers. Enter password": true,
+		"Can not open the file as archive":  false,
+		"":                                  false,
+	} {
+		if got := mentionsPassword(text); got != want {
+			t.Errorf("mentionsPassword(%q) = %v, want %v", text, got, want)
+		}
+	}
+}

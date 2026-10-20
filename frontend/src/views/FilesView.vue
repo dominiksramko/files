@@ -20,6 +20,7 @@ import AppIcon from '@/components/ui/AppIcon.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import ConflictDialog from '@/components/ui/ConflictDialog.vue'
+import PasswordDialog from '@/components/ui/PasswordDialog.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 import AdvancedRenamer from '@/components/files/AdvancedRenamer.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -42,7 +43,7 @@ const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
 const { prompt: promptConflict, runWithConflictPrompt } = useConflictDialog()
-const { extractArchive } = useArchiveExtract()
+const { extractArchive, passwordPrompt: extractPasswordPrompt } = useArchiveExtract()
 const { show: showToast } = useToast()
 
 // ── View mode (per-folder, stored on server) ────────────────────────────────
@@ -768,48 +769,13 @@ async function runCompress(paths: string[], dest: string, format: string, passwo
 }
 
 // ── Extract ───────────────────────────────────────────────────────────────
-const extractPasswordDialog = ref(false)
-const extractPasswordInput = ref('')
-const extractPendingPath = ref('')
-const extracting = ref(false)
-const extractError = ref('')
-
 async function openExtract(path: string) {
-  await runExtract(path, undefined)
-}
-
-async function runExtract(path: string, password: string | undefined) {
   try {
-    if ((await extractArchive(path, password)) === null) return
+    if ((await extractArchive(path)) === null) return
     selectedPaths.value = []
     showToast('Extracted successfully', 'success')
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Extraction failed'
-    if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
-      extractPendingPath.value = path
-      extractPasswordInput.value = ''
-      extractError.value = ''
-      extractPasswordDialog.value = true
-    } else {
-      showToast(msg, 'error')
-    }
-  }
-}
-
-async function confirmExtract() {
-  if (!extractPasswordInput.value || extracting.value) return
-  extracting.value = true
-  extractError.value = ''
-  try {
-    const extracted = await extractArchive(extractPendingPath.value, extractPasswordInput.value)
-    extractPasswordDialog.value = false
-    if (extracted === null) return
-    selectedPaths.value = []
-    showToast('Extracted successfully', 'success')
-  } catch (e) {
-    extractError.value = e instanceof Error ? e.message : 'Extraction failed'
-  } finally {
-    extracting.value = false
+    showToast(e instanceof Error ? e.message : 'Extraction failed', 'error')
   }
 }
 
@@ -1295,21 +1261,7 @@ onMounted(async () => {
     </AppDialog>
 
     <!-- Extract password dialog -->
-    <AppDialog :open="extractPasswordDialog" @close="extractPasswordDialog = false">
-      <h3 class="text-sm font-semibold text-zinc-100 mb-1">Password required</h3>
-      <p class="text-xs text-zinc-400 mb-3">This archive is password protected.</p>
-      <SecretInput
-        v-model="extractPasswordInput"
-        placeholder="Enter password"
-        class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-        @keydown.enter="confirmExtract"
-      />
-      <p v-if="extractError" class="text-xs text-red-400 mt-2">{{ extractError }}</p>
-      <div class="flex gap-2 mt-3 justify-end">
-        <AppButton @click="extractPasswordDialog = false">Cancel</AppButton>
-        <AppButton variant="primary" :disabled="extracting || !extractPasswordInput" @click="confirmExtract">{{ extracting ? 'Extracting…' : 'Extract' }}</AppButton>
-      </div>
-    </AppDialog>
+    <PasswordDialog :prompt="extractPasswordPrompt" action="Extract" busy-label="Extracting…" />
 
     <!-- Background jobs card (upload progress + zip download) -->
     <Transition name="slide-up">

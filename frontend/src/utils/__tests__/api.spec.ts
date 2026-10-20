@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConflictError, fileops, files, onSessionEnded, ScanNeededError, usage } from '@/utils/api'
+import { ConflictError, fileops, files, onSessionEnded, PasswordRequiredError, ScanNeededError, usage } from '@/utils/api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -117,6 +117,18 @@ describe('files.archiveContents', () => {
     expect(url).toBe('/api/v1/files/archive')
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ path: 'docs/locked.7z', password: 'hunter2' })
+  })
+  it('throws PasswordRequiredError when the server needs a password', async () => {
+    const answer = { error: 'cannot read archive: archive is password protected', password_required: true }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(answer), { status: 400 })))
+    expect(await files.archiveContents('locked.7z').catch((err) => err)).toBeInstanceOf(PasswordRequiredError)
+  })
+
+  it('throws a plain error for other failures', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'cannot read archive: bad header' }), { status: 400 })))
+    const error = await files.archiveContents('broken.7z').catch((err) => err)
+    expect(error).not.toBeInstanceOf(PasswordRequiredError)
+    expect(error.message).toBe('cannot read archive: bad header')
   })
 })
 

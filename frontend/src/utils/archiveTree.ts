@@ -4,12 +4,14 @@ import { isWithin, nameOf, parentOf } from '@/utils/paths'
 import { queryString, withKeys } from '@/utils/query'
 
 // A file or folder in an archive, at its path inside it ('/'-separated). A
-// folder's size is the total of the files under it.
+// folder's size is the total of the files under it; encrypted marks a file
+// that needs a password to extract.
 export interface ArchiveItem {
   name: string
   path: string
   is_dir: boolean
   size: number
+  encrypted: boolean
 }
 
 export interface ArchiveTree {
@@ -17,6 +19,8 @@ export interface ArchiveTree {
   items: ArchiveItem[]
   // What each folder holds ('' for the top of the archive), folders first.
   folders: Map<string, ArchiveItem[]>
+  // Whether any file needs a password to extract.
+  encrypted: boolean
 }
 
 // An entry's path as the formats write it, made plain: tar starts names with
@@ -39,7 +43,7 @@ export function archiveTree(entries: ArchiveEntry[]): ArchiveTree {
   function folderAt(path: string): ArchiveItem {
     let folder = byPath.get(path)
     if (!folder?.is_dir) {
-      folder = { name: nameOf(path), path, is_dir: true, size: 0 }
+      folder = { name: nameOf(path), path, is_dir: true, size: 0, encrypted: false }
       byPath.set(path, folder)
     }
     return folder
@@ -62,7 +66,7 @@ export function archiveTree(entries: ArchiveEntry[]): ArchiveTree {
     const earlier = byPath.get(path)
     if (earlier?.is_dir) continue
     addToFolders(path, entry.size - (earlier?.size ?? 0))
-    byPath.set(path, { name: nameOf(path), path, is_dir: false, size: entry.size })
+    byPath.set(path, { name: nameOf(path), path, is_dir: false, size: entry.size, encrypted: entry.encrypted === true })
   }
 
   const items = [...byPath.values()]
@@ -74,7 +78,7 @@ export function archiveTree(entries: ArchiveEntry[]): ArchiveTree {
     folders.get(parent)!.push(item)
   }
   for (const contents of folders.values()) contents.sort(compareArchiveItems)
-  return { items, folders }
+  return { items, folders, encrypted: items.some((item) => item.encrypted) }
 }
 
 // What's under folder (at any depth) with query in its name, ignoring case.

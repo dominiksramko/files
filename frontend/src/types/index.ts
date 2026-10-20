@@ -65,6 +65,7 @@ export interface ArchiveEntry {
   name: string
   size: number
   is_dir: boolean
+  encrypted?: boolean // extracting it needs a password (its name can still be read)
 }
 
 import type { IconName } from '@/utils/icons'

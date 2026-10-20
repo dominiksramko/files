@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ArchiveEntry } from '@/types'
 import { archivePath, archiveStateFrom, archiveTree, searchArchive, withArchiveState } from '@/utils/archiveTree'
 
-const file = (name: string, size: number): ArchiveEntry => ({ name, size, is_dir: false })
+const file = (name: string, size: number, encrypted = false): ArchiveEntry => ({ name, size, is_dir: false, encrypted })
 const dir = (name: string): ArchiveEntry => ({ name, size: 0, is_dir: true })
 
 describe('archivePath', () => {
@@ -29,9 +29,9 @@ describe('archiveTree', () => {
 
   it('makes the folders an archive only implies', () => {
     const { folders } = archiveTree([file('./a/b/c.txt', 5)])
-    expect(folders.get('')).toEqual([{ name: 'a', path: 'a', is_dir: true, size: 5 }])
-    expect(folders.get('a')).toEqual([{ name: 'b', path: 'a/b', is_dir: true, size: 5 }])
-    expect(folders.get('a/b')).toEqual([{ name: 'c.txt', path: 'a/b/c.txt', is_dir: false, size: 5 }])
+    expect(folders.get('')).toEqual([{ name: 'a', path: 'a', is_dir: true, size: 5, encrypted: false }])
+    expect(folders.get('a')).toEqual([{ name: 'b', path: 'a/b', is_dir: true, size: 5, encrypted: false }])
+    expect(folders.get('a/b')).toEqual([{ name: 'c.txt', path: 'a/b/c.txt', is_dir: false, size: 5, encrypted: false }])
   })
 
   it('totals the files under each folder', () => {
@@ -42,8 +42,16 @@ describe('archiveTree', () => {
 
   it('counts a file stored twice once, at its last size', () => {
     const { folders } = archiveTree([file('a/log', 10), file('a/log', 4)])
-    expect(folders.get('a')).toEqual([{ name: 'log', path: 'a/log', is_dir: false, size: 4 }])
+    expect(folders.get('a')).toEqual([{ name: 'log', path: 'a/log', is_dir: false, size: 4, encrypted: false }])
     expect(folders.get('')![0]!.size).toBe(4)
+  })
+
+  it('marks the files that need a password, and whether any does', () => {
+    const tree = archiveTree([file('docs/secret.txt', 1, true), file('docs/open.txt', 1), dir('docs/')])
+    expect(tree.folders.get('docs')!.map((item) => [item.name, item.encrypted])).toEqual([['open.txt', false], ['secret.txt', true]])
+    expect(tree.folders.get('')![0]!.encrypted).toBe(false)
+    expect(tree.encrypted).toBe(true)
+    expect(archiveTree([file('open.txt', 1)]).encrypted).toBe(false)
   })
 
   it('is empty for an empty archive', () => {

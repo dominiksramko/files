@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { files as filesApi } from '@/utils/api'
+import { files as filesApi, PasswordRequiredError } from '@/utils/api'
 import { formatSize } from '@/utils/formatters'
 import { archiveTree, searchArchive, withArchiveState, type ArchiveItem, type ArchiveState, type ArchiveTree } from '@/utils/archiveTree'
 import { nameOf, parentOf, relativeTo } from '@/utils/paths'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import PasswordDialog from '@/components/ui/PasswordDialog.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
 import { useArchiveExtract } from '@/composables/useArchiveExtract'
+import { useToast } from '@/composables/useToast'
 
 // What's in an archive, over the file browser. The archive and the folder
 // looked at inside it are in the URL, next to the browser's own keys
@@ -24,8 +27,11 @@ const name = computed(() => nameOf(props.state.path))
 const tree = ref<ArchiveTree>(archiveTree([]))
 const loading = ref(true)
 const error = ref('')
+// The file names are encrypted too: nothing is listed without the password,
+// which then extracts as well.
 const password = ref('')
 const passwordRequired = ref(false)
+const wrongPassword = ref(false)
 const search = ref('')
 // The folder inside the archive being looked at ('' = its top); one the
 // archive doesn't have shows the top.
@@ -67,9 +73,8 @@ function resultLocation(item: ArchiveItem): string {
 
 const extracting = ref(false)
 const extractError = ref('')
-const extractSuccess = ref(false)
-const extractPassword = ref('')
-const { extractArchive } = useArchiveExtract()
+const { extractArchive, passwordPrompt } = useArchiveExtract()
+const { show: showToast } = useToast()
 
 async function load(pw = '') {
   loading.value = true
@@ -78,12 +83,11 @@ async function load(pw = '') {
     tree.value = archiveTree(await filesApi.archiveContents(props.state.path, pw))
     passwordRequired.value = false
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Failed to read archive'
-    if (msg.toLowerCase().includes('password') || msg.toLowerCase().includes('encrypted')) {
+    if (e instanceof PasswordRequiredError) {
       passwordRequired.value = true
-      error.value = 'This archive is password protected'
+      wrongPassword.value = pw !== ''
     } else {
-      error.value = msg
+      error.value = e instanceof Error ? e.message : 'Failed to read archive'
     }
   } finally {
     loading.value = false
@@ -95,14 +99,15 @@ async function unlock() {
   await load(password.value)
 }
 
+// Asks for a password only when one is needed: before trying when the
+// listing shows encrypted files, else when the server says so.
 async function extract() {
   extracting.value = true
   extractError.value = ''
-  extractSuccess.value = false
-  const pw = password.value || extractPassword.value || undefined
   try {
-    if ((await extractArchive(props.state.path, pw)) === null) return
-    extractSuccess.value = true
+    const extracted = await extractArchive(props.state.path, { password: password.value || undefined, encrypted: tree.value.encrypted })
+    if (extracted === null) return
+    showToast('Extracted successfully', 'success')
     close()
   } catch (e: unknown) {
     extractError.value = e instanceof Error ? e.message : 'Extraction failed'
@@ -120,7 +125,10 @@ onMounted(() => load())
   <AppModal :title="name" size="lg" :fixed-height="!passwordRequired && !error" @close="close">
     <!-- Password prompt -->
     <div v-if="passwordRequired" class="space-y-3">
-      <p class="text-sm text-zinc-400">{{ error }}</p>
+      <p class="flex items-center gap-1.5 text-sm text-zinc-400">
+        <AppIcon name="lock" class="size-4 shrink-0" />
+        Its file names are password protected.
+      </p>
       <div class="flex gap-2">
         <SecretInput
           v-model="password"
@@ -128,13 +136,9 @@ onMounted(() => load())
           class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           @keydown.enter="unlock"
         />
-        <button
-          class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
-          @click="unlock"
-        >
-          Unlock
-        </button>
+        <AppButton variant="primary" :disabled="!password || loading" @click="unlock">Unlock</AppButton>
       </div>
+      <p v-if="wrongPassword" class="text-xs text-red-400">Wrong password</p>
     </div>
 
     <!-- Loading -->
@@ -167,6 +171,9 @@ onMounted(() => load())
       <p class="shrink-0 text-xs text-zinc-500 mb-2">
         <template v-if="searching">{{ shown.length }} {{ shown.length === 1 ? 'match' : 'matches' }}</template>
         <template v-else>{{ shown.length }} {{ shown.length === 1 ? 'item' : 'items' }}</template>
+        <span v-if="tree.encrypted" class="inline-flex items-center gap-1 ml-1" data-archive-encrypted>
+          · <AppIcon name="lock" class="size-3" /> extracting needs a password
+        </span>
       </p>
       <div class="flex-1 min-h-0 flex flex-col border border-zinc-800 rounded-lg overflow-hidden">
         <div class="flex-1 min-h-0 overflow-y-auto" data-archive-list>
@@ -178,7 +185,7 @@ onMounted(() => load())
             v-for="item in shown"
             :key="item.path"
             :type="item.is_dir || searching ? 'button' : undefined"
-            :title="item.path"
+            :title="item.encrypted ? `${item.path} (password protected)` : item.path"
             :class="[
               'w-full flex items-center gap-2 px-3 py-2 text-left text-sm border-b border-zinc-800/50 last:border-0',
               { 'hover:bg-zinc-800/60 transition-colors': item.is_dir || searching },
@@ -197,18 +204,13 @@ onMounted(() => load())
                 {{ resultLocation(item) ? `in ${resultLocation(item)}` : 'here' }}
               </span>
             </span>
+            <AppIcon v-if="item.encrypted" name="lock" class="size-3.5 shrink-0 text-zinc-500" data-archive-lock />
             <span class="shrink-0 text-zinc-500 text-xs tabular-nums whitespace-nowrap">{{ formatSize(item.size) }}</span>
           </component>
         </div>
       </div>
 
       <!-- Extract result -->
-      <div
-        v-if="extractSuccess"
-        class="shrink-0 mt-3 text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
-      >
-        Extracted successfully!
-      </div>
       <div
         v-if="extractError"
         class="shrink-0 mt-3 text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
@@ -217,33 +219,18 @@ onMounted(() => load())
       </div>
     </div>
 
+    <!-- Inside the modal, so it's the dialog on top -->
+    <PasswordDialog :prompt="passwordPrompt" action="Extract" busy-label="Extracting…" />
+
     <template #footer>
-      <div class="flex flex-col gap-2">
-        <!-- Optional extraction password (always shown when contents loaded) -->
-        <div v-if="!loading && !passwordRequired && !error" class="flex gap-2">
-          <SecretInput
-            v-model="extractPassword"
-            placeholder="Password (optional)"
-            class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
-            @keydown.enter="extract"
-          />
-        </div>
-        <div class="flex justify-end gap-2">
-          <button
-            class="text-sm text-zinc-400 hover:text-white px-4 py-2 rounded-lg hover:bg-zinc-800 transition-colors"
-            @click="close"
-          >
-            Close
-          </button>
-          <button
-            :disabled="extracting || loading || !!error"
-            class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
-            @click="extract"
-          >
+      <div class="flex justify-end gap-2">
+        <AppButton @click="close">Close</AppButton>
+        <AppButton variant="primary" :disabled="extracting || loading || passwordRequired || !!error" @click="extract">
+          <span class="flex items-center gap-1.5">
             <AppSpinner v-if="extracting" size="sm" />
             {{ extracting ? 'Extracting…' : 'Extract here' }}
-          </button>
-        </div>
+          </span>
+        </AppButton>
       </div>
     </template>
   </AppModal>

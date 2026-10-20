@@ -8,6 +8,7 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -298,6 +299,30 @@ type ArchiveEntry struct {
 	Name  string `json:"name"`
 	Size  int64  `json:"size"`
 	IsDir bool   `json:"is_dir"`
+	// Encrypted: extracting it needs a password (its name can still be read).
+	Encrypted bool `json:"encrypted,omitempty"`
+}
+
+// errPasswordRequired: the archive can't be read or extracted without a
+// password, or not with the one given.
+var errPasswordRequired = errors.New("archive is password protected")
+
+// mentionsPassword reports whether a tool's error output is about a missing or
+// wrong password.
+func mentionsPassword(output string) bool {
+	text := strings.ToLower(output)
+	return strings.Contains(text, "password") || strings.Contains(text, "encrypted")
+}
+
+// respondArchiveError answers a failed listing or extraction: a password
+// problem as 400 with password_required, so the app asks for one; anything
+// else with status.
+func respondArchiveError(c *gin.Context, status int, err error) {
+	if errors.Is(err, errPasswordRequired) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "password_required": true})
+		return
+	}
+	c.JSON(status, gin.H{"error": err.Error()})
 }
 
 // POST /api/v1/files/archive {path, password?}
@@ -344,7 +369,7 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 	if ext == ".rar" {
 		entries, err := listUnrar(abs, password)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot read archive: %s", err)})
+			respondArchiveError(c, http.StatusBadRequest, fmt.Errorf("cannot read archive: %w", err))
 			return
 		}
 		c.JSON(http.StatusOK, entries)
@@ -353,7 +378,7 @@ func (h *ArchiveHandler) Contents(c *gin.Context) {
 
 	entries, err := list7z(abs, password)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot read archive: %s", err)})
+		respondArchiveError(c, http.StatusBadRequest, fmt.Errorf("cannot read archive: %w", err))
 		return
 	}
 	c.JSON(http.StatusOK, entries)
@@ -420,7 +445,7 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		return
 	}
 	if err := extractArchive(fsys, archivePath, contents, req.Password); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondArchiveError(c, http.StatusInternalServerError, err)
 		return
 	}
 	// Archives can hold symbolic links, which 7z and unrar recreate. None are
@@ -648,6 +673,12 @@ func zipEntryName(f *zip.File) string {
 	return strings.ToValidUTF8(f.Name, "_")
 }
 
+// zipEncrypted reports whether the zip entry's contents are encrypted (its
+// first general purpose flag; set for AES too).
+func zipEncrypted(f *zip.File) bool {
+	return f.Flags&0x1 != 0
+}
+
 func listZip(path string) ([]ArchiveEntry, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -658,9 +689,10 @@ func listZip(path string) ([]ArchiveEntry, error) {
 	entries := make([]ArchiveEntry, 0, len(r.File))
 	for _, f := range r.File {
 		entries = append(entries, ArchiveEntry{
-			Name:  zipEntryName(f),
-			Size:  int64(f.UncompressedSize64),
-			IsDir: f.FileInfo().IsDir(),
+			Name:      zipEntryName(f),
+			Size:      int64(f.UncompressedSize64),
+			IsDir:     f.FileInfo().IsDir(),
+			Encrypted: zipEncrypted(f),
 		})
 	}
 	return entries, nil
@@ -689,16 +721,16 @@ func extractZip(fsys *userfs.FS, archivePath, dest string) error {
 		}
 		rc, err := f.Open()
 		if err != nil {
-			if err == zip.ErrAlgorithm || f.FileHeader.Flags&0x1 != 0 {
-				return fmt.Errorf("archive is password protected")
+			if err == zip.ErrAlgorithm || zipEncrypted(f) {
+				return errPasswordRequired
 			}
 			return err
 		}
 		err = writeEntry(fsys, target, rc, f.Mode())
 		rc.Close()
 		if err != nil {
-			if f.FileHeader.Flags&0x1 != 0 {
-				return fmt.Errorf("archive is password protected")
+			if zipEncrypted(f) {
+				return errPasswordRequired
 			}
 			return err
 		}
@@ -852,9 +884,8 @@ func listUnrar(path, password string) ([]ArchiveEntry, error) {
 	out, err := exec.Command("unrar", args...).Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := strings.ToLower(string(exitErr.Stderr) + string(out))
-			if strings.Contains(stderr, "password") || strings.Contains(stderr, "wrong password") || strings.Contains(stderr, "encrypted") {
-				return nil, fmt.Errorf("archive is password protected")
+			if mentionsPassword(string(exitErr.Stderr) + string(out)) {
+				return nil, errPasswordRequired
 			}
 		}
 		return nil, fmt.Errorf("unrar failed: %w", err)
@@ -862,11 +893,14 @@ func listUnrar(path, password string) ([]ArchiveEntry, error) {
 	return parseUnrarList(string(out)), nil
 }
 
-// parseUnrarList parses the output of "unrar l".
-// Output between the two "---" separator lines looks like:
+// parseUnrarList parses the output of "unrar l". Between the two "---"
+// separator lines, each file is a line of a mark ('*' when encrypted, else a
+// space), its attributes right-aligned in 10 columns (Unix "-rw-r--r--" or
+// Windows "..A...."), size, date, time and name:
 //
-//	-rw-r--r--      1234  2023-01-01 12:00  file.txt
-//	drwxr-xr-x         0  2023-01-01 12:00  folder/
+//	 -rw-r--r--       1234  2023-01-01 12:00  file.txt
+//	*    ..A....       1234  2023-01-01 12:00  secret.txt
+//	    ...D...          0  2023-01-01 12:00  folder
 func parseUnrarList(output string) []ArchiveEntry {
 	var entries []ArchiveEntry
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -884,8 +918,8 @@ func parseUnrarList(output string) []ArchiveEntry {
 		if !inData {
 			continue
 		}
-		// Fields: attrs  size  date  time  name (name may contain spaces)
-		fields := strings.Fields(line)
+		encrypted := strings.HasPrefix(line, "*")
+		fields := strings.Fields(strings.TrimPrefix(line, "*"))
 		if len(fields) < 5 {
 			continue
 		}
@@ -893,10 +927,23 @@ func parseUnrarList(output string) []ArchiveEntry {
 		var size int64
 		fmt.Sscanf(fields[1], "%d", &size)
 		name := strings.Join(fields[4:], " ")
-		isDir := strings.HasPrefix(attrs, "d") || strings.HasSuffix(name, "/")
-		entries = append(entries, ArchiveEntry{Name: name, Size: size, IsDir: isDir})
+		entries = append(entries, ArchiveEntry{
+			Name:      name,
+			Size:      size,
+			IsDir:     unrarIsDir(attrs) || strings.HasSuffix(name, "/"),
+			Encrypted: encrypted,
+		})
 	}
 	return entries
+}
+
+// unrarIsDir reports whether unrar's attributes are a folder's: Unix ones
+// start with 'd', Windows ones ("IC.D...") have D fourth.
+func unrarIsDir(attrs string) bool {
+	if strings.HasPrefix(attrs, "d") {
+		return true
+	}
+	return len(attrs) == 7 && attrs[3] == 'D'
 }
 
 func extractUnrar(src, dest, password string) error {
@@ -911,9 +958,8 @@ func extractUnrar(src, dest, password string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.ToLower(stderr.String())
-		if strings.Contains(msg, "password") || strings.Contains(msg, "wrong password") || strings.Contains(msg, "encrypted") {
-			return fmt.Errorf("wrong password or archive is encrypted")
+		if mentionsPassword(stderr.String()) {
+			return errPasswordRequired
 		}
 		return err
 	}
@@ -930,9 +976,8 @@ func list7z(path, password string) ([]ArchiveEntry, error) {
 	out, err := exec.Command("7z", args...).Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := strings.ToLower(string(exitErr.Stderr))
-			if strings.Contains(stderr, "password") || strings.Contains(stderr, "wrong password") || strings.Contains(stderr, "encrypted") {
-				return nil, fmt.Errorf("archive is password protected")
+			if mentionsPassword(string(exitErr.Stderr)) {
+				return nil, errPasswordRequired
 			}
 		}
 		return nil, fmt.Errorf("7z not available or failed: %w", err)
@@ -971,6 +1016,8 @@ func parse7zList(output string) []ArchiveEntry {
 				fmt.Sscanf(val, "%d", &current.Size)
 			case "Attributes":
 				current.IsDir = strings.HasPrefix(val, "D")
+			case "Encrypted":
+				current.Encrypted = val == "+"
 			}
 		}
 	}
@@ -989,9 +1036,8 @@ func extract7z(src, dest, password string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		msg := strings.ToLower(stderr.String())
-		if strings.Contains(msg, "password") || strings.Contains(msg, "wrong password") || strings.Contains(msg, "encrypted") {
-			return fmt.Errorf("wrong password or archive is encrypted")
+		if mentionsPassword(stderr.String()) {
+			return errPasswordRequired
 		}
 		return err
 	}
