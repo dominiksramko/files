@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"files/internal/config"
 	"files/internal/database"
@@ -195,7 +196,21 @@ func main() {
 	})
 
 	log.Printf("starting on :%s", cfg.Port)
-	if err := r.Run(":" + cfg.Port); err != nil {
+	if err := newHTTPServer(":"+cfg.Port, r).ListenAndServe(); err != nil {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+// newHTTPServer serves handler on addr. Only receiving a request's headers,
+// and idle kept-alive connections, are time-limited — without that, clients
+// sending headers a byte at a time can tie up the server. Requests as a whole
+// aren't: uploads, downloads, video and the folder watch stream can rightly
+// take hours.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
 	}
 }
