@@ -133,11 +133,25 @@ func TestHardLinksTakeSpaceOnce(t *testing.T) {
 	}
 
 	var counted Totals
-	if err := Count(context.Background(), fsys, "two", &counted, func() {}); err != nil {
-		t.Fatal(err)
-	}
+	Count(context.Background(), fsys, []string{"two"}, &counted, func() {})
 	if counted != two.Root.Totals {
 		t.Errorf("Count = %+v, Scan = %+v", counted, two.Root.Totals)
+	}
+}
+
+func TestCountTakesSharedSpaceOnceAcrossItems(t *testing.T) {
+	fsys, dir := folder(t, map[string]int{"one/big.bin": 64 << 10})
+	if err := os.MkdirAll(filepath.Join(dir, "three"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(dir, "one", "big.bin"), filepath.Join(dir, "three", "same.bin")); err != nil {
+		t.Skip("no hard links here:", err)
+	}
+	var single, both Totals
+	Count(context.Background(), fsys, []string{filepath.Join("one", "big.bin")}, &single, func() {})
+	Count(context.Background(), fsys, []string{filepath.Join("one", "big.bin"), filepath.Join("three", "same.bin"), "missing.bin"}, &both, func() {})
+	if both.Files != 2 || both.Apparent != 2*single.Apparent || both.Disk != single.Disk || single.Disk <= 0 {
+		t.Errorf("one name %+v, both names %+v: want the space once, the lengths twice", single, both)
 	}
 }
 
@@ -207,7 +221,7 @@ func TestScanStopsWhenCancelled(t *testing.T) {
 		t.Errorf("Scan: err = %v", err)
 	}
 	var counted Totals
-	Count(ctx, fsys, ".", &counted, func() {})
+	Count(ctx, fsys, []string{"."}, &counted, func() {})
 	if counted.Files != 0 {
 		t.Errorf("Count went on: %+v", counted)
 	}

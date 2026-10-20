@@ -102,26 +102,32 @@ func walk(ctx context.Context, fsys *userfs.FS, name string, visit func(path str
 	})
 }
 
-// Count adds what's at name (a file or a folder with everything below it) to
-// totals, calling tick after each item. Hard links are counted once only
-// within one call.
-func Count(ctx context.Context, fsys *userfs.FS, name string, totals *Totals, tick func()) error {
+// Count adds what's at names (files, or folders with everything below them)
+// to totals, calling tick after each item. A file's hard links are counted
+// once on disk across all of them. It stops when ctx ends, and skips a name
+// that can't be read.
+func Count(ctx context.Context, fsys *userfs.FS, names []string, totals *Totals, tick func()) {
 	links := linkSet{}
-	return walk(ctx, fsys, name, func(path string, info fs.FileInfo) {
-		disk := links.allocated(info)
-		switch {
-		case info.IsDir() && path == name:
-			totals.Disk += disk
-		case info.IsDir():
-			totals.Dirs++
-			totals.Disk += disk
-		default:
-			totals.Files++
-			totals.Disk += disk
-			totals.Apparent += info.Size()
+	for _, name := range names {
+		if ctx.Err() != nil {
+			return
 		}
-		tick()
-	}, func() {})
+		walk(ctx, fsys, name, func(path string, info fs.FileInfo) {
+			disk := links.allocated(info)
+			switch {
+			case info.IsDir() && path == name:
+				totals.Disk += disk
+			case info.IsDir():
+				totals.Dirs++
+				totals.Disk += disk
+			default:
+				totals.Files++
+				totals.Disk += disk
+				totals.Apparent += info.Size()
+			}
+			tick()
+		}, func() {})
+	}
 }
 
 // Scan measures the folder name and everything below it. onProgress gets the

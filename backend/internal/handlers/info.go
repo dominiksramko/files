@@ -45,8 +45,10 @@ type FileMeta struct {
 
 // GET /api/v1/files/size?paths[]=rel1&paths[]=rel2
 //
-// Streams SSE events with a running total of files, directories, and bytes
-// as it recursively walks all requested paths. Clients should use EventSource.
+// Streams SSE events with a running total of files, directories, bytes (the
+// files' lengths) and disk (the space taken on disk, a file's hard links
+// counted once) as it recursively walks all requested paths. Clients should
+// use EventSource.
 func (h *InfoHandler) SizeStream(c *gin.Context) {
 	rels := c.QueryArray("paths[]")
 
@@ -56,6 +58,7 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 		Files int64 `json:"files"`
 		Dirs  int64 `json:"dirs"`
 		Bytes int64 `json:"bytes"`
+		Disk  int64 `json:"disk"`
 		Done  bool  `json:"done,omitempty"`
 	}
 
@@ -63,7 +66,7 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 	n := 0
 
 	flush := func(done bool) {
-		writeEvent(c, "", Progress{Files: totals.Files, Dirs: totals.Dirs, Bytes: totals.Apparent, Done: done})
+		writeEvent(c, "", Progress{Files: totals.Files, Dirs: totals.Dirs, Bytes: totals.Apparent, Disk: totals.Disk, Done: done})
 	}
 
 	fsys, err := userFS(c)
@@ -71,24 +74,23 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 		flush(true)
 		return
 	}
-	ctx := c.Request.Context()
+	names := []string{}
 	for _, rel := range rels {
-		name, err := userfs.Clean(rel)
-		if err != nil {
-			continue
-		}
-		// The client is gone (dialog closed) when ctx ends: stop walking.
-		diskusage.Count(ctx, fsys, name, &totals, func() {
-			n++
-			if n%50 == 0 {
-				flush(false)
-			}
-		})
-		if ctx.Err() != nil {
-			return
+		if name, err := userfs.Clean(rel); err == nil {
+			names = append(names, name)
 		}
 	}
-
+	// The client is gone (dialog closed) when ctx ends: stop walking.
+	ctx := c.Request.Context()
+	diskusage.Count(ctx, fsys, names, &totals, func() {
+		n++
+		if n%50 == 0 {
+			flush(false)
+		}
+	})
+	if ctx.Err() != nil {
+		return
+	}
 	flush(true)
 }
 

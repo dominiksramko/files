@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
-import { fileCategory, formatDate, formatDuration, formatSize, formatSizeProgress, type SizeProgress } from '@/utils/formatters'
+import { fileCategory, formatDate, formatDiskProgress, formatDuration, formatSize, formatSizeProgress, type SizeProgress } from '@/utils/formatters'
 import { withUsageState } from '@/utils/diskUsage'
 import { parentOf } from '@/utils/paths'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -44,6 +44,7 @@ const fileCount = computed(() => props.items.filter((entry) => !entry.is_dir).le
 const folderCount = computed(() => props.items.filter((entry) => entry.is_dir).length)
 
 const sizeText = computed(() => (sizeProgress.value ? formatSizeProgress(sizeProgress.value) : null))
+const diskText = computed(() => (sizeProgress.value ? formatDiskProgress(sizeProgress.value) : null))
 
 function stopStream() {
   sizeEventSource?.close()
@@ -57,21 +58,19 @@ watch(() => props.items, (items) => {
   const request = ++mediaRequest
   if (!items.length) return
 
+  // Measured on the server, even for one file: only it knows the space on disk.
   const first = items[0]
-  const needsStream = items.length > 1 || (items.length === 1 && first?.is_dir)
-  if (needsStream) {
-    sizeProgress.value = { files: 0, dirs: 0, bytes: 0, done: false }
-    const url = filesApi.sizeStreamUrl(items.map((entry) => entry.path))
-    sizeEventSource = new EventSource(url)
-    sizeEventSource.onmessage = (ev) => {
-      sizeProgress.value = JSON.parse(ev.data)
-      if (sizeProgress.value?.done) stopStream()
-    }
-    // The scan stopped before done (server error, connection lost).
-    sizeEventSource.onerror = () => {
-      if (sizeProgress.value && !sizeProgress.value.done) sizeProgress.value = { ...sizeProgress.value, failed: true }
-      stopStream()
-    }
+  sizeProgress.value = { files: 0, dirs: 0, bytes: 0, disk: 0, done: false }
+  const url = filesApi.sizeStreamUrl(items.map((entry) => entry.path))
+  sizeEventSource = new EventSource(url)
+  sizeEventSource.onmessage = (ev) => {
+    sizeProgress.value = JSON.parse(ev.data)
+    if (sizeProgress.value?.done) stopStream()
+  }
+  // The scan stopped before done (server error, connection lost).
+  sizeEventSource.onerror = () => {
+    if (sizeProgress.value && !sizeProgress.value.done) sizeProgress.value = { ...sizeProgress.value, failed: true }
+    stopStream()
   }
 
   if (first && items.length === 1 && !first.is_dir) {
@@ -128,6 +127,10 @@ onUnmounted(stopStream)
           </template>
           <template v-else>{{ sizeText }}</template>
         </dd>
+      </div>
+      <div class="flex flex-col sm:flex-row sm:gap-2">
+        <dt class="text-xs text-zinc-500 sm:w-20 sm:shrink-0">On disk</dt>
+        <dd class="text-xs text-zinc-200">{{ diskText }}</dd>
       </div>
 
       <!-- Created (single only, if filesystem provides it) -->

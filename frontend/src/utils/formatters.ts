@@ -43,10 +43,14 @@ export function formatDuration(totalSeconds: number): string {
 
 // How far a folder size scan got (the /files/size stream); failed: it stopped
 // before done.
+// A size scan's running totals: bytes is the files' lengths, disk the space
+// they take on disk (whole blocks, folders included, a file's hard links
+// counted once).
 export interface SizeProgress {
   files: number
   dirs: number
   bytes: number
+  disk: number
   done: boolean
   failed?: boolean
 }
@@ -64,6 +68,14 @@ export function formatSizeProgress({ files, dirs, bytes, done, failed }: SizePro
   const counts = parts.length > 0 ? `(${status}${parts.join(', ')})` : stopped ? '(incomplete)' : '(scanning…)'
   const size = bytes > 0 ? formatSize(bytes) : done ? '0 B' : null
   return size ? `${size} ${counts}` : counts
+}
+
+// The space a size scan found taken on disk: "1.2 GB", with "…" while it
+// runs and "(incomplete)" if it stopped early.
+export function formatDiskProgress({ disk, done, failed }: SizeProgress): string {
+  if (failed && !done) return disk > 0 ? `${formatSize(disk)} (incomplete)` : "Couldn't measure"
+  if (!done) return disk > 0 ? `${formatSize(disk)}…` : 'scanning…'
+  return disk > 0 ? formatSize(disk) : '0 B'
 }
 
 // How long ago iso was: "just now", "5 min ago", "3 h ago", "2 days ago".

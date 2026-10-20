@@ -18,8 +18,9 @@ func TestSizeStreamCountsAndStopsWhenClientLeaves(t *testing.T) {
 	writeFiles(t, annRoot, files)
 
 	response := serve(NewInfoHandler().SizeStream, annRoot, httptest.NewRequest(http.MethodGet, "/?paths[]=big", nil))
-	if !strings.Contains(response.Body.String(), `"files":500,"dirs":0,"bytes":500,"done":true`) {
-		t.Errorf("full scan: %s", lastLine(response.Body.String()))
+	last := lastLine(response.Body.String())
+	if !strings.Contains(last, `"files":500,"dirs":0,"bytes":500,"disk":`) || !strings.Contains(last, `"done":true`) || strings.Contains(last, `"disk":0,`) {
+		t.Errorf("full scan: %s", last)
 	}
 
 	gone, cancel := context.WithCancel(context.Background())
