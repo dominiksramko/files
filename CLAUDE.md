@@ -134,7 +134,7 @@ All conflict flows use a single shared composable + component — do NOT create 
 - Backend `conflict_mode` parameter: `'replace'` maps to replace, `'rename'` maps to keep-all/rename
 
 ## External Tool Dependencies (must be in Dockerfile `runtime-base` stage)
-Any new CLI tool used by the backend must be added to the `apk add` line in the `runtime-base` stage of `backend/Dockerfile` (Alpine) — both the production runtime and the dev container build on it. Current tools:
+Any new CLI tool used by the backend must be added to the `apk add` line in the `runtime-base` stage of `backend/Dockerfile` (Alpine 3.24) — both the production runtime and the dev container build on it — and to the tool check right after it, which fails the build if a tool is missing or broken. Current tools:
 - `ffmpeg` — video thumbnails + HLS transcoding
 - `p7zip` — 7z/RAR archive support
 - `rsvg-convert` (Alpine package `rsvg-convert`) — SVG rasterisation for thumbnails

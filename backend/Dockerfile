@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build -o server ./cmd/server
 
 # ---- runtime base: every CLI tool the backend shells out to (shared by dev + runtime) ----
-FROM alpine:3.20 AS runtime-base
+FROM alpine:3.24 AS runtime-base
 
 COPY --from=linuxserver/unrar:7.2.4 /usr/bin/unrar-alpine /usr/bin/unrar
 
@@ -42,6 +42,15 @@ RUN apk add --no-cache \
     imagemagick \
     imagemagick-heic \
     poppler-utils
+
+# Fail the build if a tool is missing or broken, instead of a preview later.
+RUN ffmpeg -version >/dev/null \
+    && ffprobe -version >/dev/null \
+    && 7z i >/dev/null \
+    && unrar >/dev/null \
+    && rsvg-convert --version >/dev/null \
+    && magick -list format | grep -q HEIC \
+    && pdftoppm -v 2>/dev/null
 
 
 # ---- dev: runtime tools + Go toolchain + air live reload (used by docker-compose.dev.yml) ----
