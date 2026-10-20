@@ -168,11 +168,11 @@ onUnmounted(stopStream)
       </template>
     </dl>
 
-    <div class="flex justify-end gap-2 mt-4">
+    <template #actions>
       <AppButton v-if="usageFolder" variant="secondary" @click="openDiskUsage(usageFolder)">
         <span class="flex items-center gap-1.5"><AppIcon name="chartPie" class="size-4" />Disk usage</span>
       </AppButton>
       <AppButton @click="emit('close')">Close</AppButton>
-    </div>
+    </template>
   </AppDialog>
 </template>

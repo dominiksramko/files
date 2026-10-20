@@ -3,7 +3,9 @@ import { ref } from 'vue'
 import { useEscapeToClose } from '@/composables/useEscapeToClose'
 
 // A small centred dialog (confirmations, a name to type). It's marked as a
-// modal, so the preview behind it ignores keys, and Escape closes it.
+// modal, so the preview behind it ignores keys, and Escape closes it. Its
+// buttons go in the actions slot, which keeps them apart from the content
+// (24px, three times the 8px within a group) and spaces them 8px.
 const props = withDefaults(defineProps<{
   open: boolean
   width?: string // Tailwind width classes of the card
@@ -30,6 +32,9 @@ useEscapeToClose(card, () => props.open, () => emit('close'))
         :class="['bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl', width]"
       >
         <slot />
+        <div v-if="$slots.actions" class="flex flex-wrap justify-end gap-2 mt-6" data-dialog-actions>
+          <slot name="actions" />
+        </div>
       </div>
     </div>
   </Transition>

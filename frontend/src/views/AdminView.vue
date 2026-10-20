@@ -225,13 +225,13 @@ onMounted(fetchUsers)
     <!-- Clear cache dialog -->
     <AppDialog :open="showClearDialog" @close="showClearDialog = false">
       <h3 class="text-sm font-semibold text-zinc-100 mb-3">Clear cache?</h3>
-      <p class="text-xs text-zinc-400 mb-4">
+      <p class="text-xs text-zinc-400">
         All generated thumbnails, image previews and HLS video segments will be deleted.
       </p>
-      <div class="flex gap-2 justify-end">
+      <template #actions>
         <AppButton @click="showClearDialog = false">Cancel</AppButton>
         <AppButton variant="destructive" @click="confirmClearCache">Clear cache</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <!-- Form modal -->

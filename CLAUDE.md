@@ -122,6 +122,8 @@ Any new state that should survive refresh MUST be added to the URL and synced bi
 - Body text/description: `<p class="text-xs text-zinc-400 mb-3">`
 - Text input: `w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors`
 - Key handlers on inputs: `@keydown.enter` to confirm (AppDialog handles Escape)
+- Buttons: ALWAYS in `<template #actions>` (right-aligned, 24px below the content, 8px apart); never a button row of your own — `AppDialog.spec.ts` fails on one. Don't end the content with a bottom margin to push them down.
+- Spacing (Tailwind's 4px steps): a gap between groups is at least three times the gaps inside them — only slightly bigger (8 then 12 or 16) reads as one list. A label sits 4px from its field (`mb-1`) and fields 12px apart (`mb-3`); rows of a list 8px apart (`space-y-2`) and the next group 24px; the title 12px above the content (`mb-3`); the actions 24px below it (the slot does that).
 
 ## File Conflict Resolution Convention
 When a file operation (move, copy, rename, advanced rename, upload, extract, compress, new file) would overwrite an existing file, the backend detects the conflict and returns HTTP 409 with `{ conflicts: string[] }` (list of conflicting filenames). The server always enforces this itself — never rely on a check in the app, the folder may have changed since it was listed. Nothing is written before the 409. The frontend then presents the user with a resolution modal offering:

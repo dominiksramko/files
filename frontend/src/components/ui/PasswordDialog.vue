@@ -30,11 +30,11 @@ watch(() => props.prompt.visible.value, (visible) => {
       @keydown.enter="prompt.submit(password)"
     />
     <p v-if="prompt.wrong.value" class="text-xs text-red-400 mt-2">Wrong password</p>
-    <div class="flex gap-2 mt-3 justify-end">
+    <template #actions>
       <AppButton :disabled="prompt.busy.value" @click="prompt.cancel()">Cancel</AppButton>
       <AppButton variant="primary" :disabled="prompt.busy.value || !password" @click="prompt.submit(password)">
         {{ prompt.busy.value ? busyLabel : action }}
       </AppButton>
-    </div>
+    </template>
   </AppDialog>
 </template>

@@ -1153,10 +1153,10 @@ onMounted(async () => {
         class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
         @keydown.enter="confirmNewFolder"
       />
-      <div class="flex gap-2 mt-3 justify-end">
+      <template #actions>
         <AppButton @click="newFolderDialog = false">Cancel</AppButton>
         <AppButton variant="primary" @click="confirmNewFolder">Create</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <!-- New file dialog (text / todo) -->
@@ -1170,10 +1170,10 @@ onMounted(async () => {
         class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
         @keydown.enter="confirmNewFile"
       />
-      <div class="flex gap-2 mt-3 justify-end">
+      <template #actions>
         <AppButton @click="newFileDialog = false">Cancel</AppButton>
         <AppButton variant="primary" @click="confirmNewFile">Create</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <!-- Rename dialog -->
@@ -1187,10 +1187,10 @@ onMounted(async () => {
         class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg px-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
         @keydown.enter="confirmRename"
       />
-      <div class="flex gap-2 mt-3 justify-end">
+      <template #actions>
         <AppButton @click="cancelRename">Cancel</AppButton>
         <AppButton variant="primary" @click="confirmRename">Rename</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <!-- Delete confirmation dialog -->
@@ -1198,7 +1198,7 @@ onMounted(async () => {
       <h3 class="text-sm font-semibold text-zinc-100 mb-1">
         {{ deletePending && deletePending.paths.length === 1 ? 'Delete file?' : `Delete ${deletePending?.paths.length} files?` }}
       </h3>
-      <p class="text-xs text-zinc-400 mb-3 break-all">
+      <p class="text-xs text-zinc-400 break-all">
         <template v-if="deletePending && deletePending.paths.length === 1">
           This will delete <span class="text-zinc-200">{{ deletePending.name ?? 'this file' }}</span> from your files.
         </template>
@@ -1206,10 +1206,10 @@ onMounted(async () => {
           This will delete {{ deletePending?.paths.length }} items from your files.
         </template>
       </p>
-      <div class="flex gap-2 mt-3 justify-end">
+      <template #actions>
         <AppButton @click="cancelDelete">Cancel</AppButton>
         <AppButton variant="destructive" @click="confirmDelete">Delete</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <ConflictDialog />
@@ -1254,10 +1254,10 @@ onMounted(async () => {
         <span class="text-xs text-zinc-300">Encrypt filenames</span>
       </div>
 
-      <div class="flex gap-2 mt-3 justify-end">
+      <template #actions>
         <AppButton @click="compressDialog = false">Cancel</AppButton>
         <AppButton variant="primary" :disabled="!compressName.trim()" @click="confirmCompress">Create</AppButton>
-      </div>
+      </template>
     </AppDialog>
 
     <!-- Extract password dialog -->

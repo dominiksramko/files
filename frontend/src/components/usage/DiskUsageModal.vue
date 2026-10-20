@@ -224,15 +224,15 @@ function plural(count: number, word: string): string {
         <h3 class="text-sm font-semibold text-zinc-100 mb-3">
           {{ deleteTargets.length === 1 ? `Delete ${deleteTargets[0]!.is_dir && !deleteTargets[0]!.link ? 'folder' : 'file'}?` : `Delete ${deleteTargets.length} items?` }}
         </h3>
-        <p class="text-xs text-zinc-400 mb-3">
+        <p class="text-xs text-zinc-400">
           <template v-if="deleteTargets.length === 1"><span class="text-zinc-200 break-all">{{ deleteTargets[0]!.name }}</span> ({{ formatSize(deleteSize) }})</template>
           <template v-else>{{ formatSize(deleteSize) }} in total</template>
           will be deleted for good. This can't be undone.
         </p>
-        <div class="flex justify-end gap-2">
+        <template #actions>
           <AppButton @click="deleteTargets = []">Cancel</AppButton>
           <AppButton variant="destructive" :disabled="deleting" @click="confirmDelete">Delete</AppButton>
-        </div>
+        </template>
       </AppDialog>
     </div>
   </AppModal>

@@ -12,17 +12,17 @@ const { visible, title, conflicts, choose } = useConflictDialog()
     <p class="text-xs text-zinc-400 mb-3">
       {{ conflicts.length }} file{{ conflicts.length !== 1 ? 's' : '' }} already exist in the destination.
     </p>
-    <ul class="mb-4 space-y-1 max-h-36 overflow-y-auto">
+    <ul class="space-y-1 max-h-36 overflow-y-auto">
       <li
         v-for="name in conflicts"
         :key="name"
         class="text-xs text-zinc-300 truncate bg-zinc-800 rounded px-2 py-1"
       >{{ name }}</li>
     </ul>
-    <div class="flex gap-2 justify-end">
+    <template #actions>
       <AppButton @click="choose(null)">Cancel</AppButton>
       <AppButton variant="secondary" @click="choose('replace')">Replace</AppButton>
       <AppButton variant="primary" @click="choose('rename')">Keep all</AppButton>
-    </div>
+    </template>
   </AppDialog>
 </template>
