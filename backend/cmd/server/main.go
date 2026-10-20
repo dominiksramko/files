@@ -51,6 +51,7 @@ func main() {
 	// Handlers
 	authH := handlers.NewAuthHandler(db, sessionStore)
 	filesH := handlers.NewFilesHandler(thumbSvc, cfg.ConvCacheDir)
+	filesH.SetConvCacheMaxBytes(cfg.ConvCacheMaxBytes)
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
 	opsH := handlers.NewFileOpsHandler()
@@ -59,6 +60,7 @@ func main() {
 	cacheH := handlers.NewCacheHandler(thumbSvc, cfg.HLSCacheDir, cfg.ConvCacheDir)
 	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot, sessionStore)
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
+	hlsH.SetMaxCacheBytes(cfg.HLSCacheMaxBytes)
 	infoH := handlers.NewInfoHandler()
 	progressH := handlers.NewProgressHandler(db)
 	systemH := handlers.NewSystemHandler(version)

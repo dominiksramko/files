@@ -241,3 +241,30 @@ func TestSegmentsCachedWithoutPlanAreDropped(t *testing.T) {
 		t.Errorf("plan not written again: %v", err)
 	}
 }
+
+func TestCacheIsTrimmedToItsSizeLimit(t *testing.T) {
+	cacheDir := t.TempDir()
+	handler := NewHLSHandler(cacheDir)
+	handler.SetMaxCacheBytes(250)
+	now := time.Now()
+	for name, played := range map[string]time.Time{
+		"oldest":  now.Add(-3 * time.Hour),
+		"older":   now.Add(-2 * time.Hour),
+		"recent":  now.Add(-time.Hour),
+		"playing": now.Add(-4 * time.Hour),
+	} {
+		writeFiles(t, filepath.Join(cacheDir, name), map[string]string{
+			"last_accessed":      "",
+			"run-0/chunk_000.ts": strings.Repeat("x", 100),
+		})
+		os.Chtimes(filepath.Join(cacheDir, name, "last_accessed"), played, played)
+	}
+	handler.active["playing"] = &transcoder{}
+
+	handler.trimCache()
+	for name, kept := range map[string]bool{"oldest": false, "older": false, "recent": true, "playing": true} {
+		if _, err := os.Stat(filepath.Join(cacheDir, name)); (err == nil) != kept {
+			t.Errorf("%s: kept = %v, want %v", name, err == nil, kept)
+		}
+	}
+}

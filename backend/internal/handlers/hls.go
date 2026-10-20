@@ -16,8 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"files/internal/cachesize"
 	"files/internal/media"
 
 	"github.com/gin-gonic/gin"
@@ -74,6 +76,14 @@ type HLSHandler struct {
 	mu       sync.Mutex
 	active   map[string]*transcoder // by video hash
 	planMu   sync.Mutex             // one plan worked out at a time
+	// maxCacheBytes: size limit of the segment cache (0 = none).
+	maxCacheBytes atomic.Int64
+}
+
+// SetMaxCacheBytes limits the segment cache's total size (0 = no limit): the
+// hourly cleanup removes the least recently played videos' segments beyond it.
+func (h *HLSHandler) SetMaxCacheBytes(maxBytes int64) {
+	h.maxCacheBytes.Store(maxBytes)
 }
 
 func NewHLSHandler(cacheDir string) *HLSHandler {
@@ -560,8 +570,39 @@ func (h *HLSHandler) cleanupRoutine() {
 			h.stopIdle()
 		case <-old.C:
 			h.cleanupOldCache()
+			h.trimCache()
 		}
 	}
+}
+
+// trimCache removes the segments of the least recently played videos until
+// the cache fits in maxCacheBytes, except those being transcoded.
+func (h *HLSHandler) trimCache() {
+	if h.cacheDir == "" {
+		return
+	}
+	dirs, err := os.ReadDir(h.cacheDir)
+	if err != nil {
+		return
+	}
+	var entries []cachesize.Entry
+	for _, dir := range dirs {
+		if !dir.IsDir() {
+			continue
+		}
+		path := filepath.Join(h.cacheDir, dir.Name())
+		lastPlayed := time.Time{} // never marked as played: removed first
+		if info, err := os.Stat(filepath.Join(path, "last_accessed")); err == nil {
+			lastPlayed = info.ModTime()
+		}
+		entries = append(entries, cachesize.Entry{Path: path, Size: cachesize.Size(path), LastUsed: lastPlayed})
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	cachesize.Trim(entries, h.maxCacheBytes.Load(), func(entry cachesize.Entry) bool {
+		_, running := h.active[filepath.Base(entry.Path)]
+		return running
+	})
 }
 
 // cleanupOldCache removes the cached segments of videos not played for

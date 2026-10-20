@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,9 @@ type Config struct {
 	ConvCacheDir  string
 	// TrustedProxies: addresses or CIDR ranges; empty trusts no proxy.
 	TrustedProxies []string
+	// Size limits of the video and conversion caches, in bytes; 0 = none.
+	HLSCacheMaxBytes  int64
+	ConvCacheMaxBytes int64
 }
 
 func Load() *Config {
@@ -38,16 +42,33 @@ func Load() *Config {
 	}
 
 	return &Config{
-		Port:           getEnv("PORT", "8080"),
-		JWTSecret:      jwtSecret,
-		DBPath:         getEnv("DB_PATH", "./data/files.db"),
-		UsersRoot:      getEnv("USERS_ROOT", DefaultUsersRoot),
-		GinMode:        getEnv("GIN_MODE", "debug"),
-		ThumbCacheDir:  getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
-		HLSCacheDir:    getEnv("HLS_CACHE_DIR", "./data/hls"),
-		ConvCacheDir:   getEnv("CONV_CACHE_DIR", "./data/conv"),
-		TrustedProxies: getListEnv("TRUSTED_PROXIES", DefaultTrustedProxies),
+		Port:              getEnv("PORT", "8080"),
+		JWTSecret:         jwtSecret,
+		DBPath:            getEnv("DB_PATH", "./data/files.db"),
+		UsersRoot:         getEnv("USERS_ROOT", DefaultUsersRoot),
+		GinMode:           getEnv("GIN_MODE", "debug"),
+		ThumbCacheDir:     getEnv("THUMB_CACHE_DIR", "./data/thumbs"),
+		HLSCacheDir:       getEnv("HLS_CACHE_DIR", "./data/hls"),
+		ConvCacheDir:      getEnv("CONV_CACHE_DIR", "./data/conv"),
+		TrustedProxies:    getListEnv("TRUSTED_PROXIES", DefaultTrustedProxies),
+		HLSCacheMaxBytes:  getSizeEnv("HLS_CACHE_MAX_GB", 20),
+		ConvCacheMaxBytes: getSizeEnv("CONV_CACHE_MAX_GB", 2),
 	}
+}
+
+// getSizeEnv reads a size in gigabytes (GiB, decimals allowed; 0 = no limit)
+// and returns it in bytes. An unreadable value falls back to fallbackGB.
+func getSizeEnv(key string, fallbackGB float64) int64 {
+	gigabytes := fallbackGB
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil || parsed < 0 {
+			log.Printf("WARNING: %s=%q is not a size in GB — using %g", key, value, fallbackGB)
+		} else {
+			gigabytes = parsed
+		}
+	}
+	return int64(gigabytes * (1 << 30))
 }
 
 func getEnv(key, fallback string) string {

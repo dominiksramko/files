@@ -4,8 +4,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
+	"files/internal/cachesize"
 	"files/internal/thumbs"
 )
 
@@ -13,6 +15,8 @@ const convCacheTTL = 7 * 24 * time.Hour
 
 type convCache struct {
 	dir string
+	// maxBytes: size limit of the cache (0 = none); the oldest conversions go first.
+	maxBytes atomic.Int64
 }
 
 func newConvCache(dir string) (*convCache, error) {
@@ -78,6 +82,24 @@ func (c *convCache) cleanup() {
 	}
 	if deleted > 0 {
 		log.Printf("conv cache: removed %d expired entries", deleted)
+	}
+	c.trim()
+}
+
+// trim removes the oldest conversions until the cache fits in maxBytes.
+func (c *convCache) trim() {
+	files, err := os.ReadDir(c.dir)
+	if err != nil {
+		return
+	}
+	var entries []cachesize.Entry
+	for _, file := range files {
+		if info, err := file.Info(); err == nil && info.Mode().IsRegular() {
+			entries = append(entries, cachesize.Entry{Path: filepath.Join(c.dir, file.Name()), Size: info.Size(), LastUsed: info.ModTime()})
+		}
+	}
+	if removed := cachesize.Trim(entries, c.maxBytes.Load(), nil); len(removed) > 0 {
+		log.Printf("conv cache: removed %d entries over the size limit", len(removed))
 	}
 }
 

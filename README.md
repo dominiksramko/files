@@ -149,7 +149,9 @@ The port is published on `127.0.0.1` only, so nothing outside the machine reache
 | `USERS_ROOT` | `/data/users` | Parent directory for all user root folders. |
 | `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory. Thumbnails not shown for 30 days are deleted. |
 | `HLS_CACHE_DIR` | `/data/hls` | HLS transcoding cache directory. A video's segments are deleted 7 days after it was last played. |
+| `HLS_CACHE_MAX_GB` | `20` | Size limit of the HLS cache; beyond it the least recently played videos' segments are deleted first (checked hourly). `0` = no limit. |
 | `CONV_CACHE_DIR` | `/data/conv` | Cache of images and audio converted for previewing, kept for 7 days. |
+| `CONV_CACHE_MAX_GB` | `2` | Size limit of the conversion cache; the oldest conversions are deleted first. `0` = no limit. |
 | `ADMIN_USERNAME` | `admin` | Initial admin username (first run only). |
 | `ADMIN_PASSWORD` | *(random)* | Initial admin password (first run only). Printed to logs if unset. |
 | `ADMIN_PATH` | `USERS_ROOT/<ADMIN_USERNAME>` | Initial admin root directory (first run only; created if missing). Can be changed later. |

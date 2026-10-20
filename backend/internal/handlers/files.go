@@ -44,6 +44,13 @@ func (h *FilesHandler) EndStreams() {
 	h.endStreamsOnce.Do(func() { close(h.streamsEnd) })
 }
 
+// SetConvCacheMaxBytes limits the conversion cache's total size (0 = no limit).
+func (h *FilesHandler) SetConvCacheMaxBytes(maxBytes int64) {
+	if h.convCache != nil {
+		h.convCache.maxBytes.Store(maxBytes)
+	}
+}
+
 func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandler {
 	h := &FilesHandler{thumbs: thumbsSvc, streamsEnd: make(chan struct{})}
 	if convCacheDir != "" {
