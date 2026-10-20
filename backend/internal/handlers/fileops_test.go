@@ -414,3 +414,27 @@ func TestMoveAndCopyIntoSimilarlyNamedFolder(t *testing.T) {
 		assertFileContent(t, filepath.Join(annRoot, "docs-archive/docs/plan.md"), "# plan")
 	}
 }
+
+func TestFindFreeName(t *testing.T) {
+	tests := []struct{ name, want string }{
+		{"notes.txt", "notes (1).txt"},
+		{".bashrc", ".bashrc (1)"},
+		{".config.json", ".config (1).json"},
+		{"a.tar.gz", "a (1).tar.gz"},
+		{"Backup.TAR.XZ", "Backup (1).TAR.XZ"},
+		{"README", "README (1)"},
+		{"photo.2026.jpg", "photo.2026 (1).jpg"},
+		{".tar.gz", ".tar (1).gz"}, // only an extension: leading dot is the name
+	}
+	for _, test := range tests {
+		taken := map[string]bool{test.name: true}
+		if got := findFreeName(test.name, taken, map[string]bool{}); got != test.want {
+			t.Errorf("findFreeName(%q) = %q, want %q", test.name, got, test.want)
+		}
+	}
+	// Numbers keep counting past names already taken.
+	taken := map[string]bool{"a.tar.gz": true, "a (1).tar.gz": true}
+	if got := findFreeName("a.tar.gz", taken, map[string]bool{"a (2).tar.gz": true}); got != "a (3).tar.gz" {
+		t.Errorf("third copy = %q", got)
+	}
+}

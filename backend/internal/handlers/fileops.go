@@ -406,23 +406,38 @@ func buildExistingMap(fsys *userfs.FS, dir string) (existing, claimed map[string
 }
 
 // findFreeName returns a name not present in existing or claimed,
-// appending " (1)", " (2)", etc. as needed.
+// adding " (1)", " (2)", etc. before the extension as needed.
 func findFreeName(name string, existing, claimed map[string]bool) string {
 	if !existing[name] && !claimed[name] {
 		return name
 	}
-	lastDot := strings.LastIndex(name, ".")
-	base, ext := name, ""
-	if lastDot >= 0 {
-		base = name[:lastDot]
-		ext = name[lastDot:]
-	}
+	base, ext := splitExtension(name)
 	for n := 1; ; n++ {
 		candidate := fmt.Sprintf("%s (%d)%s", base, n, ext)
 		if !existing[candidate] && !claimed[candidate] {
 			return candidate
 		}
 	}
+}
+
+// multiPartExtensions stay together when a number is added to a name:
+// "a.tar.gz" becomes "a (1).tar.gz", not "a.tar (1).gz".
+var multiPartExtensions = []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"}
+
+// splitExtension splits name into base and extension. A leading dot belongs
+// to the name (".bashrc" has no extension), and the archive extensions above
+// count as one.
+func splitExtension(name string) (base, ext string) {
+	lower := strings.ToLower(name)
+	for _, multiPart := range multiPartExtensions {
+		if strings.HasSuffix(lower, multiPart) && len(name) > len(multiPart) {
+			return name[:len(name)-len(multiPart)], name[len(name)-len(multiPart):]
+		}
+	}
+	if lastDot := strings.LastIndex(name, "."); lastDot > 0 {
+		return name[:lastDot], name[lastDot:]
+	}
+	return name, ""
 }
 
 // resolveDestConflict applies a conflict_mode to a single destination that may
