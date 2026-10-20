@@ -129,6 +129,20 @@ docker compose up -d
 
 The app is available at `http://localhost:8080` on that machine.
 
+### Updating
+
+```bash
+./deploy.sh
+```
+
+It pulls the latest code, builds a new image (the build runs the tests and stops if any fail, leaving the running app alone) and replaces the container. Each image is tagged `files:<commit>` as well as `files:latest`; the script keeps the current one and the one before it, and removes older ones. To go back to the previous version:
+
+```bash
+docker image ls files                      # find the previous commit's tag
+docker tag files:<previous-commit> files:latest
+docker compose up -d --no-build
+```
+
 ### Reaching the app
 
 The port is published on `127.0.0.1` only, so nothing outside the machine reaches the app until you choose how:

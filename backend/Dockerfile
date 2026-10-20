@@ -77,6 +77,9 @@ CMD ["air"]
 # ---- runtime ----
 FROM runtime-base
 
+# Lets deploy.sh find (and remove) this app's untagged old images.
+LABEL org.opencontainers.image.title="files"
+
 # su-exec: docker-entrypoint.sh starts the server as PUID:PGID, not root.
 RUN apk add --no-cache su-exec
 

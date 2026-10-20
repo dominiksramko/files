@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # deploy.sh also tags each build with its commit (files:<commit>), keeps
+    # the previous one to roll back to, and removes older ones.
+    image: files:latest
     restart: unless-stopped
     # On stop, uploads and extractions in progress get up to 100 s to finish
     # (the server's shutdown timeout) before the container is killed.
