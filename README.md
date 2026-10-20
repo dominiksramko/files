@@ -151,6 +151,8 @@ The port is published on `127.0.0.1` only, so nothing outside the machine reache
 | `ADMIN_USERNAME` | `admin` | Initial admin username (first run only). |
 | `ADMIN_PASSWORD` | *(random)* | Initial admin password (first run only). Printed to logs if unset. |
 | `ADMIN_PATH` | *(empty)* | Initial admin root directory (first run only). Can be changed later. |
+| `BIND_ADDRESS` | `127.0.0.1` | Where docker compose publishes the port (see [Reaching the app](#reaching-the-app)). |
+| `TRUSTED_PROXIES` | private networks | Comma-separated addresses or ranges of reverse proxies whose `X-Forwarded-For` is believed for the client's address. Defaults to loopback and private networks (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`), where a proxy normally sits; `none` trusts no proxy. |
 | `PUID` / `PGID` | `1000` | User and group the server runs as (never root). Must be able to read and write your mounted folders. On startup the app's own data (database, caches) is handed to them; mounted folders are never changed. |
 
 ---

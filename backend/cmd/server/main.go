@@ -31,6 +31,9 @@ func main() {
 	defer db.Close()
 
 	r := gin.Default()
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		log.Fatalf("TRUSTED_PROXIES: %v", err)
+	}
 
 	// CORS — allow Vite dev server in development
 	r.Use(cors.New(cors.Config{
