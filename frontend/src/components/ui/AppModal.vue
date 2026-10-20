@@ -15,6 +15,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
+// The larger sizes grow on big screens, where their content (long names,
+// tables) would otherwise be cut short with room to spare.
+const widths = {
+  sm: 'max-w-sm',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl xl:max-w-4xl',
+  xl: 'max-w-4xl xl:max-w-5xl 2xl:max-w-6xl',
+  '2xl': 'max-w-7xl 2xl:max-w-[96rem]',
+}
+
 const card = ref<HTMLElement | null>(null)
 useEscapeToClose(card, () => props.closeOnEscape, () => emit('close'))
 </script>
@@ -33,7 +43,7 @@ useEscapeToClose(card, () => props.closeOnEscape, () => emit('close'))
         :class="[
           'bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col w-full',
           fixedHeight ? 'h-[90vh]' : 'max-h-[90vh]',
-          { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-7xl' }[size ?? 'md'],
+          widths[size ?? 'md'],
         ]"
       >
         <!-- Header -->
