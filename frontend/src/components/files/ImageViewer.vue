@@ -3,8 +3,11 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { isTypingTarget } from '@/utils/keyboard'
 
-const props = defineProps<{ entry: FileEntry }>()
+// active: whether this is the image on screen (the preview also keeps its
+// neighbours mounted); only that one takes zoom keys.
+const props = withDefaults(defineProps<{ entry: FileEntry; active?: boolean }>(), { active: true })
 
 const streamUrl = filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 
@@ -223,6 +226,8 @@ function onTouchEnd(e: TouchEvent) {
 
 // --- Keyboard ---
 function onKey(e: KeyboardEvent) {
+  // Ctrl/Cmd with - and = is the browser's own page zoom.
+  if (!props.active || isTypingTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return
   if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomIn() }
   if (e.key === '-')                  { e.preventDefault(); zoomOut() }
   if (e.key === '0')                  { e.preventDefault(); resetZoom() }

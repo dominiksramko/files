@@ -13,6 +13,7 @@ import TextViewer   from '@/components/files/TextViewer.vue'
 import TodoViewer   from '@/components/files/TodoViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
 import AppIcon      from '@/components/ui/AppIcon.vue'
+import { isTypingTarget } from '@/utils/keyboard'
 
 const props = defineProps<{
   entry: FileEntry | null
@@ -56,7 +57,7 @@ function viewerFor(entry: FileEntry, active: boolean) {
 function extraProps(entry: FileEntry, active: boolean): Record<string, unknown> {
   const viewer = viewerFor(entry, active)
   const result: Record<string, unknown> = {}
-  if (viewer === VideoPlayer) result.active = active
+  if (viewer === VideoPlayer || viewer === ImageViewer) result.active = active
   if (viewer === TodoViewer || viewer === KanbanViewer) result.active = active
   if (viewer === TextViewer && active) result.initialEdit = props.textEditMode
   return result
@@ -208,8 +209,7 @@ function onCarouselWheel(e: WheelEvent) {
 // --- Keyboard ---
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
-  const tag = (document.activeElement as HTMLElement)?.tagName
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (isTypingTarget(e.target)) return
   // A modal opened from inside a viewer (e.g. a kanban card) owns the keyboard.
   if (document.querySelector('[aria-modal="true"]')) return
   if (e.key === 'Escape') { emit('close'); return }

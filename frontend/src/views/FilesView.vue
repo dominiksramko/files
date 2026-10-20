@@ -25,6 +25,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppDropdown from '@/components/ui/AppDropdown.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 import { useArchiveExtract } from '@/composables/useArchiveExtract'
+import { isTypingTarget } from '@/utils/keyboard'
 import { useFileOps } from '@/composables/useFileOps'
 import { useLayoutStore } from '@/stores/layout'
 import { debounce } from '@/utils/debounce'
@@ -833,8 +834,7 @@ function closeDetails() {
 function onGlobalKeydown(event: KeyboardEvent) {
   if (!event.ctrlKey && !event.metaKey) return
   if (event.key !== 'a' && event.key !== 'A') return
-  const target = event.target as HTMLElement
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+  if (isTypingTarget(event.target)) return
   event.preventDefault()
   if (selectedPaths.value.length === visibleEntries.value.length && visibleEntries.value.length > 0) {
     deselectAll()
