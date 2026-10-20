@@ -87,7 +87,7 @@ function folderOf(entry: UsageEntry): string {
           aria-label="Show in Files"
           @click.stop="emit('reveal', entry)"
         >
-          <AppIcon name="eye" class="size-4" />
+          <AppIcon name="folderOutline" class="size-4" />
         </button>
         <button
           type="button"
