@@ -66,28 +66,16 @@ func (h *SubtitlesHandler) List(c *gin.Context) {
 	// ── File-based subtitles ──────────────────────────────────────────────────
 	dir := filepath.Dir(abs)
 	base := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(filepath.Base(abs)))
-	baseLower := strings.ToLower(base)
 
 	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
 			name := e.Name()
-			nameLower := strings.ToLower(name)
-			ext := strings.ToLower(filepath.Ext(name))
-			if !subtitleFileExts[ext] {
+			tag, ok := subtitleTag(base, name)
+			if !ok {
 				continue
 			}
-			// Must be <base>.<anything>.<ext>  or  <base>.<ext>
-			if !strings.HasPrefix(nameLower, baseLower+".") {
-				continue
-			}
-			// Language tag: text between the base dot and the final extension.
-			// e.g. "movie.en.srt" → "en", "movie.srt" → ""
-			inner := name[len(base)+1 : len(name)-len(ext)]
 
-			label, srclang := subtitleLangInfo(inner)
+			label, srclang := subtitleLangInfo(tag)
 
 			subAbs := filepath.Join(dir, name)
 			subRel, err := filepath.Rel(root, subAbs)
@@ -254,6 +242,24 @@ func srtToVTT(srt []byte) []byte {
 
 // subtitleLangInfo maps a language tag from a filename segment or stream tag
 // to a human-readable label and a BCP-47 srclang value.
+// subtitleTag reports whether fileName is a subtitle file for the video named
+// base (without its extension) — base.<ext> or base.<tag>.<ext>, in any case —
+// and returns the tag between them: "en" for movie.en.srt, "" for movie.srt.
+func subtitleTag(base, fileName string) (string, bool) {
+	ext := filepath.Ext(fileName)
+	if !subtitleFileExts[strings.ToLower(ext)] {
+		return "", false
+	}
+	stem := strings.TrimSuffix(fileName, ext)
+	if strings.EqualFold(stem, base) {
+		return "", true
+	}
+	if len(stem) > len(base) && stem[len(base)] == '.' && strings.EqualFold(stem[:len(base)], base) {
+		return stem[len(base)+1:], true
+	}
+	return "", false
+}
+
 func subtitleLangInfo(tag string) (label, srclang string) {
 	if tag == "" {
 		return "Default", ""
