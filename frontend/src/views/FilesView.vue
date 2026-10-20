@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, defineComponent, h, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFilesStore } from '@/stores/files'
 import type { FileEntry } from '@/types'
@@ -30,12 +30,12 @@ import { isTypingTarget } from '@/utils/keyboard'
 import { droppedFiles } from '@/utils/drop'
 import { useJobSelection } from '@/composables/useJobSelection'
 import { useFileOps } from '@/composables/useFileOps'
-import { useLayoutStore } from '@/stores/layout'
+import { useHeaderCenter } from '@/composables/useHeaderCenter'
 import { debounce } from '@/utils/debounce'
+import { parentOf } from '@/utils/paths'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
 const filesStore = useFilesStore()
-const layoutStore = useLayoutStore()
 const route = useRoute()
 const router = useRouter()
 const { prompt: promptConflict, runWithConflictPrompt } = useConflictDialog()
@@ -668,7 +668,7 @@ async function confirmRename() {
     selectedPaths.value = []
     // Optimistically update the entry so preview index can be resolved immediately.
     // The watch stream will deliver the authoritative REMOVE + ADD events shortly after.
-    const parent = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : ''
+    const parent = parentOf(entry.path)
     const newPath = parent ? `${parent}/${renamed.name}` : renamed.name
     const idx = filesStore.entries.findIndex((e) => e.path === entry.path)
     if (idx >= 0) {
@@ -887,24 +887,12 @@ const folderContextMenuItems = computed((): ContextMenuItem[] => {
 // ── Computed helpers ──────────────────────────────────────────────────────
 const fileopsActive = computed(() => selectedPaths.value.length > 0 || clipboard.value !== null)
 
-// ── Register a header center component via the layout store ───────────────
-// defineComponent closes over this view's reactive state — AppHeader renders
-// it generically with <component :is="..."> without knowing what it is.
-layoutStore.headerBreadcrumbsActive = true
-layoutStore.headerCenter = defineComponent({
-  name: 'HeaderBreadcrumb',
-  setup() {
-    return () => h(FileBreadcrumb, {
-      path: filesStore.currentPath,
-      onNavigate: navigate,
-      onDropToFolder: onDropToFolder,
-    })
-  },
-})
-onUnmounted(() => {
-  layoutStore.headerBreadcrumbsActive = false
-  layoutStore.headerCenter = null
-})
+// ── The breadcrumb in the header ──────────────────────────────────────────
+useHeaderCenter('HeaderBreadcrumb', () => h(FileBreadcrumb, {
+  path: filesStore.currentPath,
+  onNavigate: navigate,
+  onDropToFolder: onDropToFolder,
+}))
 
 onMounted(async () => {
   const initialPath = (route.query.path as string) || ''

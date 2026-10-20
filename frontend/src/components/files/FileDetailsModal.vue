@@ -3,6 +3,7 @@ import { ref, computed, watch, onUnmounted } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { fileCategory, formatDate, formatDuration, formatSize, formatSizeProgress, type SizeProgress } from '@/utils/formatters'
+import { parentOf } from '@/utils/paths'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 
@@ -22,10 +23,7 @@ let mediaRequest = 0
 
 const location = computed(() => {
   if (!props.items.length) return ''
-  const parents = [...new Set(props.items.map((entry) => {
-    const slash = entry.path.lastIndexOf('/')
-    return slash < 0 ? '/' : '/' + entry.path.slice(0, slash)
-  }))]
+  const parents = [...new Set(props.items.map((entry) => '/' + parentOf(entry.path)))]
   return parents.length === 1 ? parents[0] : 'Multiple locations'
 })
 

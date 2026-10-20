@@ -3,12 +3,13 @@ import { Marked, type Tokens } from 'marked'
 import hljs from 'highlight.js/lib/common'
 import { files as filesApi } from '@/utils/api'
 import { escapeHtml } from '@/utils/html'
+import { parentOf } from '@/utils/paths'
 
 // Relative image paths in a Markdown file resolve against that file's folder,
 // so `![](img/a.png)` in `notes/readme.md` streams `notes/img/a.png`.
 function resolveMarkdownImageSrc(entryPath: string, href: string): string {
   if (/^https?:\/\//.test(href) || href.startsWith('/')) return href
-  const dir = entryPath.substring(0, entryPath.lastIndexOf('/'))
+  const dir = parentOf(entryPath)
   // The URL keeps names percent-encoded (`a%20b.png`); the API wants the real name.
   const encodedPath = new URL(href, `http://x/${dir}/`).pathname.replace(/^\//, '')
   let resolvedPath = encodedPath

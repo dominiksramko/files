@@ -3,8 +3,11 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { debounce } from '@/utils/debounce'
+import { breadcrumbTrail } from '@/utils/paths'
 
-const props = defineProps<{ path: string }>()
+// root: the first crumb (default: the home folder); nothing above it is shown.
+// hrefFor: the link of a crumb (default: that folder in the file browser).
+const props = defineProps<{ path: string; root?: string; hrefFor?: (path: string) => string }>()
 const emit = defineEmits<{
   navigate: [path: string]
   dropToFolder: [destPath: string, paths: string[]]
@@ -13,6 +16,7 @@ const emit = defineEmits<{
 const router = useRouter()
 
 function crumbHref(path: string): string {
+  if (props.hrefFor) return props.hrefFor(path)
   return router.resolve({ query: path ? { path } : {} }).href
 }
 
@@ -54,19 +58,7 @@ function cancelEdit() {
   editing.value = false
 }
 
-const allCrumbs = computed(() => {
-  const crumbs: { label: string; path: string; isHome: boolean }[] = [
-    { label: 'Home', path: '', isHome: true },
-  ]
-  if (!props.path) return crumbs
-  props.path
-    .split('/')
-    .filter(Boolean)
-    .forEach((seg, i, arr) => {
-      crumbs.push({ label: seg, path: arr.slice(0, i + 1).join('/'), isHome: false })
-    })
-  return crumbs
-})
+const allCrumbs = computed(() => breadcrumbTrail(props.path, props.root))
 
 const hiddenCrumbs = computed(() => allCrumbs.value.slice(0, hiddenCount.value))
 const shownCrumbs = computed(() => allCrumbs.value.slice(hiddenCount.value))
@@ -274,20 +266,20 @@ onUnmounted(() => {
       <!-- Home -->
       <a
         v-if="crumb.isHome"
-        :href="crumbHref('')"
+        :href="crumbHref(crumb.path)"
         :class="[
           'shrink-0 min-h-[2.5rem] flex items-center gap-1.5 px-2 rounded transition-colors',
           !isCurrent(crumb) && dragOverCrumb === crumb.path
             ? 'bg-blue-800/50 text-white'
             : 'text-zinc-400 hover:text-white hover:bg-zinc-800/70',
         ]"
-        @click.prevent="emit('navigate', '')"
+        @click.prevent="emit('navigate', crumb.path)"
         @dragover="onCrumbDragOver($event, crumb)"
         @dragleave="onCrumbDragLeave($event, crumb)"
         @drop="onCrumbDrop($event, crumb)"
       >
         <AppIcon name="folder" class="size-4 shrink-0" />
-        <span>Home</span>
+        <span>{{ crumb.label }}</span>
       </a>
 
       <!-- Segment -->
