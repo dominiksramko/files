@@ -1,2 +1,4 @@
+# Secrets and local settings: never commit these.
+.env
 # Local docker compose settings (see docker-compose.override.example.yml)
 docker-compose.override.yml

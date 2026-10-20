@@ -1,0 +1,13 @@
+# The image build only needs the backend and frontend sources. Keep secrets,
+# local data, dependencies installed on the host (they'd overwrite the ones
+# installed in the image) and git history out of the build context.
+.git
+.env
+docker-compose.override.yml
+**/node_modules
+**/.eslintcache
+frontend/dist
+backend/data
+backend/tmp
+screenshots
+*.log
