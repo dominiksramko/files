@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"errors"
@@ -13,6 +14,9 @@ import (
 	"testing"
 
 	"files/internal/userfs"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/ulikunitz/xz"
 )
 
 // writeTestZip creates a zip archive at path holding files (name → content).
@@ -287,5 +291,60 @@ func TestArchiveWritersReportAFullDisk(t *testing.T) {
 				t.Errorf("%s: disk full after %d of %d bytes, reported as success", format, limit, full.Len())
 			}
 		}
+	}
+}
+
+// writeCompressedTar writes a tar holding files to path, compressed by wrap.
+func writeCompressedTar(t *testing.T, path string, files map[string]string, wrap func(io.Writer) io.WriteCloser) {
+	t.Helper()
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := wrap(out)
+	tw := tar.NewWriter(compressed)
+	for name, content := range files {
+		tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg})
+		tw.Write([]byte(content))
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out.Close()
+}
+
+func TestXzAndZstdTarArchives(t *testing.T) {
+	compressors := map[string]func(io.Writer) io.WriteCloser{
+		"bundle.tar.xz": func(out io.Writer) io.WriteCloser {
+			writer, err := xz.NewWriter(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return writer
+		},
+		"bundle.tar.zst": func(out io.Writer) io.WriteCloser {
+			writer, err := zstd.NewWriter(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return writer
+		},
+	}
+	for archive, wrap := range compressors {
+		annRoot, _ := newUserFolders(t)
+		writeCompressedTar(t, filepath.Join(annRoot, archive), map[string]string{"bundle/a.txt": "a", "bundle/b.txt": "b"}, wrap)
+
+		listing := serve(NewArchiveHandler().Contents, annRoot, httptest.NewRequest(http.MethodGet, "/?path="+archive, nil))
+		assertStatus(t, listing, http.StatusOK)
+		if entries := decodeResponse[[]ArchiveEntry](t, listing); len(entries) != 2 {
+			t.Errorf("%s lists %v, want 2 files", archive, entries)
+		}
+
+		assertStatus(t, serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": archive}), http.StatusOK)
+		assertFileContent(t, filepath.Join(annRoot, "bundle/a.txt"), "a")
+		assertFileContent(t, filepath.Join(annRoot, "bundle/b.txt"), "b")
 	}
 }

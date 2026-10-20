@@ -20,6 +20,8 @@ import (
 	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/zstd"
+	"github.com/ulikunitz/xz"
 )
 
 // POST /api/v1/files/compress
@@ -699,11 +701,34 @@ func openTar(path string) (*tar.Reader, io.Closer, error) {
 		}
 		return tar.NewReader(gz), multiCloser{gz, f}, nil
 	}
-	if strings.HasSuffix(lower, ".bz2") {
+	switch {
+	case strings.HasSuffix(lower, ".bz2"):
 		reader = bzip2.NewReader(f)
+	case strings.HasSuffix(lower, ".xz"):
+		xzReader, err := xz.NewReader(f)
+		if err != nil {
+			f.Close()
+			return nil, nil, err
+		}
+		reader = xzReader
+	case strings.HasSuffix(lower, ".zst"):
+		zstdReader, err := zstd.NewReader(f)
+		if err != nil {
+			f.Close()
+			return nil, nil, err
+		}
+		return tar.NewReader(zstdReader), multiCloser{zstdCloser{zstdReader}, f}, nil
 	}
 
 	return tar.NewReader(reader), f, nil
+}
+
+// zstdCloser adapts zstd.Decoder, whose Close returns nothing, to io.Closer.
+type zstdCloser struct{ decoder *zstd.Decoder }
+
+func (closer zstdCloser) Close() error {
+	closer.decoder.Close()
+	return nil
 }
 
 type multiCloser []io.Closer
