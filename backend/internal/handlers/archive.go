@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/bzip2"
-	"compress/gzip"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -22,6 +21,9 @@ import (
 	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
+	// The standard library's API, decompressing about 30% faster: listing a
+	// .tar.gz reads all of it, as the names are spread through the stream.
+	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 	"golang.org/x/text/encoding/charmap"

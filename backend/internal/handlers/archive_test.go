@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
+	stdgzip "compress/gzip"
 	"errors"
 	"io"
 	"net/http"
@@ -69,6 +70,34 @@ func TestCompress(t *testing.T) {
 	if names := zipNames(t, filepath.Join(annRoot, "docs/out.zip")); len(names) != 1 || names[0] != "notes.txt" {
 		t.Errorf("archive holds %q", names)
 	}
+}
+
+func TestCompressTarGzListsAndExtracts(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	handler := NewArchiveHandler()
+	request := map[string]any{"paths": []string{"notes.txt"}, "dest": "docs/out.tar.gz", "format": "tar.gz"}
+	assertStatus(t, serveJSON(t, handler.Compress, annRoot, request), http.StatusOK)
+
+	// Readable by others: the standard library's gzip.
+	archive, err := os.Open(filepath.Join(annRoot, "docs/out.tar.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	gzipReader, err := stdgzip.NewReader(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header, err := tar.NewReader(gzipReader).Next(); err != nil || header.Name != "notes.txt" {
+		t.Fatalf("first entry %v, %v", header, err)
+	}
+
+	listing := serve(handler.Contents, annRoot, archiveContentsRequest(t, map[string]string{"path": "docs/out.tar.gz"}))
+	if names := archiveEntryNames(t, listing); len(names) != 1 || names[0] != "notes.txt" {
+		t.Errorf("entries = %v", names)
+	}
+	assertStatus(t, serveJSON(t, handler.Extract, annRoot, map[string]any{"path": "docs/out.tar.gz", "dest": "docs/back"}), http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "docs/back/notes.txt"), "ann's notes")
 }
 
 func TestCompressNeverOverwritesByDefault(t *testing.T) {
@@ -317,8 +346,12 @@ func writeCompressedTar(t *testing.T, path string, files map[string]string, wrap
 	out.Close()
 }
 
-func TestXzAndZstdTarArchives(t *testing.T) {
+// Compressed tars as other tools write them (the standard library's gzip
+// standing in for gzip itself).
+func TestCompressedTarArchives(t *testing.T) {
 	compressors := map[string]func(io.Writer) io.WriteCloser{
+		"bundle.tar.gz": func(out io.Writer) io.WriteCloser { return stdgzip.NewWriter(out) },
+		"bundle.tgz":    func(out io.Writer) io.WriteCloser { return stdgzip.NewWriter(out) },
 		"bundle.tar.xz": func(out io.Writer) io.WriteCloser {
 			writer, err := xz.NewWriter(out)
 			if err != nil {
