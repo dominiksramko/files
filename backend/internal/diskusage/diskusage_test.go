@@ -219,7 +219,7 @@ func TestRemoveUpdatesTheScan(t *testing.T) {
 		t.Fatal(err)
 	}
 	removed := result.Remove(two, info)
-	if removed.Files != 1 || removed.Apparent != 300 || removed.Disk <= 0 {
+	if removed.Files != 1 || removed.Apparent != 300 || removed.Disk != Allocated(info) || removed.Disk <= 0 {
 		t.Errorf("removed %+v", removed)
 	}
 	if b := result.Find(filepath.Join("a", "b")); b.Apparent != 200 || b.Files != 1 {
@@ -238,12 +238,17 @@ func TestRemoveUpdatesTheScan(t *testing.T) {
 	}
 
 	aInfo, _ := os.Lstat(filepath.Join(dir, "a"))
+	threeInfo, _ := os.Lstat(filepath.Join(dir, "a", "b", "three.txt"))
 	removed = result.Remove("a", aInfo)
 	if removed.Dirs != 2 || removed.Files != 2 || removed.Apparent != 300 {
 		t.Errorf("removed folder %+v", removed)
 	}
 	if result.Find("a") != nil || result.Root.Dirs != 0 || result.Root.Files != 1 || result.Root.Apparent != 50 {
 		t.Errorf("after removing a: root %+v", result.Root.Totals)
+	}
+	// Deleted together with a folder above it: nothing more to take off.
+	if removed := result.Remove(filepath.Join("a", "b", "three.txt"), threeInfo); removed != (Totals{}) {
+		t.Errorf("a file in a removed folder took off %+v", removed)
 	}
 	if got := paths(result.Largest(ByDisk)); len(got) != 1 || got[0] != "c.txt" {
 		t.Errorf("largest after removing a = %v", got)

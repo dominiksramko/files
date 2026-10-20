@@ -35,9 +35,16 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 	}
 
 	fsys, names, ok := requestChildNames(c, body.Paths)
-	if !ok {
+	if !ok || !removeEntries(c, fsys, names) {
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// removeEntries deletes names (checked by requestChildNames) for good. When
+// one of them is already gone it answers 404 and deletes nothing; on a failure
+// it answers 500. It reports whether everything was deleted.
+func removeEntries(c *gin.Context, fsys *userfs.FS, names []string) bool {
 	// Removing what isn't there succeeds silently; say so instead.
 	var missing []string
 	for _, name := range names {
@@ -47,16 +54,15 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 	}
 	if len(missing) > 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no longer exists: " + strings.Join(missing, ", ")})
-		return
+		return false
 	}
 	for _, name := range names {
 		if err := fsys.RemoveAll(name); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			return false
 		}
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	return true
 }
 
 // POST /api/v1/files/copy

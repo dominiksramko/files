@@ -120,6 +120,10 @@ func main() {
 			authed.GET("/files/subtitles", subsH.List)
 			authed.GET("/files/subtitle", subsH.Stream)
 			authed.GET("/files/size", infoH.SizeStream)
+			authed.GET("/files/usage/scan", filesH.UsageScan)
+			authed.GET("/files/usage", filesH.Usage)
+			authed.GET("/files/usage/largest", filesH.UsageLargest)
+			authed.DELETE("/files/usage", filesH.UsageDelete)
 			authed.GET("/files/info", infoH.Meta)
 			authed.POST("/files/office-token", officeH.GenerateToken)
 

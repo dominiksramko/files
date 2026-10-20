@@ -36,9 +36,11 @@ type FilesHandler struct {
 	// so they don't hold the shutdown up (clients reconnect to the new server).
 	streamsEnd     chan struct{}
 	endStreamsOnce sync.Once
+
+	usage *usageStore // disk usage scans
 }
 
-// EndStreams tells open watch streams to end; for http.Server.RegisterOnShutdown.
+// EndStreams tells open watch streams and disk usage scans to end; for http.Server.RegisterOnShutdown.
 func (h *FilesHandler) EndStreams() {
 	h.endStreamsOnce.Do(func() { close(h.streamsEnd) })
 }
@@ -51,7 +53,7 @@ func (h *FilesHandler) SetConvCacheMaxBytes(maxBytes int64) {
 }
 
 func NewFilesHandler(thumbsSvc *thumbs.Service, convCacheDir string) *FilesHandler {
-	h := &FilesHandler{thumbs: thumbsSvc, streamsEnd: make(chan struct{})}
+	h := &FilesHandler{thumbs: thumbsSvc, streamsEnd: make(chan struct{}), usage: newUsageStore()}
 	if convCacheDir != "" {
 		cache, err := newConvCache(convCacheDir)
 		if err != nil {

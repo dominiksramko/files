@@ -196,6 +196,12 @@ func Scan(ctx context.Context, fsys *userfs.FS, name string, onProgress func(Tot
 	return result, nil
 }
 
+// Allocated returns the space info's item takes on disk (its length where
+// that isn't known).
+func Allocated(info fs.FileInfo) int64 {
+	return linkSet(nil).allocated(info)
+}
+
 // ErrNotFolder is returned when the scanned name isn't a folder.
 var ErrNotFolder = errors.New("not a folder")
 
@@ -253,6 +259,9 @@ func (r *Result) Remove(name string, info fs.FileInfo) Totals {
 		return Totals{}
 	}
 	parent := r.Find(filepath.Dir(name))
+	if parent == nil {
+		return Totals{} // already gone with a folder above it, or never scanned
+	}
 	var removed Totals
 	if info.IsDir() {
 		folder := r.Find(name)
