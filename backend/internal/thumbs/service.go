@@ -177,19 +177,20 @@ func (s *Service) enqueue(t task) {
 
 func (s *Service) process(t task) {
 	thumbPath := filepath.Join(s.cacheDir, t.thumbFile)
-	var err error
-	switch {
-	case strings.HasPrefix(t.mime, "video/"):
-		err = generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
-	case t.mime == "image/svg+xml":
-		err = generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
-	case t.mime == "application/pdf":
-		err = generatePDFThumb(t.absPath, thumbPath, ThumbMaxDim)
-	case isMagickThumbable(t.mime):
-		err = generateMagickThumb(t.absPath, thumbPath, t.mime, ThumbMaxDim)
-	default:
-		err = generateThumb(t.absPath, thumbPath, ThumbMaxDim)
-	}
+	err := runRecovered(func() error {
+		switch {
+		case strings.HasPrefix(t.mime, "video/"):
+			return generateVideoThumb(t.absPath, thumbPath, ThumbMaxDim)
+		case t.mime == "image/svg+xml":
+			return generateSVGThumb(t.absPath, thumbPath, ThumbMaxDim)
+		case t.mime == "application/pdf":
+			return generatePDFThumb(t.absPath, thumbPath, ThumbMaxDim)
+		case isMagickThumbable(t.mime):
+			return generateMagickThumb(t.absPath, thumbPath, t.mime, ThumbMaxDim)
+		default:
+			return generateThumb(t.absPath, thumbPath, ThumbMaxDim)
+		}
+	})
 
 	status := "done"
 	if err != nil {
@@ -205,6 +206,19 @@ func (s *Service) process(t task) {
 	if status == "done" {
 		s.hub.Broadcast(t.folderAbs, t.contentHash)
 	}
+}
+
+// runRecovered runs work and turns a panic in it into an error. Thumbnails are
+// made in the background, outside request handling, where nothing else would
+// catch a decoder crashing on a damaged or crafted file — the whole server
+// would stop, and crash again whenever the folder is next opened.
+func runRecovered(work func() error) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("crashed: %v", recovered)
+		}
+	}()
+	return work()
 }
 
 // ClearAll deletes all thumbnail records from the database and removes all
