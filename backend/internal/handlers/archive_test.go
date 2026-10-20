@@ -348,3 +348,47 @@ func TestXzAndZstdTarArchives(t *testing.T) {
 		assertFileContent(t, filepath.Join(annRoot, "bundle/b.txt"), "b")
 	}
 }
+
+func TestTarExtractionKeepsOnlyFilesAndTheirPermissions(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	out, _ := os.Create(filepath.Join(annRoot, "tools.tar"))
+	tw := tar.NewWriter(out)
+	// git archive writes a PAX global header first; it's metadata, not a file.
+	tw.WriteHeader(&tar.Header{Typeflag: tar.TypeXGlobalHeader, Name: "pax_global_header", PAXRecords: map[string]string{"comment": "abc"}})
+	tw.WriteHeader(&tar.Header{Name: "tools/run.sh", Mode: 0o755, Size: 2, Typeflag: tar.TypeReg})
+	tw.Write([]byte("hi"))
+	tw.WriteHeader(&tar.Header{Name: "tools/notes.txt", Mode: 0o644, Size: 1, Typeflag: tar.TypeReg})
+	tw.Write([]byte("n"))
+	tw.Close()
+	out.Close()
+
+	assertStatus(t, serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "tools.tar"}), http.StatusOK)
+	assertMissing(t, filepath.Join(annRoot, "pax_global_header"))
+	assertMissing(t, filepath.Join(annRoot, "tools/pax_global_header"))
+	if info, err := os.Stat(filepath.Join(annRoot, "tools/run.sh")); err != nil || info.Mode().Perm() != 0o755 {
+		t.Errorf("run.sh: %v, %v; want 0755", info.Mode().Perm(), err)
+	}
+	if info, _ := os.Stat(filepath.Join(annRoot, "tools/notes.txt")); info.Mode().Perm() != 0o644 {
+		t.Errorf("notes.txt: %v, want 0644", info.Mode().Perm())
+	}
+}
+
+func TestZipExtractionKeepsPermissions(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	out, _ := os.Create(filepath.Join(annRoot, "tools.zip"))
+	zw := zip.NewWriter(out)
+	header := &zip.FileHeader{Name: "tools/run.sh", Method: zip.Deflate}
+	header.SetMode(0o755)
+	w, _ := zw.CreateHeader(header)
+	w.Write([]byte("hi"))
+	other, _ := zw.Create("tools/notes.txt")
+	other.Write([]byte("n"))
+	zw.Close()
+	out.Close()
+
+	assertStatus(t, serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "tools.zip"}), http.StatusOK)
+	if info, err := os.Stat(filepath.Join(annRoot, "tools/run.sh")); err != nil || info.Mode().Perm() != 0o755 {
+		t.Errorf("run.sh: %v, %v; want 0755", info.Mode().Perm(), err)
+	}
+	assertFileContent(t, filepath.Join(annRoot, "tools/notes.txt"), "n")
+}

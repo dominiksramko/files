@@ -596,8 +596,10 @@ func archiveTarget(dest, entryName string) (string, bool) {
 	return target, isWithin(dest, target) && target != dest
 }
 
-// writeEntry writes one extracted file to name in the user's folder.
-func writeEntry(fsys *userfs.FS, name string, content io.Reader) error {
+// writeEntry writes one extracted file to name in the user's folder, with the
+// permission bits it had in the archive (so scripts stay executable); special
+// bits like setuid are dropped.
+func writeEntry(fsys *userfs.FS, name string, content io.Reader, mode os.FileMode) error {
 	if err := fsys.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
@@ -609,7 +611,13 @@ func writeEntry(fsys *userfs.FS, name string, content io.Reader) error {
 		out.Close()
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if perm := mode.Perm(); perm != 0 {
+		return fsys.Chmod(name, perm|0o200) // keep it writable for its owner
+	}
+	return nil
 }
 
 // --- ZIP ---
@@ -660,7 +668,7 @@ func extractZip(fsys *userfs.FS, archivePath, dest string) error {
 			}
 			return err
 		}
-		err = writeEntry(fsys, target, rc)
+		err = writeEntry(fsys, target, rc, f.Mode())
 		rc.Close()
 		if err != nil {
 			if f.FileHeader.Flags&0x1 != 0 {
@@ -790,13 +798,15 @@ func extractTar(fsys *userfs.FS, archivePath, dest string) error {
 		if !ok {
 			continue // would land outside dest
 		}
-		switch mode := hdr.FileInfo().Mode(); {
-		case mode.IsDir():
+		// Only real files and folders: not links, devices, or metadata entries
+		// such as the PAX global header.
+		switch hdr.Typeflag {
+		case tar.TypeDir:
 			if err := fsys.MkdirAll(target, 0o755); err != nil {
 				return err
 			}
-		case mode.IsRegular():
-			if err := writeEntry(fsys, target, tr); err != nil {
+		case tar.TypeReg:
+			if err := writeEntry(fsys, target, tr, hdr.FileInfo().Mode()); err != nil {
 				return err
 			}
 		}
