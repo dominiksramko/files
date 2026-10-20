@@ -51,12 +51,15 @@ function folderOf(entry: UsageEntry): string {
       v-for="entry in entries"
       :key="entry.path"
       :class="[
-        'group flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 cursor-pointer transition-colors',
+        'group flex items-center gap-2 sm:gap-3 min-h-12 pr-2 sm:pr-3 cursor-pointer transition-colors',
         selected.includes(entry.path) ? 'bg-blue-950/40' : 'hover:bg-zinc-800/50',
       ]"
       @click="onRowClick(entry)"
     >
-      <AppCheckbox :model-value="selected.includes(entry.path)" @update:model-value="toggle(entry)" />
+      <!-- The row's whole height at its start selects, so a near miss doesn't open the folder -->
+      <div class="self-stretch w-11 shrink-0 flex items-center justify-center" @click.capture.stop="toggle(entry)">
+        <AppCheckbox :model-value="selected.includes(entry.path)" />
+      </div>
       <FileIcon :mime="entry.mime" :name="entry.name" :is-dir="entry.is_dir" />
       <div class="min-w-0 flex-1">
         <div class="flex items-baseline gap-2 min-w-0">
