@@ -424,7 +424,8 @@ func writeFileAtomically(fsys *userfs.FS, name string, content []byte) error {
 }
 
 // POST /api/v1/files/download-zip   body: { "paths": ["rel/path1", ...] }
-// Zips the requested paths into a temp file, serves it, then deletes it.
+// Streams a zip of the requested paths straight into the response: nothing
+// is built in temp space first, and the work stops when the client goes.
 func (h *FilesHandler) DownloadZip(c *gin.Context) {
 	var body struct {
 		Paths []string `json:"paths"`
@@ -445,25 +446,21 @@ func (h *FilesHandler) DownloadZip(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	tmp, err := os.CreateTemp("", "files-zip-*.zip")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	err = writeZip(fsys, names, tmp)
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	// Once the zip starts streaming the status can't change, so check first.
+	for _, name := range names {
+		if _, err := fsys.Stat(name); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found: " + filepath.Base(name)})
+			return
+		}
 	}
 
-	c.FileAttachment(tmpName, "download.zip")
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": "download.zip"}))
+	c.Status(http.StatusOK)
+	if err := writeZip(fsys, names, c.Writer); err != nil {
+		// The client sees a cut-off download; nothing more can be sent.
+		log.Printf("download-zip: %v", err)
+	}
 }
 
 

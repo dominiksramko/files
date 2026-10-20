@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -124,35 +123,89 @@ func (h *FileOpsHandler) transfer(c *gin.Context, done string, apply func(fsys *
 	c.JSON(http.StatusOK, gin.H{"message": done})
 }
 
-// POST /api/v1/files/upload?path=rel/dest_dir&conflict_mode=error|replace|rename   multipart form field: "files"
+// POST /api/v1/files/upload?path=rel/dest_dir&conflict_mode=error|replace|rename
+// multipart fields: "files" (any number), "mtime_<i>" (Unix seconds for the i-th file)
 // conflict_mode defaults to "error" — returns HTTP 409 with the names already
-// in the folder, before writing anything.
+// in the folder, and nothing changes in it.
+//
+// Files are streamed from the request into hidden ".part" files in the
+// target folder (no copy in the container's temp space), then renamed into
+// place once the whole request has arrived; on any failure the .part files
+// are removed.
 func (h *FileOpsHandler) Upload(c *gin.Context) {
 	conflictMode := c.DefaultQuery("conflict_mode", "error")
 	fsys, dest, ok := requestFolderName(c, c.Query("path"))
 	if !ok {
 		return
 	}
-
-	form, err := c.MultipartForm()
+	reader, err := c.Request.MultipartReader()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid multipart form"})
 		return
 	}
+	if err := fsys.MkdirAll(dest, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	uploadedFiles := form.File["files"]
-	if len(uploadedFiles) == 0 {
+	type received struct {
+		name, partName string
+		mtime          time.Time
+	}
+	var files []*received
+	defer func() {
+		for _, file := range files {
+			if file.partName != "" {
+				fsys.Remove(file.partName)
+			}
+		}
+	}()
+	mtimes := map[int]time.Time{}
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "upload interrupted: " + err.Error()})
+			return
+		}
+		switch field := part.FormName(); {
+		case field == "files":
+			name := filepath.Base(part.FileName())
+			if err := validateNewFilename(name); err != nil {
+				part.Close()
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename: " + err.Error()})
+				return
+			}
+			partName, err := receivePart(fsys, dest, part)
+			part.Close()
+			files = append(files, &received{name: name, partName: partName})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		case strings.HasPrefix(field, "mtime_"):
+			value, _ := io.ReadAll(io.LimitReader(part, 32))
+			part.Close()
+			index, indexErr := strconv.Atoi(strings.TrimPrefix(field, "mtime_"))
+			seconds, valueErr := strconv.ParseInt(strings.TrimSpace(string(value)), 10, 64)
+			if indexErr == nil && valueErr == nil {
+				mtimes[index] = time.Unix(seconds, 0)
+			}
+		default:
+			part.Close()
+		}
+	}
+	if len(files) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no files uploaded"})
 		return
 	}
 
-	names := make([]string, len(uploadedFiles))
-	for i, fh := range uploadedFiles {
-		names[i] = filepath.Base(fh.Filename)
-		if err := validateNewFilename(names[i]); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid filename: " + err.Error()})
-			return
-		}
+	names := make([]string, len(files))
+	for i, file := range files {
+		names[i] = file.name
 	}
 	if conflictMode == "error" {
 		if conflicts := findNameConflicts(fsys, names, dest); len(conflicts) > 0 {
@@ -161,48 +214,38 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 		}
 	}
 
-	if err := fsys.MkdirAll(dest, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	existing, claimed := buildExistingMap(fsys, dest)
-	for i, fh := range uploadedFiles {
-		target := filepath.Join(dest, batchTargetName(names[i], conflictMode, existing, claimed))
-		if err := saveUpload(fsys, fh, target); err != nil {
+	for i, file := range files {
+		target := filepath.Join(dest, batchTargetName(file.name, conflictMode, existing, claimed))
+		if err := fsys.Rename(file.partName, target); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-
-		// Restore mtime if provided
-		mtimeKey := "mtime_" + strconv.Itoa(i)
-		if mtimeStr := form.Value[mtimeKey]; len(mtimeStr) > 0 {
-			if mtimeUnix, err := strconv.ParseInt(mtimeStr[0], 10, 64); err == nil {
-				mtime := time.Unix(mtimeUnix, 0)
-				_ = fsys.Chtimes(target, mtime, mtime)
-			}
+		file.partName = ""
+		if mtime, ok := mtimes[i]; ok {
+			_ = fsys.Chtimes(target, mtime, mtime)
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "uploaded", "count": len(uploadedFiles)})
+	c.JSON(http.StatusOK, gin.H{"message": "uploaded", "count": len(files)})
 }
 
-// saveUpload writes an uploaded file to name, replacing what's there.
-func saveUpload(fsys *userfs.FS, upload *multipart.FileHeader, name string) error {
-	in, err := upload.Open()
+// receivePart streams one uploaded file into a new hidden ".part" file in the
+// folder dir and returns its name (set even on error, for cleanup).
+func receivePart(fsys *userfs.FS, dir string, content io.Reader) (string, error) {
+	out, name, err := createTempFile(fsys, dir, ".~upload_")
 	if err != nil {
-		return err
+		return "", err
 	}
-	defer in.Close()
-	out, err := fsys.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(out, content); err != nil {
 		out.Close()
-		return err
+		return name, err
 	}
-	return out.Close()
+	if err := out.Chmod(0o644); err != nil {
+		out.Close()
+		return name, err
+	}
+	return name, out.Close()
 }
 
 // POST /api/v1/files/mkdir   body: { "path": "rel/path/new_folder" }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"archive/zip"
 	"bytes"
 	"mime/multipart"
 	"net/http"
@@ -8,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"files/internal/userfs"
@@ -437,4 +440,72 @@ func TestFindFreeName(t *testing.T) {
 	if got := findFreeName("a.tar.gz", taken, map[string]bool{"a (2).tar.gz": true}); got != "a (3).tar.gz" {
 		t.Errorf("third copy = %q", got)
 	}
+}
+
+func TestUploadAndZipDownloadUseNoTempSpace(t *testing.T) {
+	temp := t.TempDir()
+	t.Setenv("TMPDIR", temp)
+	annRoot, _ := newUserFolders(t)
+	big := strings.Repeat("x", 40<<20) // over the 32 MiB multipart memory limit
+
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "docs", "", [][2]string{{"big.bin", big}}))
+	assertStatus(t, response, http.StatusOK)
+	if info, err := os.Stat(filepath.Join(annRoot, "docs/big.bin")); err != nil || info.Size() != int64(len(big)) {
+		t.Fatalf("uploaded file: %v", err)
+	}
+
+	response = serveJSON(t, NewFilesHandler(nil, "").DownloadZip, annRoot, map[string]any{"paths": []string{"docs"}})
+	assertStatus(t, response, http.StatusOK)
+	if archive, err := zip.NewReader(bytes.NewReader(response.Body.Bytes()), int64(response.Body.Len())); err != nil || len(archive.File) < 3 {
+		t.Errorf("zip: %v", err)
+	}
+
+	if entries, _ := os.ReadDir(temp); len(entries) != 0 {
+		t.Errorf("temp space used: %d entries", len(entries))
+	}
+	entries, _ := os.ReadDir(filepath.Join(annRoot, "docs"))
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".~upload_") {
+			t.Errorf("leftover part file: %s", entry.Name())
+		}
+	}
+}
+
+func TestUploadConflictLeavesNoPartFiles(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "", "", [][2]string{{"notes.txt", "new"}}))
+	assertStatus(t, response, http.StatusConflict)
+	entries, _ := os.ReadDir(annRoot)
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".~upload_") {
+			t.Errorf("leftover part file: %s", entry.Name())
+		}
+	}
+}
+
+func TestUploadKeepsModificationTimes(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for i, name := range []string{"a.txt", "b.txt"} {
+		part, _ := writer.CreateFormFile("files", name)
+		part.Write([]byte(name))
+		writer.WriteField("mtime_"+strconv.Itoa(i), strconv.Itoa(1_600_000_000+i*1000))
+	}
+	writer.Close()
+	request := httptest.NewRequest(http.MethodPost, "/?path=", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	assertStatus(t, serve(NewFileOpsHandler().Upload, annRoot, request), http.StatusOK)
+	for i, name := range []string{"a.txt", "b.txt"} {
+		info, _ := os.Stat(filepath.Join(annRoot, name))
+		if want := int64(1_600_000_000 + i*1000); info.ModTime().Unix() != want {
+			t.Errorf("%s modified %d, want %d", name, info.ModTime().Unix(), want)
+		}
+	}
+}
+
+func TestZipDownloadOfMissingPath(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serveJSON(t, NewFilesHandler(nil, "").DownloadZip, annRoot, map[string]any{"paths": []string{"docs", "gone"}})
+	assertStatus(t, response, http.StatusNotFound)
 }

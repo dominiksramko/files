@@ -40,7 +40,6 @@ var allowedFileAccess = map[string]string{
 	"advancedrenamer.go:collectImageVars": "reads metadata at a checked real location",
 	"thumbnails.go:Get":                   "the thumbnail cache",
 	"users.go:Create":                     "creates a new user's folder",
-	"files.go:DownloadZip":                "a temp file",
 	"files.go:convertAudioAndStream":      "the conversion cache and a temp file",
 	"files.go:transcodeAudio":             "the conversion cache",
 }
