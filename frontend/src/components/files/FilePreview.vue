@@ -249,8 +249,17 @@ onUnmounted(() => {
         @click="emit('close')"
       >
         <!-- Top bar -->
-        <div class="flex items-center justify-between px-4 py-3 shrink-0" @click.stop>
-          <span class="text-sm text-white font-medium truncate max-w-xs">{{ entry.name }}</span>
+        <div class="flex items-center gap-2 px-4 py-3 shrink-0" @click.stop>
+          <!-- Close first, on the left, as in the modals -->
+          <button
+            class="shrink-0 -ml-1.5 text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-blue-500"
+            aria-label="Close"
+            title="Close"
+            @click="emit('close')"
+          >
+            <AppIcon name="x" class="size-5" />
+          </button>
+          <span class="min-w-0 flex-1 text-sm text-white font-medium truncate">{{ entry.name }}</span>
           <div class="flex items-center gap-3 shrink-0 ml-4">
             <span class="text-xs text-zinc-400 tabular-nums">{{ index + 1 }} / {{ total }}</span>
             <button
@@ -283,12 +292,6 @@ onUnmounted(() => {
               @click.stop="emit('delete', entry)"
             >
               <AppIcon name="trash" class="size-5" />
-            </button>
-            <button
-              class="text-zinc-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
-              @click="emit('close')"
-            >
-              <AppIcon name="x" class="size-5" />
             </button>
           </div>
         </div>

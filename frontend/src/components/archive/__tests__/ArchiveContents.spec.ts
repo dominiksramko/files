@@ -135,21 +135,21 @@ describe('ArchiveContents', () => {
 
   it('keeps the same height in every folder', async () => {
     await mountArchive('/?archive=Archive.tar.gz')
-    expect(card().classList).toContain('h-[90vh]')
+    expect(card().classList).toContain('sm:h-[90vh]')
     row('WTF').click()
     await shows(['Ann', 'Bob'])
-    expect(card().classList).toContain('h-[90vh]')
+    expect(card().classList).toContain('sm:h-[90vh]')
   })
 
   it('fits a password prompt or an error to its size', async () => {
     await mountArchive('/?archive=locked.7z', () => Promise.reject(new PasswordRequiredError()))
     await vi.waitFor(() => expect(document.body.textContent).toContain('file names are password protected'))
-    expect(card().classList).not.toContain('h-[90vh]')
+    expect(card().classList).not.toContain('sm:h-[90vh]')
     cleanups.splice(0).forEach((cleanup) => cleanup())
     vi.restoreAllMocks()
     await mountArchive('/?archive=broken.zip', () => Promise.reject(new Error('not a valid zip file')))
     await vi.waitFor(() => expect(document.body.textContent).toContain('not a valid zip file'))
-    expect(card().classList).not.toContain('h-[90vh]')
+    expect(card().classList).not.toContain('sm:h-[90vh]')
   })
 
   it('asks for no password when the archive needs none', async () => {

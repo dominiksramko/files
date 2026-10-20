@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, h } from 'vue'
+import { createApp, h, nextTick, ref } from 'vue'
 import AppDialog from '@/components/ui/AppDialog.vue'
 
 const cleanups: (() => void)[] = []
@@ -27,6 +27,29 @@ describe('AppDialog', () => {
 
   it('has no actions row without actions', () => {
     expect(mountDialog({ default: () => h('p', 'Done') }).querySelector('[data-dialog-actions]')).toBeNull()
+  })
+
+  it('puts the cursor in its autofocus field, and gives focus back when it closes', async () => {
+    const open = ref(false)
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      render: () => [
+        h('button', { id: 'opener' }, 'New folder'),
+        h(AppDialog, { open: open.value }, { default: () => h('input', { id: 'name', autofocus: true }) }),
+      ],
+    })
+    app.mount(root)
+    cleanups.push(() => { app.unmount(); root.remove() })
+    document.getElementById('opener')!.focus()
+    open.value = true
+    await nextTick()
+    await nextTick()
+    expect(document.activeElement!.id).toBe('name')
+    open.value = false
+    await nextTick()
+    await nextTick()
+    expect(document.activeElement!.id).toBe('opener')
   })
 })
 

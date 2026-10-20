@@ -131,7 +131,7 @@ function plural(count: number, word: string): string {
 </script>
 
 <template>
-  <AppModal title="Disk usage" size="xl" close-on-escape fixed-height @close="close">
+  <AppModal title="Disk usage" size="xl" fixed-height @close="close">
     <div ref="content" class="space-y-4">
       <!-- Where: the breadcrumb starts at the scanned folder -->
       <div class="h-10 flex items-center rounded-lg bg-zinc-950/60 border border-zinc-800 px-1">

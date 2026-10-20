@@ -104,6 +104,10 @@ const TRANSFORMS = [
 
 const DEFAULT_TEMPLATE = '{name}.{ext}'
 const template = ref(DEFAULT_TEMPLATE)
+// The template it opened with (the folder's saved one, if any): closing
+// would lose one written since.
+const openedTemplate = ref(DEFAULT_TEMPLATE)
+const templateChanged = computed(() => template.value !== openedTemplate.value)
 const editorRef = ref<HTMLDivElement | null>(null)
 const savedCaretOffset = ref(0)
 
@@ -309,7 +313,7 @@ function openPopover(
   const el = triggerRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
-  const cardRect = (el.closest('.rounded-xl') as HTMLElement | null)?.getBoundingClientRect()
+  const cardRect = (el.closest('[data-modal-card]') as HTMLElement | null)?.getBoundingClientRect()
     ?? { left: 0, right: window.innerWidth }
   posRef.value = {
     top: rect.bottom + 6,
@@ -340,8 +344,18 @@ function closeAllPopovers() {
   showPresetsPopover.value = false
 }
 
+// Escape closes an open popover first, before it reaches the modal (which
+// listens on window, after this capturing listener).
+function closePopoverOnEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !(showVarPicker.value || showTransformsPopover.value || showPresetsPopover.value)) return
+  event.preventDefault()
+  closeAllPopovers()
+}
+
+onMounted(() => window.addEventListener('keydown', closePopoverOnEscape, { capture: true }))
 onUnmounted(() => {
   document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('keydown', closePopoverOnEscape, { capture: true })
   debouncedFetchPreview.cancel()
 })
 
@@ -494,7 +508,9 @@ onMounted(async () => {
   await Promise.all([
     loadPresets(),
     renamer.getFolderTemplate(props.folder).then((result) => {
-      if (result.template) template.value = result.template
+      if (!result.template) return
+      template.value = result.template
+      openedTemplate.value = result.template
     }).catch(() => {}),
   ])
   renderEditorContent()
@@ -503,7 +519,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <AppModal title="Rename (advanced)" size="xl" @close="emit('close')">
+  <AppModal title="Rename (advanced)" size="xl" :dirty="templateChanged" @close="emit('close')">
     <div class="flex flex-col gap-3">
 
       <!-- Template input -->

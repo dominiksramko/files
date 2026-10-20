@@ -61,6 +61,13 @@ function close() {
   router.push({ query: withArchiveState(route.query, null) })
 }
 
+// Escape in the search clears it; with nothing to clear it closes the modal.
+function clearSearch(event: KeyboardEvent) {
+  if (!search.value) return
+  event.preventDefault()
+  search.value = ''
+}
+
 // A search result opens itself if it's a folder, else the folder holding it.
 function openItem(item: ArchiveItem) {
   if (item.is_dir) openFolder(item.path)
@@ -123,7 +130,7 @@ onMounted(() => load())
 <template>
   <!-- The same height in every folder, so moving between them doesn't make
        the modal jump; a password to type or an error needs only its own. -->
-  <AppModal size="lg" :fixed-height="!passwordRequired && !error" @close="close">
+  <AppModal :title="name" size="lg" :fixed-height="!passwordRequired && !error" @close="close">
     <!-- The archive's name once: the breadcrumb's first crumb is the title -->
     <template #title>
       <div class="min-w-0 flex-1 -my-2 -ml-2 flex">
@@ -172,7 +179,7 @@ onMounted(() => load())
           autocomplete="off"
           :placeholder="folder ? 'Search this folder…' : 'Search the archive…'"
           class="w-full bg-zinc-800 text-zinc-100 placeholder-zinc-500 rounded-lg pl-8 pr-3 py-2 text-sm border border-transparent focus:outline-none focus:border-zinc-600 transition-colors"
-          @keydown.escape="search = ''"
+          @keydown.escape="clearSearch"
         />
       </div>
       <p class="shrink-0 text-xs text-zinc-500 mb-2">

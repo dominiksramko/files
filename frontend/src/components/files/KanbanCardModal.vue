@@ -87,7 +87,7 @@ function onMoveSelect(columnId: string | number) {
 </script>
 
 <template>
-  <AppModal :title="columnTitle || 'Card'" size="lg" close-on-escape @close="emit('close')">
+  <AppModal :title="columnTitle || 'Card'" size="lg" @close="emit('close')">
     <div class="flex flex-col gap-5">
       <!-- Title -->
       <textarea

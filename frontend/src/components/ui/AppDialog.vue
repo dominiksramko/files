@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useEscapeToClose } from '@/composables/useEscapeToClose'
+import { useModalFocus } from '@/composables/useModalFocus'
 
 // A small centred dialog (confirmations, a name to type). It's marked as a
-// modal, so the preview behind it ignores keys, and Escape closes it. Its
+// modal, so the preview behind it ignores keys, and Escape closes it; focus
+// moves into it while it's open (useModalFocus — mark the field to type in
+// with autofocus) and goes back when it closes. Its
 // buttons go in the actions slot, which keeps them apart from the content
 // (24px, three times the 8px within a group) and spaces them 8px.
 const props = withDefaults(defineProps<{
@@ -15,6 +18,7 @@ const emit = defineEmits<{ close: [] }>()
 
 const card = ref<HTMLElement | null>(null)
 useEscapeToClose(card, () => props.open, () => emit('close'))
+useModalFocus(card, () => props.open)
 </script>
 
 <template>
@@ -29,7 +33,8 @@ useEscapeToClose(card, () => props.open, () => emit('close'))
         ref="card"
         role="dialog"
         aria-modal="true"
-        :class="['bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl', width]"
+        tabindex="-1"
+        :class="['bg-zinc-900 border border-zinc-700 rounded-xl p-5 shadow-2xl focus:outline-none', width]"
       >
         <slot />
         <div v-if="$slots.actions" class="flex flex-wrap justify-end gap-2 mt-6" data-dialog-actions>

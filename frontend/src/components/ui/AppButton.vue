@@ -11,7 +11,7 @@ defineProps<{
     :type="type ?? 'button'"
     :disabled="disabled"
     :class="[
-      'px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+      'px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500',
       variant === 'primary'     && 'bg-blue-600 hover:bg-blue-500 text-white',
       variant === 'destructive' && 'bg-red-700 hover:bg-red-600 text-white',
       variant === 'secondary'   && 'bg-zinc-700 hover:bg-zinc-600 text-white',

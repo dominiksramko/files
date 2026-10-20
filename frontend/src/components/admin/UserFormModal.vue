@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { User } from '@/types'
 import { users as usersApi } from '@/utils/api'
+import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppCheckbox from '@/components/ui/AppCheckbox.vue'
@@ -18,6 +19,11 @@ const loading = ref(false)
 const error = ref('')
 
 const isEdit = ref(false)
+
+// The form as it was opened, to tell whether closing would lose anything.
+const fields = () => JSON.stringify([username.value, displayName.value, password.value, rootDir.value, isAdmin.value])
+const opened = ref('')
+const changed = computed(() => fields() !== opened.value)
 
 watch(
   () => props.user,
@@ -38,6 +44,7 @@ watch(
       isAdmin.value = false
     }
     error.value = ''
+    opened.value = fields()
   },
   { immediate: true },
 )
@@ -72,7 +79,7 @@ async function save() {
 </script>
 
 <template>
-  <AppModal :title="isEdit ? `Edit ${user?.username}` : 'Create user'" size="sm" @close="emit('close')">
+  <AppModal :title="isEdit ? `Edit ${user?.username}` : 'Create user'" size="sm" :dirty="changed" @close="emit('close')">
     <form class="space-y-3" @submit.prevent="save">
       <!-- Error -->
       <div
@@ -89,6 +96,7 @@ async function save() {
           type="text"
           autocomplete="off"
           :disabled="isEdit"
+          :autofocus="!isEdit"
           required
           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           placeholder="username"
@@ -100,6 +108,7 @@ async function save() {
         <input
           v-model="displayName"
           type="text"
+          :autofocus="isEdit"
           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
           placeholder="Alice Smith"
         />
@@ -139,20 +148,13 @@ async function save() {
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <button
-          class="text-sm text-zinc-400 hover:text-white px-4 py-2 rounded-lg hover:bg-zinc-800 transition-colors"
-          @click="emit('close')"
-        >
-          Cancel
-        </button>
-        <button
-          :disabled="loading"
-          class="flex items-center gap-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-colors"
-          @click="save"
-        >
-          <AppSpinner v-if="loading" size="sm" />
-          {{ isEdit ? 'Save' : 'Create' }}
-        </button>
+        <AppButton @click="emit('close')">Cancel</AppButton>
+        <AppButton variant="primary" :disabled="loading" @click="save">
+          <span class="flex items-center gap-1.5">
+            <AppSpinner v-if="loading" size="sm" />
+            {{ isEdit ? 'Save' : 'Create' }}
+          </span>
+        </AppButton>
       </div>
     </template>
   </AppModal>
