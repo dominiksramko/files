@@ -5,6 +5,7 @@ import { files as filesApi } from '@/utils/api'
 import FileIcon from './FileIcon.vue'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { escapeHtml } from '@/utils/html'
 
 const props = defineProps<{
   entries: FileEntry[]
@@ -36,18 +37,14 @@ function download(entry: FileEntry, e: Event) {
 }
 
 function highlight(name: string, q: string): string {
-  if (!q) return esc(name)
+  if (!q) return escapeHtml(name)
   const idx = name.toLowerCase().indexOf(q.toLowerCase())
-  if (idx === -1) return esc(name)
+  if (idx === -1) return escapeHtml(name)
   return (
-    esc(name.slice(0, idx)) +
-    `<mark class="bg-yellow-400/30 text-yellow-200 rounded-sm">${esc(name.slice(idx, idx + q.length))}</mark>` +
-    esc(name.slice(idx + q.length))
+    escapeHtml(name.slice(0, idx)) +
+    `<mark class="bg-yellow-400/30 text-yellow-200 rounded-sm">${escapeHtml(name.slice(idx, idx + q.length))}</mark>` +
+    escapeHtml(name.slice(idx + q.length))
   )
-}
-
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 </script>
 

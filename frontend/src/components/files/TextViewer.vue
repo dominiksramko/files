@@ -8,6 +8,7 @@ import { useToast } from '@/composables/useToast'
 import { isMarkdownFile } from '@/utils/formatters'
 import { mergeText } from '@/utils/merge'
 import { renderMarkdown } from '@/utils/markdown'
+import { escapeHtml } from '@/utils/html'
 import EditableFileState from '@/components/files/EditableFileState.vue'
 
 const props = defineProps<{ entry: FileEntry; initialEdit?: boolean }>()
@@ -125,10 +126,6 @@ const renderedMarkdown = computed(() => {
   if (!isMarkdown.value || textContent.value === null) return ''
   return renderMarkdown(textContent.value, props.entry.path)
 })
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
 
 function highlightCode(raw: string | null): string {
   if (!raw) return ''

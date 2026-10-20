@@ -22,6 +22,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
+- Responses that return a user's file inline (stream, content, office link) call `setUserFileHeaders(c, name)` first: `nosniff` plus a `Content-Security-Policy: sandbox`, so an HTML/SVG file opened directly can't run as part of the app (PDFs exempt — browsers won't show them sandboxed). New endpoints serving file bytes must do the same.
 
 ## Tests (IMPORTANT)
 - **Every function you add or change gets tests in the same change** — the behaviour it's for, and the ways it must refuse (bad paths, conflicts, other users' files). For a bug fix, add a test that fails without the fix.
@@ -77,7 +78,7 @@ File types with their own editor (`.todo` → `TodoViewer`, `.kanban` → `Kanba
 - **Registration:** `isXFile()` + category in `utils/formatters.ts` (classified before the mime checks), the view's name in `customViewName()` (enables the preview header's "View as text" toggle and the "Open as text" file op), `FileCategory` in `types/index.ts`, icon in `icons.ts`, viewer in `FilePreview.vue` `viewerFor()`, and an entry in `newFileTypes` in `FilesView.vue` — the single list behind the toolbar, mobile menu and context-menu "New …" items (they create the file with `fileops.create`, which never overwrites an existing one). Backend `mimeByExt` maps the extension to `text/plain`.
 - **Checklists:** `useChecklistEditor` (`composables/`) + `TodoRow.vue` for any Enter/Backspace-driven checkbox list.
 - **Drag and drop:** `vue-draggable-plus` with `:force-fallback="true"`, `ghost-class="drag-ghost"`, `fallback-class="drag-fallback"` (global styles in `src/style.css`).
-- **Markdown:** render with `renderMarkdown(source, entryPath)` from `utils/markdown.ts` inside a `.markdown-body` element.
+- **Markdown:** render with `renderMarkdown(source, entryPath)` from `utils/markdown.ts` inside a `.markdown-body` element. It returns sanitised HTML (DOMPurify), safe for `v-html`. Never put any other file content into `v-html`; HTML built as a string escapes its text with `escapeHtml()` from `utils/html.ts`.
 - **Horizontal gestures:** mark regions that scroll/drag sideways with `data-no-carousel-swipe` so the preview carousel doesn't treat them as prev/next swipes. Don't `.stop` touch events instead — SortableJS listens on `document`.
 - **Escape inside a viewer:** if an Escape handler removes the focused element, use `@keydown.escape.stop`, otherwise the preview's window listener sees focus on `<body>` and closes the preview.
 

@@ -117,5 +117,6 @@ func (h *OfficeHandler) ServeFile(c *gin.Context) {
 		return
 	}
 
+	setUserFileHeaders(c, abs)
 	c.File(abs)
 }

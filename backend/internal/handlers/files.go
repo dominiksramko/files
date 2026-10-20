@@ -217,6 +217,7 @@ func (h *FilesHandler) Stream(c *gin.Context) {
 		return
 	}
 
+	setUserFileHeaders(c, abs)
 	mime := mimeByExt(filepath.Ext(abs))
 	if needsImageConversion(mime) && info.Size() <= convertSizeLimit {
 		h.convertAndStream(c, abs, mime)
@@ -275,6 +276,7 @@ func (h *FilesHandler) ReadContent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	setUserFileHeaders(c, abs)
 	c.Header("ETag", `"`+contentVersion(data)+`"`)
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
@@ -701,6 +703,19 @@ func safeChildPaths(root string, rels []string) ([]string, error) {
 		paths = append(paths, abs)
 	}
 	return paths, nil
+}
+
+// setUserFileHeaders protects a response that returns a user's file inline,
+// from the app's own address. The browser must keep the type it's given rather
+// than guess one, and the file is sandboxed: an HTML or SVG file opened
+// directly, or anything a browser would show as a page, runs isolated from the
+// app, with no access to the session. PDFs aren't sandboxed (browsers refuse to
+// show them then); a PDF can't reach the page anyway.
+func setUserFileHeaders(c *gin.Context, name string) {
+	c.Header("X-Content-Type-Options", "nosniff")
+	if strings.ToLower(filepath.Ext(name)) != ".pdf" {
+		c.Header("Content-Security-Policy", "sandbox")
+	}
 }
 
 // isWithin reports whether abs is dir or inside it. It compares whole path

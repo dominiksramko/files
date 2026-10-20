@@ -9,6 +9,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import PresetPill from '@/components/files/PresetPill.vue'
+import { escapeHtml } from '@/utils/html'
 
 const props = defineProps<{
   files: FileEntry[]
@@ -106,9 +107,6 @@ const template = ref(DEFAULT_TEMPLATE)
 const editorRef = ref<HTMLDivElement | null>(null)
 const savedCaretOffset = ref(0)
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
 
 function getCaretCharOffset(el: HTMLElement): number {
   const selection = window.getSelection()
