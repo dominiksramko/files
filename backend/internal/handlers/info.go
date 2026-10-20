@@ -50,9 +50,7 @@ type FileMeta struct {
 func (h *InfoHandler) SizeStream(c *gin.Context) {
 	rels := c.QueryArray("paths[]")
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("X-Accel-Buffering", "no") // disable nginx buffering
+	startEventStream(c)
 
 	type Progress struct {
 		Files int64 `json:"files"`
@@ -66,9 +64,7 @@ func (h *InfoHandler) SizeStream(c *gin.Context) {
 
 	flush := func(done bool) {
 		p.Done = done
-		data, _ := json.Marshal(p)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		c.Writer.Flush()
+		writeEvent(c, "", p)
 	}
 
 	fsys, err := userFS(c)

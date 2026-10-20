@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -59,11 +57,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	c.Writer.Flush()
+	startEventStream(c)
 
 	// Subscribe to thumbnail hub (nil channel when thumbs disabled → never fires in select).
 	var thumbCh <-chan thumbs.ThumbEvent
@@ -74,25 +68,12 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 		go enqueueFolder(h.thumbs, fsys, folder, folderAbs)
 	}
 
-	// A failed write means the client is gone; the handler returns.
-	writeEvent := func(event string, payload any) error {
-		data, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", event, data); err != nil {
-			return err
-		}
-		c.Writer.Flush()
-		return nil
-	}
-
 	sendSnapshot := func() error {
 		files, err := h.listDir(fsys, folder)
 		if err != nil {
 			return err
 		}
-		return writeEvent("snapshot", files)
+		return writeEvent(c, "snapshot", files)
 	}
 
 	// buildEntry describes the entry name in the folder, and returns its real
@@ -127,7 +108,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 
 			if p.op.Has(fsnotify.Create) {
 				if fe, entryAbs, ok := buildEntry(entryName); ok {
-					if err := writeEvent("add", fe); err != nil {
+					if err := writeEvent(c, "add", fe); err != nil {
 						return err
 					}
 					if h.thumbs != nil && entryAbs != "" && !fe.IsDir && thumbs.IsThumbnailable(fe.Mime) {
@@ -135,12 +116,12 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 					}
 				}
 			} else if p.op.Has(fsnotify.Remove) || p.op.Has(fsnotify.Rename) {
-				if err := writeEvent("remove", map[string]string{"path": filepath.ToSlash(entryName)}); err != nil {
+				if err := writeEvent(c, "remove", map[string]string{"path": filepath.ToSlash(entryName)}); err != nil {
 					return err
 				}
 			} else if p.op.Has(fsnotify.Write) || p.op.Has(fsnotify.Chmod) {
 				if fe, _, ok := buildEntry(entryName); ok {
-					if err := writeEvent("update", fe); err != nil {
+					if err := writeEvent(c, "update", fe); err != nil {
 						return err
 					}
 				}
@@ -192,7 +173,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 		case <-pingTicker.C:
 			// The session was checked when the stream opened; end the stream if
 			// it has ended since (logout elsewhere, password change, user deleted).
-			if !sessionStillValid(c) || writeEvent("ping", struct{}{}) != nil {
+			if !sessionStillValid(c) || writeEvent(c, "ping", struct{}{}) != nil {
 				return
 			}
 
@@ -201,7 +182,7 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 				thumbCh = nil
 				continue
 			}
-			if writeEvent("thumb", map[string]string{"hash": event.Hash}) != nil {
+			if writeEvent(c, "thumb", map[string]string{"hash": event.Hash}) != nil {
 				return
 			}
 

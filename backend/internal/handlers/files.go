@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -613,20 +612,16 @@ func buildConvertArgs(ctx context.Context, srcPath, mime string) []string {
 
 // GET /api/v1/files/search?q=query&path=optional_subfolder
 // Streams results as SSE: each match is a "data: <json>\n\n" event,
-// followed by "event: done\ndata: {}\n\n" when the walk is complete.
+// followed by "data: {\"done\":true}" when the walk is complete.
 func (h *FilesHandler) Search(c *gin.Context) {
 	query := strings.ToLower(strings.TrimSpace(c.Query("q")))
 	basePath := c.Query("path")
 	showHidden := c.Query("hidden") == "true"
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
+	startEventStream(c)
 
 	done := func() {
-		fmt.Fprintf(c.Writer, "data: {\"done\":true}\n\n")
-		c.Writer.Flush()
+		writeEvent(c, "", gin.H{"done": true})
 	}
 
 	if query == "" {
@@ -695,9 +690,9 @@ func (h *FilesHandler) Search(c *gin.Context) {
 			if realPath != "" {
 				entry.CreatedAt = getBirthTime(realPath)
 			}
-			data, _ := json.Marshal(entry)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
+			if writeEvent(c, "", entry) != nil {
+				return filepath.SkipAll
+			}
 			count++
 		}
 		return nil
