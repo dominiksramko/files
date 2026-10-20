@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { auth as authApi, files as filesApi, NotFoundError } from '@/utils/api'
+import { files as filesApi, NotFoundError } from '@/utils/api'
 import { useToast } from '@/composables/useToast'
 import { debounce } from '@/utils/debounce'
 import type { FileEntry } from '@/types'
@@ -10,12 +10,18 @@ import type { FileEntry } from '@/types'
 const WATCH_SILENCE_LIMIT_MS = 60_000
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
+// How long a missing folder gets to reappear (e.g. replaced by a sync tool)
+// before the view moves away from it.
+const FOLDER_GONE_GRACE_MS = 3_000
 
 export const useFilesStore = defineStore('files', () => {
   const currentPath = ref('')
   const entries = ref<FileEntry[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  // Set when the open folder turned out to be gone: where the view should go
+  // instead (its nearest existing parent). The view clears it.
+  const folderGone = ref<string | null>(null)
   const { show: showToast } = useToast()
 
   // ── Live updates ───────────────────────────────────────────────────────────
@@ -42,6 +48,8 @@ export const useFilesStore = defineStore('files', () => {
 
   function watchDisconnect() {
     closeWatchSource()
+    confirmGone?.cancel()
+    confirmGone = null
     watchedPath = null
   }
 
@@ -115,10 +123,31 @@ export const useFilesStore = defineStore('files', () => {
         if (watchSource !== source) return
         closeWatchSource()
         scheduleReconnect()
-        // A stream can't tell why it failed. If the session ended, asking the
-        // server about it brings up the login page (which also stops this).
-        authApi.me().catch(() => { /* answered via onSessionEnded, or offline */ })
+        checkAfterStreamError(path)
       }
+    })
+  }
+
+  // A stream can't tell why it failed; asking for the folder's listing does. A
+  // 401 brings up the login page (onSessionEnded, which also stops this); a
+  // 404 means the folder is gone — if it's still gone after a grace period,
+  // stop following it and say where to go.
+  let confirmGone: ReturnType<typeof debounce> | null = null
+  function checkAfterStreamError(path: string, final = false) {
+    filesApi.list(path).catch((err: unknown) => {
+      if (!(err instanceof NotFoundError) || watchedPath !== path) return
+      if (!final) {
+        if (!confirmGone) {
+          confirmGone = debounce(() => {
+            confirmGone = null
+            checkAfterStreamError(path, true)
+          }, FOLDER_GONE_GRACE_MS)
+          confirmGone()
+        }
+        return
+      }
+      watchDisconnect()
+      folderGone.value = err.fallbackPath
     })
   }
 
@@ -189,5 +218,5 @@ export const useFilesStore = defineStore('files', () => {
     error.value = null
   }
 
-  return { currentPath, entries, loading, error, navigate, refresh, reset, watchDisconnect }
+  return { currentPath, entries, loading, error, folderGone, navigate, refresh, reset, watchDisconnect }
 })

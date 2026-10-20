@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -68,5 +70,33 @@ func TestWatchEndsOnShutdown(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("watch stream still open after EndStreams")
+	}
+}
+
+func TestWatchEndsWhenItsFolderGoes(t *testing.T) {
+	for name, takeAway := range map[string]func(folder string) error{
+		"removed": os.RemoveAll,
+		"renamed": func(folder string) error { return os.Rename(folder, folder+"-old") },
+	} {
+		annRoot, _ := newUserFolders(t)
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/?path=docs", nil)
+		ctx.Set("rootDir", annRoot)
+
+		done := make(chan struct{})
+		go func() {
+			NewFilesHandler(nil, "").Watch(ctx)
+			close(done)
+		}()
+		time.Sleep(150 * time.Millisecond)
+		if err := takeAway(filepath.Join(annRoot, "docs")); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Errorf("%s: watch stream still open after its folder went", name)
+		}
 	}
 }

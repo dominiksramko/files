@@ -159,6 +159,12 @@ func (h *FilesHandler) Watch(c *gin.Context) {
 			if !ok {
 				return
 			}
+			// The watched folder itself was removed or renamed: nothing more will
+			// come through this watcher, even if a folder of that name returns.
+			// End the stream; the app reconnects and resyncs.
+			if filepath.Clean(event.Name) == folderAbs && event.Op.Has(fsnotify.Remove|fsnotify.Rename) {
+				return
+			}
 			name := filepath.Base(event.Name)
 			existing, has := debounce[name]
 			op := event.Op

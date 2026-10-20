@@ -253,6 +253,15 @@ async function navigate(path: string) {
   router.push({ query: actualPath ? { path: actualPath } : {} })
 }
 
+// The open folder was removed (seen by the live stream): go to its nearest
+// existing parent.
+watch(() => filesStore.folderGone, (fallback) => {
+  if (fallback === null) return
+  filesStore.folderGone = null
+  showToast('This folder no longer exists', 'info')
+  navigate(fallback)
+})
+
 watch(previewEntry, (entry) => {
   const currentPreview = route.query.preview as string | undefined
   if (entry?.path === currentPreview) return
