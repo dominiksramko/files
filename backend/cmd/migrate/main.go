@@ -57,25 +57,29 @@ func main() {
 	fmt.Printf("created: %s\n", outPath)
 }
 
-// buildContent returns the source for a new migration file.
-// Backtick raw strings can't appear inside raw string literals in Go, so we
-// assemble the template using a named constant.
+// buildContent returns the source for a new migration file. Until its Up and
+// Down are written they fail rather than do nothing: the dev server reloads,
+// and migrates, as soon as the file is saved, and an empty migration would be
+// recorded as applied and never run again.
 func buildContent(version, name string) string {
-	const tick = "`"
-	return "package migrations\n\n" +
-		"import \"database/sql\"\n\n" +
-		"func init() {\n" +
-		"\tRegister(Migration{\n" +
-		"\t\tVersion: " + fmt.Sprintf("%q", version) + ",\n" +
-		"\t\tName:    " + fmt.Sprintf("%q", name) + ",\n" +
-		"\t\tUp: func(tx *sql.Tx) error {\n" +
-		"\t\t\t_, err := tx.Exec(" + tick + tick + ")\n" +
-		"\t\t\treturn err\n" +
-		"\t\t},\n" +
-		"\t\tDown: func(tx *sql.Tx) error {\n" +
-		"\t\t\t_, err := tx.Exec(" + tick + tick + ")\n" +
-		"\t\t\treturn err\n" +
-		"\t\t},\n" +
-		"\t})\n" +
-		"}\n"
+	return fmt.Sprintf(`package migrations
+
+import (
+	"database/sql"
+	"errors"
+)
+
+func init() {
+	Register(Migration{
+		Version: %q,
+		Name:    %q,
+		Up: func(tx *sql.Tx) error {
+			return errors.New("migration not written yet")
+		},
+		Down: func(tx *sql.Tx) error {
+			return errors.New("migration not written yet")
+		},
+	})
+}
+`, version, name)
 }

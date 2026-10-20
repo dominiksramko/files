@@ -41,7 +41,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Each migration file has `Up` and `Down` funcs; runs in a transaction
 - **To create a new migration:** `go run ./cmd/migrate <name>` from `backend/` dir
   - e.g. `go run ./cmd/migrate add_email_to_users`
-  - Generates a file with the current timestamp + name, with empty Up/Down stubs
+  - Generates a file with the current timestamp + name, whose Up/Down return an error until written — the dev server migrates as soon as a file is saved, and an empty migration would be recorded as applied and never run again
 - **Never edit or delete existing migration files** — only append new ones
 
 ## Frontend
