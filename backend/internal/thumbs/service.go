@@ -20,6 +20,14 @@ var toolTimeout = 2 * time.Minute
 
 const ThumbMaxDim = 320
 
+// unusedThumbAge: a thumbnail not shown for this long is deleted — its file
+// was most likely deleted or changed. It's made again if it's needed.
+const unusedThumbAge = 30 * 24 * time.Hour
+
+// usedMarkInterval: a thumbnail's last use is recorded (in its file's
+// modification time) at most this often.
+const usedMarkInterval = 24 * time.Hour
+
 // IsThumbnailable reports whether the given MIME type can be thumbnailed.
 func IsThumbnailable(mime string) bool {
 	if strings.HasPrefix(mime, "video/") {
@@ -68,6 +76,7 @@ type Service struct {
 	hub       *hub
 	sem       chan struct{}
 	hashCache sync.Map // absPath → hashCacheEntry
+	marked    sync.Map // thumbnail path → time.Time its use was last recorded
 }
 
 // New creates a Service, ensures the cache directory exists, and resets any
@@ -81,12 +90,14 @@ func New(db *sql.DB, cacheDir string) (*Service, error) {
 	if _, err := db.Exec(`DELETE FROM thumbnails WHERE status = 'pending'`); err != nil {
 		return nil, fmt.Errorf("reset pending thumbs: %w", err)
 	}
-	return &Service{
+	service := &Service{
 		db:       db,
 		cacheDir: cacheDir,
 		hub:      newHub(),
 		sem:      make(chan struct{}, maxConcurrent),
-	}, nil
+	}
+	go service.periodicCleanup()
+	return service, nil
 }
 
 // Hub exposes the internal hub so the HTTP handler can subscribe to events.
@@ -117,13 +128,14 @@ func (s *Service) HashIfReady(absPath string, mtime int64) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	var status string
+	var thumbFile, status string
 	err = s.db.QueryRow(
-		`SELECT status FROM thumbnails WHERE content_hash = ?`, hash,
-	).Scan(&status)
+		`SELECT thumb_file, status FROM thumbnails WHERE content_hash = ?`, hash,
+	).Scan(&thumbFile, &status)
 	if err != nil || status != "done" {
 		return "", false
 	}
+	s.markUsed(filepath.Join(s.cacheDir, thumbFile))
 	return hash, true
 }
 
@@ -171,7 +183,74 @@ func (s *Service) ThumbPathByHash(hash string) (string, bool) {
 	if err != nil || status != "done" {
 		return "", false
 	}
-	return filepath.Join(s.cacheDir, thumbFile), true
+	thumbPath := filepath.Join(s.cacheDir, thumbFile)
+	s.markUsed(thumbPath)
+	return thumbPath, true
+}
+
+// markUsed records that the thumbnail was just needed, so RemoveUnused keeps it.
+func (s *Service) markUsed(thumbPath string) {
+	now := time.Now()
+	if last, ok := s.marked.Load(thumbPath); ok && now.Sub(last.(time.Time)) < usedMarkInterval {
+		return
+	}
+	if os.Chtimes(thumbPath, now, now) == nil {
+		s.marked.Store(thumbPath, now)
+	}
+}
+
+// RemoveUnused deletes thumbnails not needed for unusedThumbAge (or whose
+// file is gone) and the records of failed attempts, which are retried when
+// the file is next listed anyway. It also forgets the hashes of files that
+// no longer exist.
+func (s *Service) RemoveUnused() error {
+	rows, err := s.db.Query(`SELECT content_hash, thumb_file, status FROM thumbnails WHERE status != 'pending'`)
+	if err != nil {
+		return fmt.Errorf("query thumbnails: %w", err)
+	}
+	var unused []string // content hashes
+	for rows.Next() {
+		var hash, thumbFile, status string
+		if rows.Scan(&hash, &thumbFile, &status) != nil {
+			continue
+		}
+		thumbPath := filepath.Join(s.cacheDir, thumbFile)
+		if info, err := os.Stat(thumbPath); status == "done" && err == nil && time.Since(info.ModTime()) <= unusedThumbAge {
+			continue
+		}
+		unused = append(unused, hash)
+		if err := os.Remove(thumbPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("thumbs: failed to delete %s: %v", thumbPath, err)
+		}
+		s.marked.Delete(thumbPath)
+	}
+	rows.Close()
+	for _, hash := range unused {
+		if _, err := s.db.Exec(`DELETE FROM thumbnails WHERE content_hash = ? AND status != 'pending'`, hash); err != nil {
+			return fmt.Errorf("delete thumbnail record: %w", err)
+		}
+	}
+	if len(unused) > 0 {
+		log.Printf("thumbs: removed %d unused thumbnails", len(unused))
+	}
+
+	s.hashCache.Range(func(absPath, _ any) bool {
+		if _, err := os.Stat(absPath.(string)); os.IsNotExist(err) {
+			s.hashCache.Delete(absPath)
+		}
+		return true
+	})
+	return nil
+}
+
+func (s *Service) periodicCleanup() {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		if err := s.RemoveUnused(); err != nil {
+			log.Printf("thumbs: %v", err)
+		}
+	}
 }
 
 func (s *Service) enqueue(t task) {
@@ -253,6 +332,7 @@ func (s *Service) ClearAll() error {
 	if _, err := s.db.Exec(`DELETE FROM thumbnails`); err != nil {
 		return fmt.Errorf("delete thumbnail records: %w", err)
 	}
+	s.marked.Clear()
 
 	deleted := 0
 	for _, thumbFile := range thumbFiles {

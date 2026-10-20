@@ -147,9 +147,9 @@ The port is published on `127.0.0.1` only, so nothing outside the machine reache
 | `PORT` | `8080` | Port the server listens on. |
 | `DB_PATH` | `/data/files.db` | SQLite database path. |
 | `USERS_ROOT` | `/data/users` | Parent directory for all user root folders. |
-| `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory. |
-| `HLS_CACHE_DIR` | `/data/hls` | HLS transcoding cache directory. |
-| `CONV_CACHE_DIR` | `/data/conv` | Cache of images and audio converted for previewing. |
+| `THUMB_CACHE_DIR` | `/data/thumbs` | Thumbnail cache directory. Thumbnails not shown for 30 days are deleted. |
+| `HLS_CACHE_DIR` | `/data/hls` | HLS transcoding cache directory. A video's segments are deleted 7 days after it was last played. |
+| `CONV_CACHE_DIR` | `/data/conv` | Cache of images and audio converted for previewing, kept for 7 days. |
 | `ADMIN_USERNAME` | `admin` | Initial admin username (first run only). |
 | `ADMIN_PASSWORD` | *(random)* | Initial admin password (first run only). Printed to logs if unset. |
 | `ADMIN_PATH` | `USERS_ROOT/<ADMIN_USERNAME>` | Initial admin root directory (first run only; created if missing). Can be changed later. |
