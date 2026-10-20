@@ -3,27 +3,28 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
-	"time"
 
 	"files/internal/middleware"
 	"files/internal/models"
+	"files/internal/sessions"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthHandler struct {
-	db        *sql.DB
-	jwtSecret string
+	db       *sql.DB
+	sessions *sessions.Store
 }
 
-func NewAuthHandler(db *sql.DB, jwtSecret string) *AuthHandler {
-	return &AuthHandler{db: db, jwtSecret: jwtSecret}
+func NewAuthHandler(db *sql.DB, sessionStore *sessions.Store) *AuthHandler {
+	return &AuthHandler{db: db, sessions: sessionStore}
 }
 
 // POST /api/v1/auth/login
+// Starts a session: sets the session cookie and responds with the user.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req struct {
 		Username string `json:"username" binding:"required"`
@@ -45,16 +46,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.generateToken(user)
+	token, expires, err := h.sessions.Create(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate token"})
+		log.Printf("login: starting a session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start session"})
 		return
 	}
+	middleware.SetSessionCookie(c, token, expires)
+	c.JSON(http.StatusOK, gin.H{"user": user.ToResponse()})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"token": token,
-		"user":  user.ToResponse(),
-	})
+// POST /api/v1/auth/logout
+// Ends this session on the server and drops the cookie. Works without a live
+// session too, so a stale cookie can always be cleared.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	if token, err := c.Cookie(middleware.SessionCookie); err == nil && token != "" {
+		if err := h.sessions.Delete(token); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not end session"})
+			return
+		}
+	}
+	middleware.ClearSessionCookie(c)
+	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
 // GET /api/v1/auth/me
@@ -69,6 +82,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 }
 
 // PUT /api/v1/auth/password
+// Also ends the user's other sessions, e.g. one on a lost or shared device.
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	userID := c.GetInt64("userID")
 
@@ -100,6 +114,10 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	if _, err := h.db.Exec(`UPDATE users SET password = ? WHERE id = ?`, string(hash), userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update password"})
+		return
+	}
+	if err := h.sessions.DeleteForUser(userID, c.GetString("sessionToken")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "password updated, but other sessions could not be ended"})
 		return
 	}
 
@@ -195,19 +213,4 @@ func (h *AuthHandler) UpdateSubtitlePrefs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, prefs)
-}
-
-func (h *AuthHandler) generateToken(u *models.User) (string, error) {
-	claims := middleware.Claims{
-		UserID:   u.ID,
-		Username: u.Username,
-		IsAdmin:  u.IsAdmin,
-		RootDir:  u.RootDir,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.jwtSecret))
 }

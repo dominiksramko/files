@@ -33,9 +33,7 @@ async function loadPdf() {
       import.meta.url,
     ).toString()
 
-    const response = await fetch(streamUrl, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
-    })
+    const response = await fetch(streamUrl)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const arrayBuffer = await response.arrayBuffer()
 

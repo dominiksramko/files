@@ -12,9 +12,9 @@ import (
 	"files/internal/database"
 	"files/internal/handlers"
 	"files/internal/middleware"
+	"files/internal/sessions"
 	"files/internal/thumbs"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -34,20 +34,7 @@ func main() {
 	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
 		log.Fatalf("TRUSTED_PROXIES: %v", err)
 	}
-
-	// CORS — allow Vite dev server in development
-	r.Use(cors.New(cors.Config{
-		AllowOriginFunc: func(origin string) bool {
-			return strings.HasPrefix(origin, "http://localhost:") ||
-				strings.HasPrefix(origin, "http://192.168.") ||
-				strings.HasPrefix(origin, "http://10.") ||
-				strings.HasPrefix(origin, "http://172.")
-		},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Disposition"},
-		AllowCredentials: true,
-	}))
+	sessionStore := sessions.NewStore(db)
 
 	// Thumbnail service (non-fatal if it fails — server runs without thumbnails)
 	thumbSvc, err := thumbs.New(db, cfg.ThumbCacheDir)
@@ -57,7 +44,7 @@ func main() {
 	}
 
 	// Handlers
-	authH := handlers.NewAuthHandler(db, cfg.JWTSecret)
+	authH := handlers.NewAuthHandler(db, sessionStore)
 	filesH := handlers.NewFilesHandler(thumbSvc, cfg.ConvCacheDir)
 	archiveH := handlers.NewArchiveHandler()
 	foldersH := handlers.NewFoldersHandler(db)
@@ -65,7 +52,7 @@ func main() {
 	subsH := handlers.NewSubtitlesHandler()
 	thumbH := handlers.NewThumbnailHandler(thumbSvc)
 	cacheH := handlers.NewCacheHandler(thumbSvc, cfg.HLSCacheDir, cfg.ConvCacheDir)
-	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot)
+	usersH := handlers.NewUsersHandler(db, cfg.UsersRoot, sessionStore)
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 	infoH := handlers.NewInfoHandler()
 	progressH := handlers.NewProgressHandler(db)
@@ -75,13 +62,14 @@ func main() {
 	advancedRenameH := handlers.NewAdvancedRenamerHandler(db)
 
 	// Auth middleware (applied per group)
-	authMiddleware := middleware.Auth(db, cfg.JWTSecret)
+	authMiddleware := middleware.Auth(sessionStore)
 	adminOnly := middleware.AdminOnly()
 
-	api := r.Group("/api/v1")
+	api := r.Group("/api/v1", middleware.SameOrigin())
 	{
 		// Public
 		api.POST("/auth/login", authH.Login)
+		api.POST("/auth/logout", authH.Logout)
 
 		// Authenticated
 		authed := api.Group("", authMiddleware)

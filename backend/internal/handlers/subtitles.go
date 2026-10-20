@@ -41,7 +41,7 @@ func NewSubtitlesHandler() *SubtitlesHandler {
 }
 
 // SubtitleTrack is the shape returned by the List endpoint.
-// url is a /api/v1/files/subtitle?… path without a token; the caller appends &token=.
+// url is a ready-to-use /api/v1/files/subtitle?… path.
 type SubtitleTrack struct {
 	Label   string `json:"label"`
 	Srclang string `json:"srclang"`

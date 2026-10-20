@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
-      # Required: set a stable secret so sessions survive restarts.
+      # Required: signs the short-lived links Office previews use; keep it stable.
       # Generate one with: openssl rand -hex 32
       JWT_SECRET: "${JWT_SECRET}"
       # Optional: set the initial admin credentials (only used on first run).

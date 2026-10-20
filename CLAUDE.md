@@ -19,7 +19,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Entry: `backend/cmd/server/main.go`
 - Config: `backend/internal/config/config.go` (env vars: PORT, JWT_SECRET, DB_PATH, USERS_ROOT, GIN_MODE, THUMB_CACHE_DIR, HLS_CACHE_DIR, CONV_CACHE_DIR, ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_PATH, TRUSTED_PROXIES)
 - Production container runs the server as `PUID:PGID` (default 1000), never root: `backend/docker-entrypoint.sh` hands the database and caches to that user, then drops privileges with `su-exec`; `docker-entrypoint_test.sh` runs in the image build. Anything the server writes must live in `/data` (or `/tmp`).
-- Auth middleware: `backend/internal/middleware/auth.go` — accepts JWT from `Authorization: Bearer` header OR `?token=` query param
+- Login sessions: server-side (`backend/internal/sessions/`, table `sessions`); the browser holds only an HttpOnly, SameSite=Strict cookie (`files_session`), which it sends with fetches, images, video, downloads and EventSource alike — **never put credentials in URLs**. `middleware.Auth` looks the session up with the user's *current* details on every request (sets `userID`, `username`, `isAdmin`, `rootDir`, `sessionToken`). Sessions stay alive while used: 7 days unused or 30 days after login ends them; logout, a password change (other sessions) and deleting a user end them at once. `middleware.SameOrigin` refuses state-changing requests the browser marks as from another site.
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
@@ -30,7 +30,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Run them in the dev stack: `docker compose -f docker-compose.dev.yml exec backend go test ./...` and `... exec frontend npm test` (`npm run test:watch` while working).
 - They gate production: the builder stages of `backend/Dockerfile` run `go vet` + `go test` and `npm test`, so `deploy.sh` stops before replacing the running containers if any fail.
 - **Frontend:** Vitest, specs in a `__tests__/` folder next to the code (`src/utils/__tests__/merge.spec.ts`), named `*.spec.ts`. Keep logic in plain functions in `utils/` so it can be tested without mounting components.
-- **Backend** helpers in `backend/internal/handlers/handlers_test.go`: `serve` / `serveJSON` call a handler as a logged-in user with a given home folder (no router or token needed); `newUserFolders` creates neighbouring home folders `ann` and `anna`; `assertUnchanged`, `assertFileContent`, `assertMissing`, `assertStatus`, `decodeResponse`. Keep logic testable: pure helpers for decisions, handlers only for request/response.
+- **Backend** helpers in `backend/internal/handlers/handlers_test.go`: `serve` / `serveJSON` call a handler as a logged-in user with a given home folder (no router or session needed); `sessionRouter` / `login` / `call` in `auth_test.go` go through the real session middleware; `internal/testutil` (`OpenDB`, `CreateUser`) gives any package a migrated database; `newUserFolders` creates neighbouring home folders `ann` and `anna`; `assertUnchanged`, `assertFileContent`, `assertMissing`, `assertStatus`, `decodeResponse`. Keep logic testable: pure helpers for decisions, handlers only for request/response.
 - Paths from requests: `safePath` for reading or as a destination folder; `safeChildPath` / `safeChildPaths` for an item that gets created, replaced, renamed, moved or deleted — it also refuses the home folder itself, whose parent holds the other users' folders.
 
 ## Database Migrations (IMPORTANT)
@@ -46,7 +46,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 
 ## Frontend
 - Stack: Vue3 + TypeScript + Pinia + Vue Router v5 + Tailwind v4
-- API client: `frontend/src/utils/api.ts` (uses fetch, attaches Bearer token)
+- API client: `frontend/src/utils/api.ts` (uses fetch; the session cookie goes along by itself). Whether the user is logged in is only known by asking the server (`auth.restoreSession()`), as scripts can't read the cookie.
 - Stores: `auth.ts` (login/logout, user), `files.ts` (current path + directory listing)
 - Types: `frontend/src/types/index.ts`
 - Dev proxy: Vite proxies `/api` → `http://localhost:8080`

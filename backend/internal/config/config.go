@@ -31,7 +31,7 @@ func Load() *Config {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = randomHex(32)
-		log.Println("WARNING: JWT_SECRET not set — generated a random secret (all sessions will be invalidated on restart)")
+		log.Println("WARNING: JWT_SECRET not set — generated a random secret (Office preview links stop working on restart)")
 	}
 
 	return &Config{

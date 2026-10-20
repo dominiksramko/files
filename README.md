@@ -78,7 +78,7 @@ Video and audio resume from where you left off, per user.
 - Per-user style preferences (font, size, colour, position)
 
 ### Multi-user
-- JWT-based authentication
+- Server-side login sessions in an HttpOnly cookie; they stay alive while used and end after 7 days unused (30 days at most), on logout, on a password change and when a user is deleted
 - Each user has their own root directory (restricts access to their folder)
 - Admin panel to create, edit, and delete users
 - Per-user display names and passwords
@@ -141,7 +141,7 @@ The port is published on `127.0.0.1` only, so nothing outside the machine reache
 
 | Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET` | *(required)* | Signs auth tokens. Auto-generated (sessions lost on restart) if unset. |
+| `JWT_SECRET` | *(required)* | Signs the short-lived links Office previews use. Auto-generated if unset (open Office previews then stop working on restart). Login sessions don't depend on it. |
 | `PORT` | `8080` | Port the server listens on. |
 | `DB_PATH` | `/data/files.db` | SQLite database path. |
 | `USERS_ROOT` | `/data/users` | Parent directory for all user root folders. |

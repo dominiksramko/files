@@ -41,10 +41,6 @@ export interface VersionedContent {
   version: string
 }
 
-function token(): string {
-  return localStorage.getItem('token') ?? ''
-}
-
 async function request<T>(
   method: string,
   path: string,
@@ -53,9 +49,6 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-  }
-  if (token()) {
-    headers['Authorization'] = `Bearer ${token()}`
   }
 
   const res = await fetch(`${BASE}${path}`, {
@@ -90,6 +83,9 @@ export const auth = {
   login: (username: string, password: string) =>
     request<LoginResponse>('POST', '/auth/login', { username, password }),
 
+  // Ends the session on the server and clears its cookie.
+  logout: () => request<{ message: string }>('POST', '/auth/logout'),
+
   me: () => request<User>('GET', '/auth/me'),
 
   changePassword: (current_password: string, new_password: string) =>
@@ -112,26 +108,26 @@ export const files = {
   stat: (path: string) => request<FileEntry>('GET', `/files/stat${qs({ path })}`),
 
   searchStreamUrl: (q: string, path = '', showHidden = false): string => {
-    const params = new URLSearchParams({ q, token: token() })
+    const params = new URLSearchParams({ q })
     if (path) params.set('path', path)
     if (showHidden) params.set('hidden', 'true')
     return `${BASE}/files/search?${params}`
   },
 
   downloadUrl: (path: string, modTime: string) =>
-    `${BASE}/files/download?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
+    `${BASE}/files/download?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}`,
 
   streamUrl: (path: string, modTime: string) =>
-    `${BASE}/files/stream?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}&token=${token()}`,
+    `${BASE}/files/stream?path=${encodeURIComponent(path)}&t=${new Date(modTime).getTime()}`,
 
   streamUrlByPath: (path: string) =>
-    `${BASE}/files/stream?path=${encodeURIComponent(path)}&token=${token()}`,
+    `${BASE}/files/stream?path=${encodeURIComponent(path)}`,
 
   hlsPlaylistUrl: (path: string) =>
-    `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}&token=${token()}`,
+    `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}`,
 
   thumbUrl: (path: string, hash: string) =>
-    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}&token=${token()}`,
+    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`,
 
   archiveContents: (path: string, password = '') =>
     request<ArchiveEntry[]>(
@@ -144,7 +140,6 @@ export const files = {
 
   readContent: (path: string, signal?: AbortSignal): Promise<VersionedContent> =>
     fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`, {
-      headers: { Authorization: `Bearer ${token()}` },
       cache: 'no-store',
       signal,
     }).then(async (res) => {
@@ -163,7 +158,6 @@ export const files = {
       method: 'PUT',
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
-        Authorization: `Bearer ${token()}`,
         ...(baseVersion ? { 'If-Match': `"${baseVersion}"` } : {}),
       },
       body: content,
@@ -177,22 +171,17 @@ export const files = {
     }),
 
   // All subtitle tracks (file-based + embedded) for a video file.
-  // The server does all discovery; each track has a ready-made url (without token).
+  // The server does all discovery; each track has a ready-to-use url.
   subtitles: (path: string) =>
     request<{ label: string; srclang: string; url: string }[]>(
       'GET',
       `/files/subtitles${qs({ path })}`,
     ),
 
-  // Append the auth token to a subtitle url returned by the server.
-  subtitleUrl: (url: string) => `${url}&token=${token()}`,
-
   // SSE URL for streaming recursive size calculation over one or more paths.
-  // Use with EventSource — auth via ?token= since EventSource has no headers.
   sizeStreamUrl: (paths: string[]): string => {
     const params = new URLSearchParams()
     paths.forEach((p) => params.append('paths[]', p))
-    params.set('token', token())
     return `${BASE}/files/size?${params}`
   },
 
@@ -219,7 +208,6 @@ export const fileops = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
       },
       body: JSON.stringify({ paths }),
     })
@@ -266,7 +254,6 @@ export const fileops = {
       })
       xhr = new XMLHttpRequest()
       xhr.open('POST', `/api/v1/files/upload${qs({ path, conflict_mode: conflictMode })}`)
-      xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token') ?? ''}`)
       if (onProgress) {
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress(e.loaded, e.total)

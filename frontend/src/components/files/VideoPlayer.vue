@@ -228,7 +228,7 @@ onMounted(async () => {
     const raw = await filesApi.subtitles(props.entry.path)
     if (!alive) return
     subtitles.value = raw.map(t => ({
-      src:     filesApi.subtitleUrl(t.url),
+      src:     t.url,
       label:   t.label,
       srclang: t.srclang,
     }))

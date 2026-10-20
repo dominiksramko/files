@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConflictError, fileops } from '@/utils/api'
+import { ConflictError, fileops, files } from '@/utils/api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -55,5 +55,28 @@ describe('fileops.upload', () => {
     const error = await fileops.upload('', [new File(['x'], 'a.txt')]).promise.catch((err) => err)
     expect(error).toBeInstanceOf(ConflictError)
     expect(error.conflicts).toEqual(['a.txt'])
+  })
+})
+
+describe('no login token in requests', () => {
+  it('URLs for media, downloads and streams carry none', () => {
+    const urls = [
+      files.downloadUrl('a/b.png', '2026-01-01T00:00:00Z'),
+      files.streamUrl('a/b.png', '2026-01-01T00:00:00Z'),
+      files.streamUrlByPath('a/b.png'),
+      files.hlsPlaylistUrl('a/b.avi'),
+      files.thumbUrl('a/b.png', 'hash'),
+      files.searchStreamUrl('query', 'a'),
+      files.sizeStreamUrl(['a']),
+    ]
+    for (const url of urls) expect(url).not.toMatch(/token/i)
+  })
+
+  it('API calls send no Authorization header (the session cookie goes along by itself)', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: 'ok' })))
+    vi.stubGlobal('fetch', fetchMock)
+    await fileops.delete(['x'])
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(new Headers(init.headers).has('Authorization')).toBe(false)
   })
 })

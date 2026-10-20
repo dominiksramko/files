@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from '@/utils/markdown'
 
 // Renders source as notes/readme.md and returns the result as DOM, the way v-html would insert it.
@@ -10,10 +10,6 @@ function render(source: string): HTMLElement {
 }
 
 const allElements = (container: HTMLElement) => [container, ...container.querySelectorAll('*')]
-
-beforeEach(() => {
-  localStorage.setItem('token', 'session-token')
-})
 
 describe('renderMarkdown removes anything that could run code or cover the app', () => {
   const attacks: Record<string, string> = {
@@ -93,7 +89,7 @@ describe('renderMarkdown keeps ordinary Markdown', () => {
   const streamedPath = (source: string) => {
     const src = new URL(render(source).querySelector('img')!.getAttribute('src')!, 'http://localhost')
     expect(src.pathname).toBe('/api/v1/files/stream')
-    expect(src.searchParams.get('token')).toBe('session-token')
+    expect([...src.searchParams.keys()]).toEqual(['path']) // no login token in URLs
     return src.searchParams.get('path')
   }
 

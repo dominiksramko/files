@@ -58,10 +58,7 @@ router.afterEach((to) => {
 router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  // Restore session if we have a token but no user yet
-  if (auth.token && !auth.user) {
-    await auth.fetchMe()
-  }
+  await auth.restoreSession()
 
   if (!to.meta.public && !auth.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }

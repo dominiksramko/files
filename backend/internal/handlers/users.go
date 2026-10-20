@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"files/internal/models"
+	"files/internal/sessions"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -14,10 +15,11 @@ import (
 type UsersHandler struct {
 	db        *sql.DB
 	usersRoot string
+	sessions  *sessions.Store
 }
 
-func NewUsersHandler(db *sql.DB, usersRoot string) *UsersHandler {
-	return &UsersHandler{db: db, usersRoot: usersRoot}
+func NewUsersHandler(db *sql.DB, usersRoot string, sessionStore *sessions.Store) *UsersHandler {
+	return &UsersHandler{db: db, usersRoot: usersRoot, sessions: sessionStore}
 }
 
 // GET /api/v1/users
@@ -141,6 +143,18 @@ func (h *UsersHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// A new password ends the user's sessions (an admin editing themselves
+	// stays logged in here). Other changes apply to live sessions at once.
+	if req.Password != "" {
+		keepToken := ""
+		if id == c.GetInt64("userID") {
+			keepToken = c.GetString("sessionToken")
+		}
+		if err := h.sessions.DeleteForUser(id, keepToken); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "user updated, but their sessions could not be ended"})
+			return
+		}
+	}
 
 	c.JSON(http.StatusOK, u.ToResponse())
 }
@@ -167,6 +181,10 @@ func (h *UsersHandler) Delete(c *gin.Context) {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	if err := h.sessions.DeleteForUser(id, ""); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user deleted, but their sessions could not be ended"})
 		return
 	}
 

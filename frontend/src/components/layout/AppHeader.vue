@@ -9,8 +9,8 @@ const auth = useAuthStore()
 const layout = useLayoutStore()
 const router = useRouter()
 
-function logout() {
-  auth.logout()
+async function logout() {
+  await auth.logout().catch(() => { /* logged out locally anyway */ })
   router.push('/login')
 }
 </script>

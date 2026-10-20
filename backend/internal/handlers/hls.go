@@ -62,7 +62,6 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 	}
 
 	encodedPath := url.QueryEscape(rel)
-	token := c.Query("token")
 
 	c.Header("Content-Type", "application/vnd.apple.mpegurl")
 	c.Header("Cache-Control", "no-store")
@@ -81,7 +80,7 @@ func (h *HLSHandler) Playlist(c *gin.Context) {
 			chunkDur = duration
 		}
 		fmt.Fprintf(c.Writer, "#EXTINF:%.3f,\n", chunkDur)
-		fmt.Fprintf(c.Writer, "segment?path=%s&seq=%d&token=%s\n", encodedPath, seq, token)
+		fmt.Fprintf(c.Writer, "segment?path=%s&seq=%d\n", encodedPath, seq)
 		duration -= 10.0
 		seq++
 	}

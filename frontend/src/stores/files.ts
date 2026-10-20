@@ -70,8 +70,7 @@ export const useFilesStore = defineStore('files', () => {
     lastWatchEventAt = Date.now()
     reconnectIfSilent()
 
-    const token = localStorage.getItem('token') ?? ''
-    const source = new EventSource(`/api/v1/files/watch?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token)}`)
+    const source = new EventSource(`/api/v1/files/watch?path=${encodeURIComponent(path)}`)
     watchSource = source
 
     return new Promise((resolve, reject) => {
@@ -110,7 +109,7 @@ export const useFilesStore = defineStore('files', () => {
       })
       listen('ping', () => {})
 
-      // EventSource's own retry would resume without a fresh token or backoff;
+      // EventSource's own retry would resume without backoff;
       // reconnect ourselves instead (the new stream starts with a snapshot).
       source.onerror = () => {
         if (watchSource !== source) return

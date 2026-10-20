@@ -1,54 +1,100 @@
 package middleware
 
 import (
-	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
+
+	"files/internal/sessions"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
-type Claims struct {
-	UserID   int64  `json:"user_id"`
-	Username string `json:"username"`
-	IsAdmin  bool   `json:"is_admin"`
-	RootDir  string `json:"root_dir"`
-	jwt.RegisteredClaims
+// SessionCookie holds the session token; see sessions.Store.
+const SessionCookie = "files_session"
+
+// Auth lets a request through only with a live session cookie, and puts the
+// user's current details in the context: userID, username, isAdmin, rootDir,
+// plus sessionToken. The cookie is sent again whenever the session's expiry
+// moves, so it keeps alive while used.
+func Auth(store *sessions.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token, _ := c.Cookie(SessionCookie)
+		session, err := store.Lookup(token)
+		if errors.Is(err, sessions.ErrNoSession) {
+			if token != "" {
+				ClearSessionCookie(c)
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not logged in"})
+			return
+		}
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "could not check session"})
+			return
+		}
+		if session.Extended {
+			SetSessionCookie(c, token, session.Expires)
+		}
+
+		c.Set("userID", session.User.ID)
+		c.Set("username", session.User.Username)
+		c.Set("isAdmin", session.User.IsAdmin)
+		c.Set("rootDir", session.User.RootDir)
+		c.Set("sessionToken", token)
+		c.Next()
+	}
 }
 
-func Auth(db *sql.DB, jwtSecret string) gin.HandlerFunc {
+// SetSessionCookie sends the session cookie: HttpOnly (page scripts can't read
+// it), SameSite=Strict (other sites' pages and links don't send it), and Secure
+// when the request came over HTTPS, directly or through a proxy — plain-HTTP
+// setups on a trusted network would otherwise be unable to log in.
+func SetSessionCookie(c *gin.Context, token string, expires time.Time) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     SessionCookie,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   int(time.Until(expires).Seconds()),
+		HttpOnly: true,
+		Secure:   isHTTPS(c.Request),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ClearSessionCookie tells the browser to drop the session cookie.
+func ClearSessionCookie(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     SessionCookie,
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isHTTPS(c.Request),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func isHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+// SameOrigin refuses requests that change something (anything but GET, HEAD
+// and OPTIONS) when the browser marks them as coming from another site or
+// origin. The session cookie is SameSite=Strict, but a "site" spans
+// subdomains, so a page on another subdomain of the same domain could still
+// make the browser send it. Clients that don't send Sec-Fetch-Site (old
+// browsers, scripts) are let through.
+func SameOrigin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Accept token from Authorization header OR ?token= query param (for media src)
-		tokenStr := ""
-		header := c.GetHeader("Authorization")
-		if strings.HasPrefix(header, "Bearer ") {
-			tokenStr = strings.TrimPrefix(header, "Bearer ")
-		} else if q := c.Query("token"); q != "" {
-			tokenStr = q
-		}
-
-		if tokenStr == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
-			return
-		}
-		claims := &Claims{}
-
-		token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
+		switch c.Request.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if site := c.GetHeader("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "request from another site refused"})
+				return
 			}
-			return []byte(jwtSecret), nil
-		})
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
 		}
-
-		c.Set("userID", claims.UserID)
-		c.Set("username", claims.Username)
-		c.Set("isAdmin", claims.IsAdmin)
-		c.Set("rootDir", claims.RootDir)
 		c.Next()
 	}
 }
