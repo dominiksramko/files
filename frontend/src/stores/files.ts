@@ -175,11 +175,14 @@ export const useFilesStore = defineStore('files', () => {
     return navigate(currentPath.value)
   }
 
+  // Back to nothing loaded: closes the live-update stream (no reconnects) and
+  // drops the listing, e.g. when the user logs out.
   function reset() {
     navigationId++
     watchDisconnect()
     currentPath.value = ''
     entries.value = []
+    loading.value = false
     error.value = null
   }
 

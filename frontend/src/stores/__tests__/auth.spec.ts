@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useFilesStore } from '@/stores/files'
 import { auth as authApi } from '@/utils/api'
 import type { User } from '@/types'
 
@@ -42,5 +44,16 @@ describe('auth store', () => {
     await expect(auth.logout()).rejects.toThrow('offline')
     expect(logout).toHaveBeenCalledOnce()
     expect(auth.user).toBeNull()
+  })
+
+  it("clears the user's files on logout and on a new login", async () => {
+    vi.spyOn(authApi, 'login').mockResolvedValue({ user: ann })
+    vi.spyOn(authApi, 'logout').mockResolvedValue({ message: 'logged out' })
+    const auth = useAuthStore()
+    const reset = vi.spyOn(useFilesStore(), 'reset')
+    await auth.logout()
+    expect(reset).toHaveBeenCalledOnce()
+    await auth.login('bob', 'pw')
+    expect(reset).toHaveBeenCalledTimes(2)
   })
 })

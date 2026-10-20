@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { auth as authApi } from '@/utils/api'
+import { useFilesStore } from '@/stores/files'
 import type { User } from '@/types'
 
 // The session lives in an HttpOnly cookie that scripts can't read, so whether
@@ -12,8 +13,17 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.is_admin ?? false)
 
+  // Forgets everything about whoever was logged in: their file listing and its
+  // live-update stream (per-view state goes when the views unmount), so the
+  // next person on this browser never sees any of it.
+  function clearUserState() {
+    user.value = null
+    useFilesStore().reset()
+  }
+
   async function login(username: string, password: string) {
     const res = await authApi.login(username, password)
+    clearUserState()
     user.value = res.user
     sessionChecked = true
   }
@@ -33,7 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await authApi.logout()
     } finally {
-      user.value = null
+      clearUserState()
     }
   }
 
