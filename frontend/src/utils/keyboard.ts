@@ -8,5 +8,11 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 // Whether a dialog is open: it owns the keyboard, so page-wide and preview
 // shortcuts (Escape, arrows) leave the page behind it alone.
 export function isModalOpen(): boolean {
-  return document.querySelector('[aria-modal="true"]') !== null
+  return topModal() !== null
+}
+
+// The dialog on top (opened last, or inside another), which owns the keyboard.
+export function topModal(): Element | null {
+  const dialogs = document.querySelectorAll('[aria-modal="true"]')
+  return dialogs[dialogs.length - 1] ?? null
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useChecklistEditor } from '@/composables/useChecklistEditor'
 import { useToast } from '@/composables/useToast'
@@ -34,13 +34,6 @@ const emit = defineEmits<{
 }>()
 
 const { show: showToast } = useToast()
-
-// AppModal has no Escape handling of its own; the preview ignores keys while a modal is open.
-function onWindowKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') emit('close')
-}
-onMounted(() => window.addEventListener('keydown', onWindowKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onWindowKeydown))
 
 // ── Labels ───────────────────────────────────────────────────────────────────
 const labelDraft = ref('')
@@ -94,7 +87,7 @@ function onMoveSelect(columnId: string | number) {
 </script>
 
 <template>
-  <AppModal :title="columnTitle || 'Card'" size="lg" @close="emit('close')">
+  <AppModal :title="columnTitle || 'Card'" size="lg" close-on-escape @close="emit('close')">
     <div class="flex flex-col gap-5">
       <!-- Title -->
       <textarea

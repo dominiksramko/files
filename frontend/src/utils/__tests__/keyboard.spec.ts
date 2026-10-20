@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
+import { isModalOpen, isTypingTarget, topModal } from '@/utils/keyboard'
 
 describe('isTypingTarget', () => {
   it('is true for fields that take text', () => {
@@ -34,5 +34,28 @@ describe('isModalOpen', () => {
     expect(isModalOpen()).toBe(true)
     dialog.remove()
     expect(isModalOpen()).toBe(false)
+  })
+})
+
+describe('topModal', () => {
+  function modal(parent: Element = document.body): HTMLElement {
+    const dialog = document.createElement('div')
+    dialog.setAttribute('aria-modal', 'true')
+    parent.append(dialog)
+    return dialog
+  }
+
+  it('is the dialog opened last, or one opened inside another', () => {
+    expect(topModal()).toBeNull()
+    const first = modal()
+    expect(topModal()).toBe(first)
+    const inside = modal(first)
+    expect(topModal()).toBe(inside)
+    inside.remove()
+    const second = modal()
+    expect(topModal()).toBe(second)
+    first.remove()
+    second.remove()
+    expect(topModal()).toBeNull()
   })
 })

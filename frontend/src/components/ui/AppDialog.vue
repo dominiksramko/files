@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue'
+import { ref } from 'vue'
+import { useEscapeToClose } from '@/composables/useEscapeToClose'
 
 // A small centred dialog (confirmations, a name to type). It's marked as a
 // modal, so the preview behind it ignores keys, and Escape closes it.
@@ -11,21 +12,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const card = ref<HTMLElement | null>(null)
-
-// Only the dialog on top closes (another one can open over this).
-function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return
-  const dialogs = document.querySelectorAll('[aria-modal="true"]')
-  if (dialogs[dialogs.length - 1] !== card.value) return
-  event.preventDefault()
-  emit('close')
-}
-
-watch(() => props.open, (open) => {
-  if (open) window.addEventListener('keydown', onKeydown)
-  else window.removeEventListener('keydown', onKeydown)
-}, { immediate: true })
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+useEscapeToClose(card, () => props.open, () => emit('close'))
 </script>
 
 <template>

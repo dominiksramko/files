@@ -1,12 +1,22 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import { useEscapeToClose } from '@/composables/useEscapeToClose'
 
-defineProps<{
+// closeOnEscape: Escape closes it (when no dialog is open over it).
+// fixedHeight: always 90% of the screen tall, so it doesn't change size with
+// its content.
+const props = defineProps<{
   title?: string
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+  closeOnEscape?: boolean
+  fixedHeight?: boolean
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+const card = ref<HTMLElement | null>(null)
+useEscapeToClose(card, () => props.closeOnEscape, () => emit('close'))
 </script>
 
 <template>
@@ -17,10 +27,12 @@ const emit = defineEmits<{ close: [] }>()
       @mousedown.self="emit('close')"
     >
       <div
+        ref="card"
         role="dialog"
         aria-modal="true"
         :class="[
-          'bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh] w-full',
+          'bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col w-full',
+          fixedHeight ? 'h-[90vh]' : 'max-h-[90vh]',
           { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl', '2xl': 'max-w-7xl' }[size ?? 'md'],
         ]"
       >
