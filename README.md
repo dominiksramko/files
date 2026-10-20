@@ -78,6 +78,7 @@ Video and audio resume from where you left off, per user.
 - Per-user style preferences (font, size, colour, position)
 
 ### Multi-user
+- New passwords need at least 8 characters (existing ones keep working)
 - Password guessing is slowed down: 10 failed logins from one address within 15 minutes block it for the rest of that time; after 10 for one username, it takes one attempt a minute. Failed and refused logins are logged with the client address (for fail2ban and the like)
 - Server-side login sessions in an HttpOnly cookie; they stay alive while used and end after 7 days unused (30 days at most), on logout, on a password change and when a user is deleted
 - Each user has their own root directory (restricts access to their folder)

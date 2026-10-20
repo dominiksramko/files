@@ -34,6 +34,7 @@ func sessionRouter(db *sql.DB) *gin.Engine {
 	authed.GET("/me", authHandler.Me)
 	authed.PUT("/password", authHandler.ChangePassword)
 	admin := authed.Group("", middleware.AdminOnly())
+	admin.POST("/users", usersHandler.Create)
 	admin.PUT("/users/:id", usersHandler.Update)
 	admin.DELETE("/users/:id", usersHandler.Delete)
 	return router
@@ -152,12 +153,12 @@ func TestAdminPasswordResetEndsUsersSessions(t *testing.T) {
 	assertStatus(t, call(t, router, http.MethodPut, "/users/"+strconv.FormatInt(annID, 10), boss, map[string]any{"display_name": "Ann"}), http.StatusOK)
 	assertLoggedIn(t, router, ann, true)
 
-	assertStatus(t, call(t, router, http.MethodPut, "/users/"+strconv.FormatInt(annID, 10), boss, map[string]any{"password": "reset"}), http.StatusOK)
+	assertStatus(t, call(t, router, http.MethodPut, "/users/"+strconv.FormatInt(annID, 10), boss, map[string]any{"password": "a reset password"}), http.StatusOK)
 	assertLoggedIn(t, router, ann, false)
 	assertLoggedIn(t, router, boss, true)
 
 	// An admin resetting their own password stays logged in here.
-	assertStatus(t, call(t, router, http.MethodPut, "/users/"+strconv.FormatInt(adminID, 10), boss, map[string]any{"password": "mine"}), http.StatusOK)
+	assertStatus(t, call(t, router, http.MethodPut, "/users/"+strconv.FormatInt(adminID, 10), boss, map[string]any{"password": "my new password"}), http.StatusOK)
 	assertLoggedIn(t, router, boss, true)
 }
 
@@ -305,4 +306,40 @@ func TestUnknownUsernameTakesAsLongAsWrongPassword(t *testing.T) {
 	if unknown < known/2 || unknown > known*2 {
 		t.Errorf("wrong password for an existing user: %v; for an unknown user: %v", known, unknown)
 	}
+}
+
+func TestValidateNewPassword(t *testing.T) {
+	for password, ok := range map[string]bool{
+		"":            false,
+		"1234567":     false,
+		"12345678":    true,
+		"ünïcödé":     false, // 7 characters, more bytes
+		"ünïcödé!":    true,
+		"long enough": true,
+	} {
+		if err := validateNewPassword(password); (err == nil) != ok {
+			t.Errorf("validateNewPassword(%q) = %v", password, err)
+		}
+	}
+}
+
+func TestShortPasswordsRefused(t *testing.T) {
+	db := testutil.OpenDB(t)
+	testutil.CreateUser(t, db, "boss", true, "")
+	annID := testutil.CreateUser(t, db, "ann", false, "")
+	router := sessionRouter(db)
+	boss := login(t, router, "boss")
+	users := strconv.FormatInt(annID, 10)
+
+	for name, response := range map[string]*httptest.ResponseRecorder{
+		"own password change": call(t, router, http.MethodPut, "/password", boss, map[string]string{"current_password": testutil.Password, "new_password": "short"}),
+		"admin reset":         call(t, router, http.MethodPut, "/users/"+users, boss, map[string]any{"password": "short"}),
+		"new user":            call(t, router, http.MethodPost, "/users", boss, map[string]any{"username": "cat", "password": "short"}),
+	} {
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "at least 8 characters") {
+			t.Errorf("%s: %d %s", name, response.Code, response.Body)
+		}
+	}
+	// The old passwords still work: ann's was set before the rule and is 13 characters anyway.
+	assertStatus(t, loginFrom(t, router, "198.51.100.1", "ann", testutil.Password), http.StatusOK)
 }

@@ -47,12 +47,16 @@ func (h *UsersHandler) List(c *gin.Context) {
 func (h *UsersHandler) Create(c *gin.Context) {
 	var req struct {
 		Username    string `json:"username" binding:"required"`
-		Password    string `json:"password" binding:"required,min=4"`
+		Password    string `json:"password" binding:"required"`
 		DisplayName string `json:"display_name"`
 		RootDir     string `json:"root_dir"`
 		IsAdmin     bool   `json:"is_admin"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateNewPassword(req.Password); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -117,6 +121,10 @@ func (h *UsersHandler) Update(c *gin.Context) {
 
 	newHash := u.Password
 	if req.Password != "" {
+		if err := validateNewPassword(req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		h, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})

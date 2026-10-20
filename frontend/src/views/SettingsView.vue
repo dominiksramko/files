@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { auth as authApi, system as systemApi } from '@/utils/api'
+import { newPasswordProblem } from '@/utils/password'
 import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import AppAccordion from '@/components/ui/AppAccordion.vue'
@@ -148,12 +149,9 @@ const error = ref('')
 const success = ref(false)
 
 async function changePassword() {
-  if (newPassword.value !== confirmPassword.value) {
-    error.value = 'New passwords do not match'
-    return
-  }
-  if (newPassword.value.length < 4) {
-    error.value = 'Password must be at least 4 characters'
+  const problem = newPasswordProblem(newPassword.value, confirmPassword.value)
+  if (problem) {
+    error.value = problem
     return
   }
 

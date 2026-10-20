@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"files/internal/loginlimit"
 	"files/internal/middleware"
@@ -88,6 +89,18 @@ var unknownUserHash = sync.OnceValue(func() []byte {
 	return hash
 })
 
+// MinPasswordLength applies to passwords set from now on; existing ones keep working.
+const MinPasswordLength = 8
+
+// validateNewPassword checks a password being set (new user, password change
+// or reset). Length counts characters, not bytes.
+func validateNewPassword(password string) error {
+	if utf8.RuneCountInString(password) < MinPasswordLength {
+		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)
+	}
+	return nil
+}
+
 // tooManyAttemptsMessage tells the user how long to wait, in whole minutes.
 func tooManyAttemptsMessage(wait time.Duration) string {
 	minutes := int(math.Ceil(wait.Minutes()))
@@ -129,9 +142,13 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	var req struct {
 		CurrentPassword string `json:"current_password" binding:"required"`
-		NewPassword     string `json:"new_password" binding:"required,min=4"`
+		NewPassword     string `json:"new_password" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateNewPassword(req.NewPassword); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
