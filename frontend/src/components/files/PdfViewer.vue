@@ -14,6 +14,10 @@ const useNative = typeof navigator !== 'undefined' && !!navigator.pdfViewerEnabl
 // --- PDF.js continuous scroll renderer ---
 const scrollContainerRef = ref<HTMLElement | null>(null)
 const pageRefs           = ref<(HTMLCanvasElement | null)[]>([])
+
+function setPageCanvas(pageNumber: number, element: unknown) {
+  pageRefs.value[pageNumber - 1] = element as HTMLCanvasElement | null
+}
 const totalPages         = ref(0)
 const loading            = ref(false)
 const errorMsg           = ref('')
@@ -169,7 +173,7 @@ onUnmounted(() => {
       <canvas
         v-for="pageNum in totalPages"
         :key="pageNum"
-        :ref="el => pageRefs[pageNum - 1] = el as HTMLCanvasElement | null"
+        :ref="(element) => setPageCanvas(pageNum, element)"
         :data-page="pageNum"
         class="w-full rounded shadow-lg bg-white"
       />

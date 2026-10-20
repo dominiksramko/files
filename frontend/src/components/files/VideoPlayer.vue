@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { debounce } from '@/utils/debounce'
 import Plyr from 'plyr'
+import type HlsPlayer from 'hls.js'
 import 'plyr/dist/plyr.css'
 import type { FileEntry } from '@/types'
 import { files as filesApi, progress as progressApi } from '@/utils/api'
@@ -35,14 +36,11 @@ const videoEl            = ref<HTMLVideoElement | null>(null)
 const subtitles          = ref<SubtitleTrack[]>([])
 const plyrControlsEl = ref<Element | null>(null) // screenshot slot
 let plyrInstance: Plyr | null = null
-let hlsInstance: any = null
+let hlsInstance: HlsPlayer | null = null
 let plyrEl: Element | null = null
 let alive = true
 let controlsHideTimer: ReturnType<typeof setTimeout> | null = null
 let controlsVisible = true
-
-// Check live at call time so CSS layout updates on resize without reinitialising Plyr.
-const isMobileNow = () => window.matchMedia('(max-width: 480px)').matches
 
 function showControls() {
   controlsVisible = true

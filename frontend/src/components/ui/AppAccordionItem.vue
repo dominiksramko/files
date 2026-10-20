@@ -3,7 +3,7 @@ import { inject, computed, ref } from 'vue'
 import type { Ref } from 'vue'
 import AppIcon from './AppIcon.vue'
 
-const props = defineProps<{ title: string }>()
+defineProps<{ title: string }>()
 
 const id = ref(Math.random().toString(36).slice(2))
 const accordion = inject<{ openId: Ref<string | null>; toggle: (id: string) => void }>('accordion')!

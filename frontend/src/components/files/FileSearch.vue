@@ -7,7 +7,7 @@ import AppSpinner from '@/components/ui/AppSpinner.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { escapeHtml } from '@/utils/html'
 
-const props = defineProps<{
+defineProps<{
   entries: FileEntry[]
   loading: boolean
   query: string
