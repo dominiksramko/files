@@ -663,16 +663,51 @@ func userRoot(c *gin.Context) string {
 	return c.GetString("rootDir")
 }
 
-// safePath resolves rel inside root and rejects path traversal.
+// safePath resolves rel inside root and rejects anything outside it.
 func safePath(root, rel string) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("user has no root directory configured")
 	}
 	abs := filepath.Clean(filepath.Join(root, rel))
-	if !strings.HasPrefix(abs, filepath.Clean(root)) {
+	if !isWithin(filepath.Clean(root), abs) {
 		return "", fmt.Errorf("path traversal detected")
 	}
 	return abs, nil
+}
+
+// safeChildPath is safePath for an item that gets created, replaced, renamed,
+// moved or deleted: it also rejects root itself. Those operations act on the
+// item's parent folder too, and root's parent holds the other users' folders.
+func safeChildPath(root, rel string) (string, error) {
+	abs, err := safePath(root, rel)
+	if err != nil {
+		return "", err
+	}
+	if abs == filepath.Clean(root) {
+		return "", fmt.Errorf("the root folder itself can't be changed")
+	}
+	return abs, nil
+}
+
+// safeChildPaths resolves each of rels with safeChildPath, failing on the first
+// bad one — check them all before touching any.
+func safeChildPaths(root string, rels []string) ([]string, error) {
+	paths := make([]string, 0, len(rels))
+	for _, rel := range rels {
+		abs, err := safeChildPath(root, rel)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, abs)
+	}
+	return paths, nil
+}
+
+// isWithin reports whether abs is dir or inside it. It compares whole path
+// elements, so /users/anna is not within /users/ann.
+func isWithin(dir, abs string) bool {
+	rel, err := filepath.Rel(dir, abs)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func mimeByExt(ext string) string {

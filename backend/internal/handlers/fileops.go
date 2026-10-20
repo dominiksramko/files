@@ -33,12 +33,13 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	for _, rel := range body.Paths {
-		abs, err := safePath(root, rel)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+	paths, err := safeChildPaths(root, body.Paths)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, abs := range paths {
 		if err := os.RemoveAll(abs); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -73,14 +74,10 @@ func (h *FileOpsHandler) Copy(c *gin.Context) {
 		return
 	}
 
-	srcAbs := make([]string, 0, len(body.Paths))
-	for _, rel := range body.Paths {
-		abs, err := safePath(root, rel)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		srcAbs = append(srcAbs, abs)
+	srcAbs, err := safeChildPaths(root, body.Paths)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	if body.ConflictMode == "error" {
@@ -132,14 +129,10 @@ func (h *FileOpsHandler) Move(c *gin.Context) {
 		return
 	}
 
-	srcAbs := make([]string, 0, len(body.Paths))
-	for _, rel := range body.Paths {
-		abs, err := safePath(root, rel)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		srcAbs = append(srcAbs, abs)
+	srcAbs, err := safeChildPaths(root, body.Paths)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	if body.ConflictMode == "error" {
@@ -267,7 +260,7 @@ func (h *FileOpsHandler) Create(c *gin.Context) {
 		body.ConflictMode = "error"
 	}
 
-	abs, err := safePath(root, body.Path)
+	abs, err := safeChildPath(root, body.Path)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -309,23 +302,19 @@ func (h *FileOpsHandler) Rename(c *gin.Context) {
 		return
 	}
 
-	// Reject names with path separators to prevent traversal
-	if strings.ContainsAny(body.Name, "/\\") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name must not contain path separators"})
+	// A plain name: no path separators, "." or ".."
+	if err := validateNewFilename(body.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	srcAbs, err := safePath(root, body.Path)
+	srcAbs, err := safeChildPath(root, body.Path)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	dstAbs := filepath.Join(filepath.Dir(srcAbs), body.Name)
-	if !strings.HasPrefix(dstAbs, filepath.Clean(root)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "path traversal detected"})
-		return
-	}
 
 	if err := os.Rename(srcAbs, dstAbs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

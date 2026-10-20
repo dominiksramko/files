@@ -5,6 +5,8 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
+# The tests gate every production image: if one fails, the build (and deploy.sh) stops here.
+RUN npm test
 RUN npm run build
 
 
@@ -18,6 +20,10 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY backend/ ./
+# The tests gate every production image: if one fails, the build (and deploy.sh) stops here.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go vet ./... && go test ./...
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go build -o server ./cmd/server

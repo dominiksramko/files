@@ -45,7 +45,7 @@ func (h *ArchiveHandler) Compress(c *gin.Context) {
 		req.ConflictMode = "error"
 	}
 
-	destAbs, err := safePath(root, req.Dest)
+	destAbs, err := safeChildPath(root, req.Dest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -331,16 +331,17 @@ func (h *ArchiveHandler) Extract(c *gin.Context) {
 		return
 	}
 
-	// Destination: explicit override or a folder named after the archive.
-	var destAbs string
-	if req.Dest != "" {
-		destAbs, err = safePath(root, req.Dest)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-	} else {
-		destAbs = filepath.Join(filepath.Dir(abs), archiveBaseName(abs))
+	// Destination: explicit override or a folder named after the archive. Never
+	// root itself: a failed extract removes the destination, and unwrapping a
+	// single item moves it into the destination's parent.
+	destRel := req.Dest
+	if destRel == "" {
+		destRel = filepath.Join(filepath.Dir(req.Path), archiveBaseName(abs))
+	}
+	destAbs, err := safeChildPath(root, destRel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Check file-level conflicts when destination already exists.

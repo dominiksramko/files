@@ -605,7 +605,7 @@ func (h *AdvancedRenamerHandler) Apply(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid destination filename: " + err.Error()})
 			return
 		}
-		srcAbs, err := safePath(root, op.From)
+		srcAbs, err := safeChildPath(root, op.From)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

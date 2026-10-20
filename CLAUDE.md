@@ -23,6 +23,14 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
 
+## Tests (IMPORTANT)
+- **Every function you add or change gets tests in the same change** — the behaviour it's for, and the ways it must refuse (bad paths, conflicts, other users' files). For a bug fix, add a test that fails without the fix.
+- Run them in the dev stack: `docker compose -f docker-compose.dev.yml exec backend go test ./...` and `... exec frontend npm test` (`npm run test:watch` while working).
+- They gate production: the builder stages of `backend/Dockerfile` run `go vet` + `go test` and `npm test`, so `deploy.sh` stops before replacing the running containers if any fail.
+- **Frontend:** Vitest, specs in a `__tests__/` folder next to the code (`src/utils/__tests__/merge.spec.ts`), named `*.spec.ts`. Keep logic in plain functions in `utils/` so it can be tested without mounting components.
+- **Backend** helpers in `backend/internal/handlers/handlers_test.go`: `serve` / `serveJSON` call a handler as a logged-in user with a given home folder (no router or token needed); `newUserFolders` creates neighbouring home folders `ann` and `anna`; `assertUnchanged`, `assertFileContent`, `assertMissing`, `assertStatus`, `decodeResponse`. Keep logic testable: pure helpers for decisions, handlers only for request/response.
+- Paths from requests: `safePath` for reading or as a destination folder; `safeChildPath` / `safeChildPaths` for an item that gets created, replaced, renamed, moved or deleted — it also refuses the home folder itself, whose parent holds the other users' folders.
+
 ## Database Migrations (IMPORTANT)
 - Migration files: `backend/internal/database/migrations/YYYY_MM_DD_HHMMSS_name.go`
 - Registry: `backend/internal/database/migrations/registry.go` — defines `Migration` struct, `Register()`, `All()`
