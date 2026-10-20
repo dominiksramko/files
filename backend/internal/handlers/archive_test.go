@@ -392,3 +392,51 @@ func TestZipExtractionKeepsPermissions(t *testing.T) {
 	}
 	assertFileContent(t, filepath.Join(annRoot, "tools/notes.txt"), "n")
 }
+
+// writeRawNameZip writes a zip whose single entry has exactly the given name
+// bytes and no UTF-8 flag, as old Windows tools do.
+func writeRawNameZip(t *testing.T, path string, name []byte) {
+	t.Helper()
+	out, _ := os.Create(path)
+	zw := zip.NewWriter(out)
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: string(name), NonUTF8: true, Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write([]byte("tea"))
+	zw.Close()
+	out.Close()
+}
+
+func TestZipNamesInOldCodePage(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	// "Café.txt" in CP437: é is 0x82, not valid UTF-8.
+	writeRawNameZip(t, filepath.Join(annRoot, "menu.zip"), []byte("Caf\x82.txt"))
+
+	listing := serve(NewArchiveHandler().Contents, annRoot, httptest.NewRequest(http.MethodGet, "/?path=menu.zip", nil))
+	if entries := decodeResponse[[]ArchiveEntry](t, listing); len(entries) != 1 || entries[0].Name != "Café.txt" {
+		t.Errorf("listed as %v, want Café.txt", entries)
+	}
+	assertStatus(t, serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "menu.zip"}), http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "Café.txt"), "tea")
+	// The file can be deleted by the name the app shows.
+	assertStatus(t, serveJSON(t, NewFileOpsHandler().Delete, annRoot, map[string]any{"paths": []string{"Café.txt"}}), http.StatusOK)
+	assertMissing(t, filepath.Join(annRoot, "Café.txt"))
+}
+
+func TestZipUTF8NamesWithoutFlagKept(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	writeRawNameZip(t, filepath.Join(annRoot, "tea.zip"), []byte("čaj.txt")) // UTF-8, flag missing
+	assertStatus(t, serveJSON(t, NewArchiveHandler().Extract, annRoot, map[string]any{"path": "tea.zip"}), http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "čaj.txt"), "tea")
+}
+
+func TestDeleteReportsMissingPaths(t *testing.T) {
+	annRoot, _ := newUserFolders(t)
+	response := serveJSON(t, NewFileOpsHandler().Delete, annRoot, map[string]any{"paths": []string{"notes.txt", "gone.txt"}})
+	assertStatus(t, response, http.StatusNotFound)
+	if !strings.Contains(response.Body.String(), "gone.txt") {
+		t.Errorf("body = %s", response.Body)
+	}
+	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes") // nothing deleted
+}

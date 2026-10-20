@@ -16,12 +16,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"files/internal/userfs"
 
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // POST /api/v1/files/compress
@@ -622,6 +624,21 @@ func writeEntry(fsys *userfs.FS, name string, content io.Reader, mode os.FileMod
 
 // --- ZIP ---
 
+// zipEntryName is the entry's name as text. A name that isn't valid UTF-8 is
+// in the old DOS code page CP437 (as the ZIP spec says and Windows writes),
+// and was otherwise extracted as raw bytes that can't be shown, opened or
+// deleted. Valid UTF-8 is kept even without the ZIP's UTF-8 flag: many tools
+// leave the flag out.
+func zipEntryName(f *zip.File) string {
+	if utf8.ValidString(f.Name) {
+		return f.Name
+	}
+	if decoded, err := charmap.CodePage437.NewDecoder().String(f.Name); err == nil {
+		return decoded
+	}
+	return strings.ToValidUTF8(f.Name, "_")
+}
+
 func listZip(path string) ([]ArchiveEntry, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -632,7 +649,7 @@ func listZip(path string) ([]ArchiveEntry, error) {
 	entries := make([]ArchiveEntry, 0, len(r.File))
 	for _, f := range r.File {
 		entries = append(entries, ArchiveEntry{
-			Name:  f.Name,
+			Name:  zipEntryName(f),
 			Size:  int64(f.UncompressedSize64),
 			IsDir: f.FileInfo().IsDir(),
 		})
@@ -651,7 +668,7 @@ func extractZip(fsys *userfs.FS, archivePath, dest string) error {
 	defer r.Close()
 
 	for _, f := range r.File {
-		target, ok := archiveTarget(dest, f.Name)
+		target, ok := archiveTarget(dest, zipEntryName(f))
 		if !ok {
 			continue // would land outside dest
 		}

@@ -39,6 +39,17 @@ func (h *FileOpsHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// Removing what isn't there succeeds silently; say so instead.
+	var missing []string
+	for _, name := range names {
+		if _, err := fsys.Lstat(name); os.IsNotExist(err) {
+			missing = append(missing, filepath.Base(name))
+		}
+	}
+	if len(missing) > 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no longer exists: " + strings.Join(missing, ", ")})
+		return
+	}
 	for _, name := range names {
 		if err := fsys.RemoveAll(name); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
