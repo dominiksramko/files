@@ -8,19 +8,28 @@ import (
 )
 
 type SystemHandler struct {
-	rootPath string
-	version  string
+	version string
 }
 
-func NewSystemHandler(rootPath, version string) *SystemHandler {
-	return &SystemHandler{rootPath: rootPath, version: version}
+func NewSystemHandler(version string) *SystemHandler {
+	return &SystemHandler{version: version}
 }
 
 // GET /api/v1/system/disk
-// Returns disk space stats for the filesystem containing rootPath.
+// Returns disk space stats for the disk holding the user's own folder (each
+// user's folder can be on its own disk or mount).
 func (h *SystemHandler) DiskSpace(c *gin.Context) {
+	fsys, folder, ok := requestFolderName(c, "")
+	if !ok {
+		return
+	}
+	realFolder, err := fsys.RealPath(folder)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "your folder doesn't exist"})
+		return
+	}
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs(h.rootPath, &stat); err != nil {
+	if err := syscall.Statfs(realFolder, &stat); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

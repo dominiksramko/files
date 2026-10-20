@@ -61,7 +61,7 @@ func main() {
 	hlsH := handlers.NewHLSHandler(cfg.HLSCacheDir)
 	infoH := handlers.NewInfoHandler()
 	progressH := handlers.NewProgressHandler(db)
-	systemH := handlers.NewSystemHandler(cfg.UsersRoot, version)
+	systemH := handlers.NewSystemHandler(version)
 	officeH := handlers.NewOfficeHandler(cfg.JWTSecret)
 	screenshotH := handlers.NewScreenshotHandler()
 	advancedRenameH := handlers.NewAdvancedRenamerHandler(db)
