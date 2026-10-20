@@ -20,9 +20,11 @@ afterEach(() => {
 const names = ['./WTF/Ann/SavedVariables/TimeManager.lua', './WTF/Bob/SavedVariables/TimeManager.lua', './readme.txt']
 
 // Mounts the modal as the file browser does, from the URL, over an archive
-// holding names; returns the router.
-async function mountArchive(url: string): Promise<Router> {
-  vi.spyOn(filesApi, 'archiveContents').mockResolvedValue(names.map((name) => ({ name, size: 1, is_dir: false })))
+// holding names (or one that can't be read: failure); returns the router.
+async function mountArchive(url: string, failure?: Error): Promise<Router> {
+  const contents = vi.spyOn(filesApi, 'archiveContents')
+  if (failure) contents.mockRejectedValue(failure)
+  else contents.mockResolvedValue(names.map((name) => ({ name, size: 1, is_dir: false })))
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
   await router.push(url)
   const root = document.createElement('div')
@@ -36,13 +38,15 @@ async function mountArchive(url: string): Promise<Router> {
   app.use(router)
   app.mount(root)
   cleanups.push(() => { app.unmount(); root.remove() })
-  await vi.waitFor(() => expect(rows().length).toBeGreaterThan(0))
+  await vi.waitFor(() => expect(contents).toHaveBeenCalled())
+  if (!failure) await vi.waitFor(() => expect(rows().length).toBeGreaterThan(0))
   return router
 }
 
 const rows = () => [...document.querySelectorAll<HTMLElement>('[data-archive-item]')]
 const rowNames = () => rows().map((row) => row.querySelector('.truncate')!.textContent!.trim())
 const row = (name: string) => rows().find((candidate) => candidate.querySelector('.truncate')!.textContent!.trim() === name)!
+const card = () => document.querySelector<HTMLElement>('[role="dialog"]')!
 const crumb = (label: string) => [...document.querySelectorAll<HTMLAnchorElement>('nav a')].find((link) => link.textContent!.trim() === label)!
 
 async function shows(expected: string[]) {
@@ -116,5 +120,24 @@ describe('ArchiveContents', () => {
     document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click()
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ path: 'old' }))
     expect(rows()).toEqual([])
+  })
+
+  it('keeps the same height in every folder', async () => {
+    await mountArchive('/?archive=Archive.tar.gz')
+    expect(card().classList).toContain('h-[90vh]')
+    row('WTF').click()
+    await shows(['Ann', 'Bob'])
+    expect(card().classList).toContain('h-[90vh]')
+  })
+
+  it('fits a password prompt or an error to its size', async () => {
+    await mountArchive('/?archive=locked.7z', new Error('archive is password protected'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('This archive is password protected'))
+    expect(card().classList).not.toContain('h-[90vh]')
+    cleanups.splice(0).forEach((cleanup) => cleanup())
+    vi.restoreAllMocks()
+    await mountArchive('/?archive=broken.zip', new Error('not a valid zip file'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('not a valid zip file'))
+    expect(card().classList).not.toContain('h-[90vh]')
   })
 })

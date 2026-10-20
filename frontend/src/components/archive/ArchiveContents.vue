@@ -115,7 +115,9 @@ onMounted(() => load())
 </script>
 
 <template>
-  <AppModal :title="name" size="lg" @close="close">
+  <!-- The same height in every folder, so moving between them doesn't make
+       the modal jump; a password to type or an error needs only its own. -->
+  <AppModal :title="name" size="lg" :fixed-height="!passwordRequired && !error" @close="close">
     <!-- Password prompt -->
     <div v-if="passwordRequired" class="space-y-3">
       <p class="text-sm text-zinc-400">{{ error }}</p>
@@ -145,13 +147,13 @@ onMounted(() => load())
       {{ error }}
     </div>
 
-    <!-- Contents -->
-    <div v-else>
-      <div class="flex items-center gap-2 mb-2 -ml-2 min-w-0">
+    <!-- Contents: the list takes the height left and scrolls -->
+    <div v-else class="h-full flex flex-col">
+      <div class="shrink-0 flex items-center gap-2 mb-2 -ml-2 min-w-0">
         <FileBreadcrumb :path="folder" :root-label="name" :href-for="crumbHref" @navigate="openFolder" />
       </div>
       <!-- Search -->
-      <div class="relative mb-2">
+      <div class="shrink-0 relative mb-2">
         <AppIcon name="search" class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500 pointer-events-none" />
         <input
           v-model="search"
@@ -162,12 +164,12 @@ onMounted(() => load())
           @keydown.escape="search = ''"
         />
       </div>
-      <p class="text-xs text-zinc-500 mb-2">
+      <p class="shrink-0 text-xs text-zinc-500 mb-2">
         <template v-if="searching">{{ shown.length }} {{ shown.length === 1 ? 'match' : 'matches' }}</template>
         <template v-else>{{ shown.length }} {{ shown.length === 1 ? 'item' : 'items' }}</template>
       </p>
-      <div class="border border-zinc-800 rounded-lg overflow-hidden">
-        <div class="max-h-[50vh] overflow-y-auto">
+      <div class="flex-1 min-h-0 flex flex-col border border-zinc-800 rounded-lg overflow-hidden">
+        <div class="flex-1 min-h-0 overflow-y-auto" data-archive-list>
           <p v-if="shown.length === 0" class="px-3 py-4 text-center text-xs text-zinc-500">
             {{ searching ? 'No matches' : 'Empty folder' }}
           </p>
@@ -203,13 +205,13 @@ onMounted(() => load())
       <!-- Extract result -->
       <div
         v-if="extractSuccess"
-        class="mt-3 text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
+        class="shrink-0 mt-3 text-sm text-green-400 bg-green-950/50 border border-green-900 rounded-lg px-3 py-2"
       >
         Extracted successfully!
       </div>
       <div
         v-if="extractError"
-        class="mt-3 text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
+        class="shrink-0 mt-3 text-sm text-red-400 bg-red-950/50 border border-red-900 rounded-lg px-3 py-2"
       >
         {{ extractError }}
       </div>
