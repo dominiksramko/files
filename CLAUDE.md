@@ -21,6 +21,9 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - Production container runs the server as `PUID:PGID` (default 1000), never root: `backend/docker-entrypoint.sh` hands the database and caches to that user, then drops privileges with `su-exec`; `docker-entrypoint_test.sh` runs in the image build. Anything the server writes must live in `/data` (or `/tmp`).
 - Login sessions: server-side (`backend/internal/sessions/`, table `sessions`); the browser holds only an HttpOnly, SameSite=Strict cookie (`files_session`), which it sends with fetches, images, video, downloads and EventSource alike — **never put credentials in URLs**. `middleware.Auth` looks the session up with the user's *current* details on every request (sets `userID`, `username`, `isAdmin`, `rootDir`, `sessionToken`). Sessions stay alive while used: 7 days unused or 30 days after login ends them; logout, a password change (other sessions) and deleting a user end them at once. `middleware.SameOrigin` refuses state-changing requests the browser marks as from another site. Failed logins are limited per client address (IPv6 per /64) and per username by `internal/loginlimit` (in memory), and logged with the address.
 - Handlers: `backend/internal/handlers/{auth,files,users,archive}.go`
+- Server-sent event streams (watch, search, sizes, disk usage scan) write through `startEventStream(c)` and `writeEvent(c, event, payload)` (`handlers/sse.go`; an empty event name sends an unnamed event). A long stream also stops on `h.streamsEnd` (server shutdown) and re-checks `sessionStillValid(c)` now and then.
+- Deleting goes through `removeEntries(c, fsys, names)` (`fileops.go`), shared by `DELETE /files` and `DELETE /files/usage`: it reports already-missing items with a 404 before deleting anything. Deletes are permanent (there is no trash).
+- Disk usage (`handlers/usage.go`, page `/usage`): `internal/diskusage` scans a folder through userfs (links not followed; `Disk` = blocks with hard links counted once, folders included; `Apparent` = file lengths) and keeps only folders plus the largest files; a folder's files are read again when it's shown. Each user has one scan, kept in memory (`usageStore`, dropped after 30 min unused; at most 2 scans run at once server-wide; a new scan stops the user's running one). `diskusage.Count` also measures the Details dialog's sizes.
 - DB: SQLite via `modernc.org/sqlite` (pure Go, no CGO); auto-seeds admin user on first run — credentials configurable via `ADMIN_USERNAME` (default: `admin`), `ADMIN_PASSWORD` (random if unset, printed to logs), `ADMIN_PATH` (optional root dir)
 - API prefix: `/api/v1`
 - Responses that return a user's file inline (stream, content, office link) call `setUserFileHeaders(c, name)` first: `nosniff` plus a `Content-Security-Policy: sandbox`, so an HTML/SVG file opened directly can't run as part of the app (PDFs exempt — browsers won't show them sandboxed). New endpoints serving file bytes must do the same.
@@ -49,6 +52,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - API client: `frontend/src/utils/api.ts` (uses fetch; the session cookie goes along by itself). Whether the user is logged in is only known by asking the server (`auth.restoreSession()`), as scripts can't read the cookie. Any 401 goes to the `onSessionEnded` handler (set in `main.ts`): the app logs out and opens the login page with a way back — new request paths must call `noteStatus(status)` like the others. Leaving for the login page goes through `showLoginAfterLogout()` (`router/index.ts`), which navigates *before* clearing the user's state. Long-open responses (the watch stream) re-check the session with `sessionStillValid(c)`.
 - Stores: `auth.ts` (login/logout, user), `files.ts` (current path + directory listing)
 - Types: `frontend/src/types/index.ts`
+- Paths in the user's folder (relative, `/`-separated, `''` = home): `parentOf`, `isWithin`, `relativeTo`, `breadcrumbTrail` in `utils/paths.ts` — don't slice paths by hand
 - Dev proxy: Vite proxies `/api` → `http://localhost:8080`
 - Live folder updates: `GET /files/watch` (SSE, `backend/internal/handlers/watch.go`) starts with a `snapshot` event (the full listing, read after the watcher is live), resends one whenever events may have been lost, and pings every 25 s. `stores/files.ts` loads folders from that snapshot, reconnects with backoff (and on silence, tab visible, `online`), so every reconnect resyncs. After writing a file, don't call `filesStore.refresh()` — the stream reports the change; `refresh()` reopens the stream.
 
@@ -57,8 +61,9 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - `components/layout/` — shell components (AppLayout, AppHeader)
 - `components/files/` — file-specific (FileList, FileIcon, FileBreadcrumb, FilePreview)
 - `components/archive/` — ArchiveContents
+- `components/usage/` — disk usage page parts (UsageList, UsageTreemap)
 - `components/admin/` — UserFormModal
-- `views/` — page-level (LoginView, FilesView, AdminView, SettingsView)
+- `views/` — page-level (LoginView, FilesView, AdminView, SettingsView, DiskUsageView)
 
 ## UI Component Rules
 - **AppCheckbox.vue** — always use for checkboxes; supports `v-model`, `indeterminate` prop; never use native `<input type="checkbox">`
@@ -89,9 +94,9 @@ Always use `debounce()` from `frontend/src/utils/debounce.ts` — never write ra
 ## Header Center Slot Convention (IMPORTANT)
 `AppHeader` is a layout shell — it must never import or reference view-specific components directly. It renders a generic center slot via `layout.headerCenter: shallowRef<Component | null>` from the layout store.
 
-Views that need to render content in the header create a `defineComponent` whose render function closes over their own reactive state, set it on `layoutStore.headerCenter`, and clear it in `onUnmounted`. AppHeader renders it blindly with `<component :is="layout.headerCenter">`.
+Views that need to render content in the header call `useHeaderCenter(name, render)` (`composables/useHeaderCenter.ts`) with a render function that closes over their own reactive state; it sets the component while the view is mounted and clears it on unmount. AppHeader renders it blindly with `<component :is="layout.headerCenter">`.
 
-Currently used only by `FilesView` to render `FileBreadcrumb` in place of the logo. The pattern is generic — any future view can use it.
+Used by `FilesView` and `DiskUsageView` to render `FileBreadcrumb` in place of the logo (`root` makes the trail start at a given folder, `hrefFor` sets the crumbs' links).
 
 ## File Operations Convention (IMPORTANT)
 When adding a new file operation, add it ONLY to `buildFileOps()` in `frontend/src/composables/useFileOps.ts` — it is the single source of truth. The context menu (`contextMenuItems`) and toolbar (`FileOpsBar` via `fileOps` computed) both derive from it automatically. Each op is `{ key, label, icon, danger?, visible?, disabled?, action }`. Use `visible` for conditional ops (e.g. single-selection only).
@@ -104,6 +109,7 @@ ALL browsing state must be reflected in the URL so page refresh restores it:
 - `?preview=` — open preview file path
 - `?q=` — search query
 - `?view=text` — current preview shown as raw text instead of its custom view (`.todo`, `.kanban`)
+- Disk usage page (`/usage`): `?path=` the scanned folder, `?at=` the folder looked at inside it, `?tab=largest`, `?size=apparent` — built by `usageQuery()` (`utils/diskUsage.ts`)
 
 Any new state that should survive refresh MUST be added to the URL and synced bidirectionally with `watch(route.query.xxx)` + `watch(stateRef)`.
 

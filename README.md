@@ -64,6 +64,9 @@ Boards are stored as plain Markdown, so they stay readable and editable in any t
 
 `## ` starts a column and `- ` starts a card. Trailing `#labels` (must start with a letter) and an `@YYYY-MM-DD` due date sit on the card's line. Indented lines belong to the card: `- [ ]` / `- [x]` are checklist items, everything else is its description.
 
+### Disk Usage
+Find out what takes the space in a folder: open **Details** on it and choose **Disk usage**. The folder is scanned once (with live progress), then shown largest first, each item with a bar for its share, next to a treemap where each item's area matches its size. Click into folders to dig deeper, or open the **Largest files** tab for the biggest files anywhere in the scan. Sizes can be shown as space taken on disk (files with several hard links counted once, as `du` does) or as file sizes. Select items to delete them for good, or jump to one in the file browser. Symbolic links aren't followed. The scan is kept for 30 minutes after it was last looked at; **Rescan** measures again.
+
 ### Advanced Renamer
 - Batch rename with a template language (counters, original name, extension, date, etc.)
 - Live preview before applying
