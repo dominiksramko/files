@@ -50,10 +50,15 @@ func FFprobeContext(ctx context.Context, path string, options ...string) *exec.C
 	return Command(ctx, "ffprobe", args...)
 }
 
-// Input is the guarded input options plus "-i", path, to drop into an ffmpeg
-// argument list where "-i", path would go (after per-input options like -ss).
-func Input(path string) []string {
-	return append(inputGuard(), "-i", path)
+// FFmpeg builds an ffmpeg command reading the real local file input, guarded
+// like FFprobe: inputOptions go before the input (e.g. -ss), outputArgs after.
+// It runs at low priority (nice), using only spare CPU.
+func FFmpeg(ctx context.Context, input string, inputOptions []string, outputArgs ...string) *exec.Cmd {
+	args := append([]string{"-n", "10", "ffmpeg"}, inputOptions...)
+	args = append(args, inputGuard()...)
+	args = append(args, "-i", input)
+	args = append(args, outputArgs...)
+	return Command(ctx, "nice", args...)
 }
 
 // MagickConvert builds an ImageMagick command (the `convert`/`magick` tool)

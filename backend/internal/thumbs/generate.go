@@ -392,16 +392,14 @@ func generateVideoThumb(ctx context.Context, srcPath, dstPath string, size int) 
 	)
 
 	// -ss before -i uses fast keyframe seeking (fine for thumbnails).
-	args := []string{"-ss", fmt.Sprintf("%.3f", seekSec)}
-	args = append(args, media.Input(srcPath)...)
-	args = append(args,
+	cmd := media.FFmpeg(ctx, srcPath, []string{"-ss", fmt.Sprintf("%.3f", seekSec)},
 		"-vframes", "1",
 		"-vf", filter,
 		"-q:v", "2", // JPEG quality (2 = high)
 		"-y", // overwrite output
 		dstPath,
 	)
-	if out, err := media.Command(ctx, "ffmpeg", args...).CombinedOutput(); err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil

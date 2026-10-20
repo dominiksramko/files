@@ -12,7 +12,6 @@ import (
 	"mime"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -574,16 +573,12 @@ func transcodeAudio(srcPath, destPath string) error {
 	part.Close()
 	defer os.Remove(part.Name()) // no-op once renamed
 
-	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
-	ffmpegArgs := []string{"-n", "10", "ffmpeg", "-y", "-v", "error"}
-	ffmpegArgs = append(ffmpegArgs, media.Input(srcPath)...)
-	ffmpegArgs = append(ffmpegArgs,
+	cmd := media.FFmpeg(context.Background(), srcPath, []string{"-y", "-v", "error"},
 		"-map", "0:a:0", "-vn",
 		"-c:a", "aac", "-b:a", "256k",
 		"-movflags", "+faststart",
 		"-f", "mp4", part.Name(),
 	)
-	cmd := exec.Command("nice", ffmpegArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}

@@ -1,12 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -142,7 +142,7 @@ func (h *SubtitlesHandler) Stream(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid index"})
 			return
 		}
-		out, err := ffmpegToVTT(abs, idx)
+		out, err := ffmpegToVTT(c.Request.Context(), abs, idx)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "ffmpeg extraction failed"})
 			return
@@ -168,10 +168,7 @@ func (h *SubtitlesHandler) Stream(c *gin.Context) {
 		c.Data(http.StatusOK, "text/vtt; charset=utf-8", srtToVTT(data))
 	default:
 		// ASS / SSA / anything else — let ffmpeg convert from the file
-		ffmpegArgs := append([]string{"-v", "quiet"}, media.Input(abs)...)
-		ffmpegArgs = append(ffmpegArgs, "-f", "webvtt", "pipe:1")
-		cmd := exec.Command("ffmpeg", ffmpegArgs...)
-		out, err := cmd.Output()
+		out, err := media.FFmpeg(c.Request.Context(), abs, []string{"-v", "quiet"}, "-f", "webvtt", "pipe:1").Output()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "subtitle conversion failed"})
 			return
@@ -226,10 +223,8 @@ func probeSubtitles(path string) ([]embeddedSub, error) {
 }
 
 // ffmpegToVTT extracts stream at streamIndex from path and returns WebVTT bytes.
-func ffmpegToVTT(path string, streamIndex int) ([]byte, error) {
-	return exec.Command(
-		"ffmpeg", "-v", "quiet",
-		"-i", path,
+func ffmpegToVTT(ctx context.Context, path string, streamIndex int) ([]byte, error) {
+	return media.FFmpeg(ctx, path, []string{"-v", "quiet"},
 		"-map", fmt.Sprintf("0:%d", streamIndex),
 		"-f", "webvtt", "pipe:1",
 	).Output()

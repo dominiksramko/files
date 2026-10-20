@@ -17,9 +17,10 @@ func TestInputGuardsEveryCall(t *testing.T) {
 		t.Errorf("FFprobe args = %v", cmd.Args)
 	}
 
-	input := Input("/videos/clip.mp4")
-	if !slices.Equal(input, []string{"-protocol_whitelist", "file", "-format_whitelist", allowedFormats, "-i", "/videos/clip.mp4"}) {
-		t.Errorf("Input = %v", input)
+	ffmpeg := FFmpeg(context.Background(), "/videos/clip.mp4", []string{"-ss", "5"}, "-frames:v", "1", "out.png")
+	wantFFmpeg := []string{"nice", "-n", "10", "ffmpeg", "-ss", "5", "-protocol_whitelist", "file", "-format_whitelist", allowedFormats, "-i", "/videos/clip.mp4", "-frames:v", "1", "out.png"}
+	if !slices.Equal(ffmpeg.Args, wantFFmpeg) {
+		t.Errorf("FFmpeg args = %v", ffmpeg.Args)
 	}
 }
 

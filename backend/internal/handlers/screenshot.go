@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -60,14 +59,11 @@ func (handler *ScreenshotHandler) Take(ctx *gin.Context) {
 	outputFilename := fmt.Sprintf("%s_%s_%s.png", videoStem, videoTimestamp, capturedAt)
 
 	var stderr bytes.Buffer
-	ffmpegArgs := []string{"-ss", fmt.Sprintf("%.3f", req.Timestamp)}
-	ffmpegArgs = append(ffmpegArgs, media.Input(realVideo)...)
-	ffmpegArgs = append(ffmpegArgs,
+	cmd := media.FFmpeg(ctx.Request.Context(), realVideo, []string{"-ss", fmt.Sprintf("%.3f", req.Timestamp)},
 		"-frames:v", "1",
 		"-f", "image2pipe", "-c:v", "png",
 		"pipe:1",
 	)
-	cmd := exec.Command("ffmpeg", ffmpegArgs...)
 	cmd.Stderr = &stderr
 	image, err := cmd.Output()
 	if err != nil || len(image) == 0 {

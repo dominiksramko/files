@@ -211,14 +211,8 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 	// nice -n 10: ffmpeg only uses spare CPU, keeping the server responsive.
 	// -fflags +genpts: regenerate missing presentation timestamps, required for
 	// AVI files where pre-input seeking leaves the first packets without PTS/DTS.
-	cmdArgs := []string{"-n", "10",
-		"ffmpeg",
-		"-y",
-		"-fflags", "+genpts",
-		"-ss", fmt.Sprintf("%.3f", startAt),
-	}
-	cmdArgs = append(cmdArgs, media.Input(absPath)...)
-	cmdArgs = append(cmdArgs,
+	cmd := media.FFmpeg(context.Background(), absPath,
+		[]string{"-y", "-fflags", "+genpts", "-ss", fmt.Sprintf("%.3f", startAt)},
 		"-output_ts_offset", fmt.Sprintf("%.3f", startAt),
 		"-c:v", videoCodec,
 		"-c:a", audioCodec,
@@ -230,7 +224,6 @@ func (h *HLSHandler) ensureGenerating(absPath, cacheDir, hash string, seq int) e
 		"-hls_segment_filename", filepath.Join(cacheDir, "chunk_%03d.ts"),
 		filepath.Join(cacheDir, "playlist.m3u8"),
 	)
-	cmd := exec.Command("nice", cmdArgs...)
 
 	if err := cmd.Start(); err != nil {
 		return err
