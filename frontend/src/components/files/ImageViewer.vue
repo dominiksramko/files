@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import AppIcon from '@/components/ui/AppIcon.vue'
@@ -23,6 +23,10 @@ const transparentMimes = new Set([
 const hasAlpha   = transparentMimes.has(props.entry.mime)
 const imageError = ref(false)
 const imgLoaded  = ref(false)
+// Whether the loaded image has been put in place; until then it moves there
+// without the zoom transition, which would slide it in from the top left
+// (it sat centred by a transform relative to its own size while loading).
+const imgPlaced  = ref(false)
 const naturalW   = ref(0)
 const naturalH   = ref(0)
 const containerW = ref(0)
@@ -102,7 +106,7 @@ const imgTranslateY = computed(() =>
     : 0,
 )
 
-function onImageLoad(e: Event) {
+async function onImageLoad(e: Event) {
   const img = e.target as HTMLImageElement
   naturalW.value = img.naturalWidth
   naturalH.value = img.naturalHeight
@@ -111,6 +115,11 @@ function onImageLoad(e: Event) {
     containerH.value = imageContainer.value.clientHeight
   }
   imgLoaded.value = true
+  // Reading its size makes the browser apply the new place before the
+  // transition is turned on.
+  await nextTick()
+  img.getBoundingClientRect()
+  imgPlaced.value = true
 }
 
 function resetZoom() { zoom.value = 1; panX.value = 0; panY.value = 0 }
@@ -338,7 +347,7 @@ onUnmounted(() => {
           maxWidth: 'none',
           maxHeight: 'none',
           transform: `translate(${imgTranslateX}px, ${imgTranslateY}px)`,
-          transition: touchState || isPanning || isWheeling ? 'none' : 'transform 0.1s ease',
+          transition: !imgPlaced || touchState || isPanning || isWheeling ? 'none' : 'transform 0.1s ease',
         } : {
           position: 'absolute',
           left: '50%',

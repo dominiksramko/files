@@ -49,6 +49,26 @@ describe('ImageViewer', () => {
     expect(image.classList.contains('checkerboard')).toBe(true)
   })
 
+  it('puts the loaded image in place without sliding it there', async () => {
+    const { image } = await mountViewer(png)
+    Object.defineProperty(image, 'naturalWidth', { value: 800 })
+    Object.defineProperty(image, 'naturalHeight', { value: 600 })
+    // The transition in force each time the image's style changes.
+    const placements: { left: string; transition: string }[] = []
+    const observer = new MutationObserver(() => placements.push({ left: image.style.left, transition: image.style.transition }))
+    observer.observe(image, { attributes: true, attributeFilter: ['style'] })
+    cleanups.push(() => observer.disconnect())
+
+    image.dispatchEvent(new Event('load'))
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    const firstPlaced = placements.find((placement) => placement.left === '0px')
+    expect(firstPlaced?.transition).toBe('none')
+    // Zooming still animates.
+    expect(image.style.transition).toBe('transform 0.1s ease')
+  })
+
   it('shows no placeholder without a thumbnail, or when it fails to load', async () => {
     const { placeholder: withoutThumb } = await mountViewer({ ...png, has_thumb: false, thumb_hash: undefined })
     expect(withoutThumb()).toBeNull()
