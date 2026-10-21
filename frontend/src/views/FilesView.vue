@@ -35,6 +35,7 @@ import { useHeaderCenter } from '@/composables/useHeaderCenter'
 import { debounce } from '@/utils/debounce'
 import { nameOf, parentOf } from '@/utils/paths'
 import { usageStateFrom, withUsageState } from '@/utils/diskUsage'
+import { PREVIEW_OPENED_STATE, previewHistoryStep } from '@/utils/previewHistory'
 import { archiveStateFrom, withArchiveState } from '@/utils/archiveTree'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import DiskUsageModal from '@/components/usage/DiskUsageModal.vue'
@@ -271,9 +272,14 @@ watch(() => filesStore.folderGone, (fallback) => {
 })
 
 watch(previewEntry, (entry) => {
-  const currentPreview = route.query.preview as string | undefined
-  if (entry?.path === currentPreview) return
-  router.replace({ query: routeQuery() })
+  const step = previewHistoryStep(
+    entry?.path ?? null,
+    (route.query.preview as string | undefined) ?? null,
+    router.options.history.state[PREVIEW_OPENED_STATE] === true,
+  )
+  if (step === 'push') router.push({ query: routeQuery(), state: { [PREVIEW_OPENED_STATE]: true } })
+  else if (step === 'replace') router.replace({ query: routeQuery() })
+  else if (step === 'back') router.back()
 })
 
 watch(previewRawText, (rawText) => {
