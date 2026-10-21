@@ -17,6 +17,9 @@ const transparentMimes = new Set([
   'image/tiff', 'image/jxl', 'image/x-icon', 'image/vnd.adobe.photoshop',
   'image/x-tga', 'image/x-xcf', 'image/x-exr', 'image/vnd.ms-dds',
 ])
+// Shown behind transparent images once loaded — before, the browser already
+// sizes the image from its first bytes, and the background would hide the
+// placeholder while the rest arrives.
 const hasAlpha   = transparentMimes.has(props.entry.mime)
 const imageError = ref(false)
 const imgLoaded  = ref(false)
@@ -344,7 +347,7 @@ onUnmounted(() => {
           maxHeight: '100%',
           transform: 'translate(-50%, -50%)',
         }"
-        :class="['block select-none', hasAlpha && 'checkerboard']"
+        :class="['block select-none', hasAlpha && imgLoaded && 'checkerboard']"
         draggable="false"
         @load="onImageLoad"
         @error="imageError = true"
