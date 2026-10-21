@@ -1,11 +1,11 @@
 # Development stack: Go backend with live reload (air) + Vite dev server with HMR.
 # Source is bind-mounted, so edits on the host are picked up immediately.
 #
-#   docker compose -f docker-compose.dev.yml up --build
+#   ./dev.sh                     (see dev.sh for its other commands)
 #   open http://localhost:5173   (login: admin / admin, root = your $HOME)
 #
-# Containers run as uid/gid 1000 so files they create (backend/data, node_modules,
-# lint fixes, go.mod edits) stay owned by you. Override with DEV_UID / DEV_GID.
+# Containers run as DEV_UID / DEV_GID (dev.sh sets them to yours; 1000 without it) so files
+# they create (backend/data, node_modules, lint fixes, go.mod edits) stay owned by you.
 name: files-dev
 
 services:

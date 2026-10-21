@@ -13,7 +13,7 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - `backend/` — Go + Gin + SQLite API server
 - `frontend/` — Vue3 + Pinia + Tailwind SPA
 - `docker-compose.yml` — production deployment
-- `docker-compose.dev.yml` — dev stack (backend `dev` stage of `backend/Dockerfile` with air live reload via `backend/.air.toml`, + Vite on :5173). Run tooling inside it: `docker compose -f docker-compose.dev.yml exec backend go test ./...`, `... exec frontend npm run lint`
+- `docker-compose.dev.yml` — dev stack (backend `dev` stage of `backend/Dockerfile` with air live reload via `backend/.air.toml`, + Vite on :5173). `dev.sh` drives it: `./dev.sh` starts it, `./dev.sh test` / `lint` / `migrate <name>` / `sh <service>` / `down`; anything else goes to `docker compose -f docker-compose.dev.yml`
 
 ## Versions
 Releases are git tags `vMAJOR.MINOR.PATCH`; the server's version comes from `git describe` at build (`deploy.sh` → `APP_VERSION` → Dockerfile `VERSION` → `-ldflags -X main.version`), shown in Settings — never write a version number into the code. When a piece of work is done, say which number it raises since the last tag (`git describe --tags --abbrev=0`): **major** if updating needs a manual step or can't be undone (new required setting, a database change older versions can't read), **minor** for a new feature, **patch** for fixes only — and offer to tag it. Creating and pushing a tag needs the user's go-ahead, like a commit.
@@ -33,7 +33,7 @@ Releases are git tags `vMAJOR.MINOR.PATCH`; the server's version comes from `git
 
 ## Tests (IMPORTANT)
 - **Every function you add or change gets tests in the same change** — the behaviour it's for, and the ways it must refuse (bad paths, conflicts, other users' files). For a bug fix, add a test that fails without the fix.
-- Run them in the dev stack: `docker compose -f docker-compose.dev.yml exec backend go test ./...` and `... exec frontend npm test` (`npm run test:watch` while working).
+- Run them in the dev stack: `./dev.sh test` (both suites; `./dev.sh exec frontend npm run test:watch` while working).
 - They gate production: the builder stages of `backend/Dockerfile` run `go vet` + `go test` and `npm test`, so `deploy.sh` stops before replacing the running containers if any fail.
 - **Frontend:** Vitest, specs in a `__tests__/` folder next to the code (`src/utils/__tests__/merge.spec.ts`), named `*.spec.ts`. Keep logic in plain functions in `utils/` so it can be tested without mounting components.
 - **Backend** helpers in `backend/internal/handlers/handlers_test.go`: `serve` / `serveJSON` call a handler as a logged-in user with a given home folder (no router or session needed); `sessionRouter` / `login` / `call` in `auth_test.go` go through the real session middleware; `internal/testutil` (`OpenDB`, `CreateUser`) gives any package a migrated database; `newUserFolders` creates neighbouring home folders `ann` and `anna`; `assertUnchanged`, `assertFileContent`, `assertMissing`, `assertStatus`, `decodeResponse`. Keep logic testable: pure helpers for decisions, handlers only for request/response.
@@ -45,7 +45,7 @@ Releases are git tags `vMAJOR.MINOR.PATCH`; the server's version comes from `git
 - Runner: `backend/internal/database/db.go` → `runMigrations()` — runs on every server start
 - Tracking table: `migrations` (version TEXT PK, name TEXT, applied_at TEXT)
 - Each migration file has `Up` and `Down` funcs; runs in a transaction
-- **To create a new migration:** `go run ./cmd/migrate <name>` from `backend/` dir
+- **To create a new migration:** `./dev.sh migrate <name>` (or `go run ./cmd/migrate <name>` from `backend/` dir)
   - e.g. `go run ./cmd/migrate add_email_to_users`
   - Generates a file with the current timestamp + name, whose Up/Down return an error until written — the dev server migrates as soon as a file is saved, and an empty migration would be recorded as applied and never run again
 - **Never edit or delete existing migration files** — only append new ones

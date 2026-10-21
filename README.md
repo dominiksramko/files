@@ -196,18 +196,20 @@ The port is published on `127.0.0.1` only, so nothing outside the machine reache
 
 **Docker dev stack** (recommended: only Docker needed, every CLI tool the backend uses is included):
 ```bash
-docker compose -f docker-compose.dev.yml up --build
+./dev.sh
 ```
-Open `http://localhost:5173` and log in with `admin` / `admin`. The admin's root folder is your host `$HOME`, which is mounted read-write at the same path, so file operations in the dev app act on your real files. Ports are bound to localhost only. Both `backend/` and `frontend/` are bind-mounted: the Go server rebuilds and restarts on save (via [air](https://github.com/air-verse/air)), and Vite hot-reloads the frontend. Dev data (DB, caches, user folders) lives in `backend/data/`.
+It starts (or rebuilds) the stack in the background and follows its logs; Ctrl-C stops following, `./dev.sh down` stops the stack. Open `http://localhost:5173` and log in with `admin` / `admin`. The admin's root folder is your host `$HOME`, which is mounted read-write at the same path, so file operations in the dev app act on your real files. Ports are bound to localhost only. Both `backend/` and `frontend/` are bind-mounted: the Go server rebuilds and restarts on save (via [air](https://github.com/air-verse/air)), and Vite hot-reloads the frontend. Dev data (DB, caches, user folders) lives in `backend/data/`.
 
-Run one-off commands inside the containers:
+Run commands inside the containers (the stack must be running):
 ```bash
-alias dc='docker compose -f docker-compose.dev.yml'
-dc exec backend go test ./...
-dc exec backend go run ./cmd/migrate add_something
-dc exec frontend npm run lint
-dc exec frontend npm install some-package
+./dev.sh test                    # backend and frontend tests
+./dev.sh lint                    # go vet + the frontend linters
+./dev.sh migrate add_something   # a new database migration
+./dev.sh sh backend              # a shell in a container
+./dev.sh logs frontend           # one service's logs
+./dev.sh exec frontend npm install some-package   # anything else goes to docker compose
 ```
+The containers run with your user and group ids, so files they create stay yours (`DEV_UID` / `DEV_GID` override them).
 
 **Without Docker**, you need Go 1.25+, Node 24 (see `frontend/.nvmrc`), and for full functionality `ffmpeg`, `7z`, `unrar`, ImageMagick, `rsvg-convert` and `pdftoppm` on your `PATH`.
 
