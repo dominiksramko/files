@@ -4,6 +4,7 @@ import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
+import { fitScale as viewerScale, placeholderSize, type Size } from '@/utils/imageFit'
 
 // active: whether this is the image on screen (the preview also keeps its
 // neighbours mounted); only that one takes zoom keys.
@@ -45,11 +46,39 @@ function clampPan() {
   panY.value = clamp(panY.value, -halfOverflowY, halfOverflowY)
 }
 
+const containerSize = computed(() => ({ width: containerW.value, height: containerH.value }))
+
 // Scale that makes the image fill the container at zoom=1 (same as object-contain)
-const fitScale = computed(() => {
-  if (!naturalW.value || !naturalH.value || !containerW.value || !containerH.value) return 1
-  return Math.min(1, containerW.value / naturalW.value, containerH.value / naturalH.value)
+const fitScale = computed(() => viewerScale({ width: naturalW.value, height: naturalH.value }, containerSize.value))
+
+// The file's small whole-picture thumbnail, shown where the image will be
+// until it has loaded. Computed so it appears if the thumbnail is made while
+// the preview is open.
+const placeholderUrl = computed(() =>
+  props.entry.has_thumb && props.entry.thumb_hash
+    ? filesApi.previewThumbUrl(props.entry.path, props.entry.thumb_hash)
+    : null,
+)
+const placeholderNatural = ref<Size | null>(null)
+const placeholderFailed  = ref(false)
+const placeholderStyle = computed(() => {
+  if (!placeholderNatural.value) return { visibility: 'hidden' as const }
+  const size = placeholderSize(placeholderNatural.value, containerSize.value)
+  return {
+    left: 0,
+    top: 0,
+    width: `${size.width}px`,
+    height: `${size.height}px`,
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(${Math.round((containerW.value - size.width) / 2)}px, ${Math.round((containerH.value - size.height) / 2)}px)`,
+  }
 })
+
+function onPlaceholderLoad(event: Event) {
+  const placeholder = event.target as HTMLImageElement
+  placeholderNatural.value = { width: placeholder.naturalWidth, height: placeholder.naturalHeight }
+}
 
 // Explicit CSS dimensions instead of transform scale.
 // The browser renders the image at exactly these pixel dimensions — always
@@ -273,6 +302,18 @@ onUnmounted(() => {
       class="flex-1 w-full relative overflow-hidden min-h-0"
       @dblclick="toggleZoom"
     >
+      <img
+        v-if="placeholderUrl && !placeholderFailed && !imgLoaded && !imageError"
+        :src="placeholderUrl"
+        alt=""
+        aria-hidden="true"
+        :style="placeholderStyle"
+        class="absolute block select-none pointer-events-none"
+        draggable="false"
+        @load="onPlaceholderLoad"
+        @error="placeholderFailed = true"
+      />
+
       <div
         v-if="imageError"
         class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-zinc-500"

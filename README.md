@@ -39,6 +39,8 @@ Text files, todo lists and boards can be edited by several people (or devices) a
 ### Thumbnails
 Generated automatically and cached for: JPEG, PNG, GIF, WebP, BMP, TIFF (pure Go), SVG, PDF, video, and all ImageMagick-supported formats above.
 
+Each file gets two from one pass over it: a 320 px square for the file list and grid, and the whole picture within 640 px, shown in the preview while the file itself loads (and as a video's poster).
+
 ### Archive Operations
 - Extract ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, TAR.ZST, RAR, 7Z (including password-protected)
 - Compress selected files to ZIP or 7Z (with optional password)

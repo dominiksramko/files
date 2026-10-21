@@ -12,6 +12,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 	"os"
 
 	"files/internal/media"
@@ -76,46 +77,121 @@ func FileContentHash(path string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// generateThumb decodes the image at srcPath, crops a top-center square, scales
-// it to size×size pixels, and writes a JPEG thumbnail to dstPath.
-func generateThumb(srcPath, dstPath string, size int) error {
-	f, err := os.Open(srcPath)
+// outputs names the files one source's thumbnails are written to.
+type outputs struct {
+	square  string // ThumbMaxDim square, shown in file lists
+	preview string // the whole picture within PreviewMaxDim, shown while the preview loads
+}
+
+// generateThumb decodes the image at srcPath, turns it upright and writes its
+// thumbnails.
+func generateThumb(srcPath string, dst outputs) error {
+	src, err := decodeImageFile(srcPath)
 	if err != nil {
-		return fmt.Errorf("open: %w", err)
+		return err
+	}
+	return writeThumbs(applyOrientation(src, jpegOrientation(srcPath)), dst)
+}
+
+// decodeImageFile decodes the image file at path.
+func decodeImageFile(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
 	}
 	defer f.Close()
 
 	src, _, err := image.Decode(f)
 	if err != nil {
-		return fmt.Errorf("decode: %w", err)
+		return nil, fmt.Errorf("decode: %w", err)
 	}
+	return src, nil
+}
 
-	src = applyOrientation(src, jpegOrientation(srcPath))
-	src = alphaCrop(src)
-	thumb := squareCrop(src, size)
+// writeThumbs writes both thumbnails of src: the preview keeps the whole
+// picture, the square is a top-centre crop with transparent edges trimmed.
+// Both are cut from one scaled-down copy, so the full-size picture — the
+// costly part — is scaled only once. Transparent areas show a checkerboard.
+func writeThumbs(src image.Image, dst outputs) error {
+	working := scaleForThumbs(src)
+	preview := flattenOnCheckerboard(fitWithin(working, PreviewMaxDim))
+	square := squareCrop(flattenOnCheckerboard(alphaCrop(working)), ThumbMaxDim)
 
-	out, err := os.Create(dstPath)
+	if err := writeJPEG(dst.preview, preview, previewQuality); err != nil {
+		return err
+	}
+	if err := writeJPEG(dst.square, square, thumbQuality); err != nil {
+		os.Remove(dst.preview)
+		return err
+	}
+	return nil
+}
+
+// writeJPEG encodes img to a new file at path, leaving nothing behind if it fails.
+func writeJPEG(path string, img image.Image, quality int) error {
+	out, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("create dst: %w", err)
 	}
-	defer out.Close()
-
-	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		os.Remove(dstPath)
+	err = jpeg.Encode(out, img, &jpeg.Options{Quality: quality})
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
 		return fmt.Errorf("encode: %w", err)
 	}
 	return nil
 }
 
+// scaleForThumbs returns src scaled down only as far as both thumbnails allow:
+// to fit within PreviewMaxDim, but with the short side kept at ThumbMaxDim or
+// more, so the square isn't enlarged (a panorama's preview is then made
+// smaller again). Pictures already smaller are returned as they are.
+func scaleForThumbs(src image.Image) image.Image {
+	b := src.Bounds()
+	longSide, shortSide := max(b.Dx(), b.Dy()), min(b.Dx(), b.Dy())
+	if shortSide == 0 {
+		return src
+	}
+	scale := max(float64(PreviewMaxDim)/float64(longSide), float64(ThumbMaxDim)/float64(shortSide))
+	if scale >= 1 {
+		return src
+	}
+	return scaleTo(src, scaledSide(b.Dx(), scale), scaledSide(b.Dy(), scale))
+}
+
+// fitWithin returns src scaled down so neither side exceeds maxSide.
+func fitWithin(src image.Image, maxSide int) image.Image {
+	b := src.Bounds()
+	longSide := max(b.Dx(), b.Dy())
+	if longSide <= maxSide {
+		return src
+	}
+	scale := float64(maxSide) / float64(longSide)
+	return scaleTo(src, scaledSide(b.Dx(), scale), scaledSide(b.Dy(), scale))
+}
+
+// scaledSide is side scaled and rounded, but at least one pixel.
+func scaledSide(side int, scale float64) int {
+	return max(1, int(math.Round(float64(side)*scale)))
+}
+
+func scaleTo(src image.Image, width, height int) image.Image {
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	draw.BiLinear.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+	return dst
+}
+
 // generateMagickThumb uses ImageMagick's convert to rasterise srcPath to a
-// temporary PNG, then composites onto a checkerboard and encodes to JPEG.
+// temporary PNG, then writes its thumbnails.
 //
 // Frame/layer selection strategy:
 //   - ICO: contains multiple independent size variants; we pick the largest frame.
 //   - PSD/XCF: layered formats where all layers compose the final image; we load
 //     all layers and flatten them together.
 //   - Everything else: single-frame formats, [0] is used defensively.
-func generateMagickThumb(ctx context.Context, srcPath, dstPath, mime string, size int) error {
+func generateMagickThumb(ctx context.Context, srcPath, mime string, dst outputs) error {
 	tmp, err := os.CreateTemp("", "magick-thumb-*.png")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
@@ -123,7 +199,7 @@ func generateMagickThumb(ctx context.Context, srcPath, dstPath, mime string, siz
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 
-	rasterSize := strconv.Itoa(size * 2)
+	rasterSize := strconv.Itoa(PreviewMaxDim)
 
 	// Build the convert argument list based on format:
 	//   ICO  — composite all frames with the largest as base canvas, so all
@@ -144,32 +220,11 @@ func generateMagickThumb(ctx context.Context, srcPath, dstPath, mime string, siz
 		return fmt.Errorf("convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
-	f, err := os.Open(tmp.Name())
+	src, err := decodeImageFile(tmp.Name())
 	if err != nil {
-		return fmt.Errorf("open converted: %w", err)
+		return err
 	}
-	defer f.Close()
-
-	src, _, err := image.Decode(f)
-	if err != nil {
-		return fmt.Errorf("decode: %w", err)
-	}
-
-	src = alphaCrop(src)
-	composited := flattenOnCheckerboard(src)
-	thumb := squareCrop(composited, size)
-
-	out, err := os.Create(dstPath)
-	if err != nil {
-		return fmt.Errorf("create dst: %w", err)
-	}
-	defer out.Close()
-
-	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		os.Remove(dstPath)
-		return fmt.Errorf("encode: %w", err)
-	}
-	return nil
+	return writeThumbs(src, dst)
 }
 
 // icoConvertArgs builds the ImageMagick convert argument list for an ICO file.
@@ -258,16 +313,16 @@ func gcd(a, b int) int {
 }
 
 // generatePDFThumb rasterises the first page of the PDF at srcPath via
-// pdftoppm, then crops and encodes to a JPEG thumbnail at dstPath.
-func generatePDFThumb(ctx context.Context, srcPath, dstPath string, size int) error {
+// pdftoppm and writes its thumbnails.
+func generatePDFThumb(ctx context.Context, srcPath string, dst outputs) error {
 	dir, err := os.MkdirTemp("", "pdf-thumb-*")
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
 	defer os.RemoveAll(dir)
 
-	rasterSize := strconv.Itoa(size * 2)
-	// -r sets DPI; 150 is enough for a 320px thumbnail from a typical A4 page.
+	rasterSize := strconv.Itoa(PreviewMaxDim)
+	// -r sets DPI; 150 is enough for a 640px preview of a typical A4 page.
 	// -f 1 -l 1 renders only the first page. Output files are <prefix>-1.png.
 	if out, err := media.Command(ctx,
 		"pdftoppm", "-r", "150", "-f", "1", "-l", "1", "-png",
@@ -281,38 +336,16 @@ func generatePDFThumb(ctx context.Context, srcPath, dstPath string, size int) er
 	if err != nil || len(entries) == 0 {
 		return fmt.Errorf("pdftoppm produced no output")
 	}
-	pngPath := filepath.Join(dir, entries[0].Name())
-
-	f, err := os.Open(pngPath)
+	src, err := decodeImageFile(filepath.Join(dir, entries[0].Name()))
 	if err != nil {
-		return fmt.Errorf("open rasterized png: %w", err)
+		return err
 	}
-	defer f.Close()
-
-	src, _, err := image.Decode(f)
-	if err != nil {
-		return fmt.Errorf("decode png: %w", err)
-	}
-
-	thumb := squareCrop(src, size)
-
-	out, err := os.Create(dstPath)
-	if err != nil {
-		return fmt.Errorf("create dst: %w", err)
-	}
-	defer out.Close()
-
-	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		os.Remove(dstPath)
-		return fmt.Errorf("encode: %w", err)
-	}
-	return nil
+	return writeThumbs(src, dst)
 }
 
-// generateSVGThumb rasterises the SVG at srcPath via rsvg-convert, composites
-// the result onto a checkerboard background (so transparent areas are visible
-// in the JPEG thumbnail), then crops and encodes to dstPath.
-func generateSVGThumb(ctx context.Context, srcPath, dstPath string, size int) error {
+// generateSVGThumb rasterises the SVG at srcPath via rsvg-convert and writes
+// its thumbnails.
+func generateSVGThumb(ctx context.Context, srcPath string, dst outputs) error {
 	tmp, err := os.CreateTemp("", "svg-thumb-*.png")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
@@ -320,38 +353,17 @@ func generateSVGThumb(ctx context.Context, srcPath, dstPath string, size int) er
 	tmp.Close()
 	defer os.Remove(tmp.Name())
 
-	// Rasterise at 2× the target size so the subsequent downscale is high quality.
-	rasterSize := strconv.Itoa(size * 2)
+	// Rasterise at the preview's size, 2× the square's, so scaling it down is high quality.
+	rasterSize := strconv.Itoa(PreviewMaxDim)
 	if out, err := media.Command(ctx, "rsvg-convert", "--width", rasterSize, srcPath, "-o", tmp.Name()).CombinedOutput(); err != nil {
 		return fmt.Errorf("rsvg-convert: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
-	f, err := os.Open(tmp.Name())
+	src, err := decodeImageFile(tmp.Name())
 	if err != nil {
-		return fmt.Errorf("open rasterized png: %w", err)
+		return err
 	}
-	defer f.Close()
-
-	src, _, err := image.Decode(f)
-	if err != nil {
-		return fmt.Errorf("decode png: %w", err)
-	}
-
-	src = alphaCrop(src)
-	composited := flattenOnCheckerboard(src)
-	thumb := squareCrop(composited, size)
-
-	out, err := os.Create(dstPath)
-	if err != nil {
-		return fmt.Errorf("create dst: %w", err)
-	}
-	defer out.Close()
-
-	if err := jpeg.Encode(out, thumb, &jpeg.Options{Quality: 80}); err != nil {
-		os.Remove(dstPath)
-		return fmt.Errorf("encode: %w", err)
-	}
-	return nil
+	return writeThumbs(src, dst)
 }
 
 // flattenOnCheckerboard composites src over a white/light-grey checkerboard,
@@ -378,31 +390,43 @@ func flattenOnCheckerboard(src image.Image) image.Image {
 	return dst
 }
 
-// generateVideoThumb extracts a frame from the middle of the video at srcPath
-// and writes a size×size JPEG thumbnail to dstPath using FFmpeg.
-func generateVideoThumb(ctx context.Context, srcPath, dstPath string, size int) error {
+// generateVideoThumb takes a frame from the middle of the video at srcPath
+// with FFmpeg and writes its thumbnails.
+func generateVideoThumb(ctx context.Context, srcPath string, dst outputs) error {
 	// Ask ffprobe for the duration so we can seek to the middle.
 	seekSec := videoDuration(ctx, srcPath) / 2
 
-	// Scale so the shortest side = size, then crop size×size from the top-centre.
-	// (iw-ow)/2 centres horizontally; y=0 anchors to the top.
+	frame, err := os.CreateTemp("", "video-thumb-*.png")
+	if err != nil {
+		return fmt.Errorf("temp file: %w", err)
+	}
+	frame.Close()
+	defer os.Remove(frame.Name())
+
+	// Within 2× the preview's size (never enlarged): enough for writeThumbs
+	// to scale down well, without a 4K frame to encode and decode.
+	maxSide := 2 * PreviewMaxDim
 	filter := fmt.Sprintf(
-		"scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d:(iw-ow)/2:0",
-		size, size, size, size,
+		"scale=w='min(iw,%d)':h='min(ih,%d)':force_original_aspect_ratio=decrease",
+		maxSide, maxSide,
 	)
 
 	// -ss before -i uses fast keyframe seeking (fine for thumbnails).
 	cmd := media.FFmpeg(ctx, srcPath, []string{"-ss", fmt.Sprintf("%.3f", seekSec)},
 		"-vframes", "1",
 		"-vf", filter,
-		"-q:v", "2", // JPEG quality (2 = high)
-		"-y", // overwrite output
-		dstPath,
+		"-y", // overwrite the (empty) temp file
+		frame.Name(),
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	return nil
+
+	src, err := decodeImageFile(frame.Name())
+	if err != nil {
+		return err
+	}
+	return writeThumbs(src, dst)
 }
 
 // videoDuration returns the duration in seconds via ffprobe, or 0 on error.

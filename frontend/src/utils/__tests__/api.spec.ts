@@ -58,6 +58,13 @@ describe('fileops.upload', () => {
   })
 })
 
+describe('thumbnail URLs', () => {
+  it('name the file and the content it was made from', () => {
+    expect(files.thumbUrl('a/b c.png', 'h1')).toBe('/api/v1/thumbnails/get?path=a%2Fb%20c.png&hash=h1')
+    expect(files.previewThumbUrl('a/b c.png', 'h1')).toBe('/api/v1/thumbnails/preview?path=a%2Fb%20c.png&hash=h1')
+  })
+})
+
 describe('no login token in requests', () => {
   it('URLs for media, downloads and streams carry none', () => {
     const urls = [
@@ -66,6 +73,7 @@ describe('no login token in requests', () => {
       files.streamUrlByPath('a/b.png'),
       files.hlsPlaylistUrl('a/b.avi'),
       files.thumbUrl('a/b.png', 'hash'),
+      files.previewThumbUrl('a/b.png', 'hash'),
       files.searchStreamUrl('query', 'a'),
       files.sizeStreamUrl(['a']),
       usage.scanStreamUrl('a'),

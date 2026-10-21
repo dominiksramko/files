@@ -123,6 +123,10 @@ export const auth = {
 }
 
 // --- Files ---
+function thumbnailUrl(kind: 'get' | 'preview', path: string, hash: string): string {
+  return `${BASE}/thumbnails/${kind}?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`
+}
+
 export const files = {
   list: (path = '') => request<FileEntry[]>('GET', `/files/list${qs({ path })}`),
 
@@ -147,8 +151,11 @@ export const files = {
   hlsPlaylistUrl: (path: string) =>
     `${BASE}/files/hls/playlist?path=${encodeURIComponent(path)}`,
 
-  thumbUrl: (path: string, hash: string) =>
-    `${BASE}/thumbnails/get?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`,
+  // The square thumbnail for file lists.
+  thumbUrl: (path: string, hash: string) => thumbnailUrl('get', path, hash),
+
+  // The whole picture, small: shown while the preview loads, and as a video's poster.
+  previewThumbUrl: (path: string, hash: string) => thumbnailUrl('preview', path, hash),
 
   // POST so the password travels in the body, never in a URL (URLs end up in logs).
   archiveContents: (path: string, password = '') =>

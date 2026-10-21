@@ -19,11 +19,22 @@ func NewThumbnailHandler(svc *thumbs.Service) *ThumbnailHandler {
 }
 
 // GET /api/v1/thumbnails/get?path=<rel>&hash=<content-hash>
-// Serves the generated thumbnail JPEG for the given file.
+// Serves the square thumbnail JPEG for the given file.
+func (h *ThumbnailHandler) Get(c *gin.Context) {
+	h.serve(c, (*thumbs.Service).ThumbPathByHash)
+}
+
+// GET /api/v1/thumbnails/preview?path=<rel>&hash=<content-hash>
+// Serves the whole-picture thumbnail the preview shows while the file loads.
+func (h *ThumbnailHandler) Preview(c *gin.Context) {
+	h.serve(c, (*thumbs.Service).PreviewPathByHash)
+}
+
+// serve sends the thumbnail pathByHash finds for the requested file.
 // Both path and hash are required: path resolves the file within the user's
 // root (authorization), hash verifies the file hasn't changed since the
 // client received the listing (cache correctness). Mismatches return 404.
-func (h *ThumbnailHandler) Get(c *gin.Context) {
+func (h *ThumbnailHandler) serve(c *gin.Context, pathByHash func(*thumbs.Service, string) (string, bool)) {
 	if h.svc == nil {
 		c.Status(http.StatusNotFound)
 		return
@@ -56,7 +67,7 @@ func (h *ThumbnailHandler) Get(c *gin.Context) {
 		return
 	}
 
-	thumbPath, ok := h.svc.ThumbPathByHash(claimedHash)
+	thumbPath, ok := pathByHash(h.svc, claimedHash)
 	if !ok {
 		c.Status(http.StatusNotFound)
 		return

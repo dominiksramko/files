@@ -18,7 +18,16 @@ const maxConcurrent = 4
 // tests can shorten it.
 var toolTimeout = 2 * time.Minute
 
-const ThumbMaxDim = 320
+// Each thumbnailed file gets two: a square for file lists, and the whole
+// picture within PreviewMaxDim, which the preview shows while the file itself
+// loads. The preview's is stretched to the screen only briefly, so it's
+// compressed harder.
+const (
+	ThumbMaxDim    = 320
+	PreviewMaxDim  = 640
+	thumbQuality   = 80
+	previewQuality = 50
+)
 
 // unusedThumbAge: a thumbnail not shown for this long is deleted — its file
 // was most likely deleted or changed. It's made again if it's needed.
@@ -58,7 +67,7 @@ type task struct {
 	relPath     string // relative to user root — matches FileEntry.path
 	folderAbs   string // for SSE broadcast key
 	contentHash string // DB primary key
-	thumbFile   string // contentHash + ".jpg", stored under cacheDir
+	thumbFile   string // contentHash + ".jpg", stored under cacheDir (the preview's: previewFile(thumbFile))
 	mime        string
 }
 
@@ -128,14 +137,9 @@ func (s *Service) HashIfReady(absPath string, mtime int64) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	var thumbFile, status string
-	err = s.db.QueryRow(
-		`SELECT thumb_file, status FROM thumbnails WHERE content_hash = ?`, hash,
-	).Scan(&thumbFile, &status)
-	if err != nil || status != "done" {
+	if _, ok := s.readyFiles(hash); !ok {
 		return "", false
 	}
-	s.markUsed(filepath.Join(s.cacheDir, thumbFile))
 	return hash, true
 }
 
@@ -173,19 +177,47 @@ func (s *Service) CheckAndEnqueue(absPath, relPath, folderAbs, mime string, mtim
 	}
 }
 
-// ThumbPathByHash returns the absolute filesystem path to a ready thumbnail
-// looked up directly by its content hash. Returns ("", false) if not ready.
+// previewFile is the name of the preview-sized thumbnail made alongside the
+// square one named thumbFile.
+func previewFile(thumbFile string) string {
+	return strings.TrimSuffix(thumbFile, ".jpg") + "-preview.jpg"
+}
+
+// cachedFiles returns where both thumbnails of the record thumbFile are kept.
+func (s *Service) cachedFiles(thumbFile string) outputs {
+	return outputs{
+		square:  filepath.Join(s.cacheDir, thumbFile),
+		preview: filepath.Join(s.cacheDir, previewFile(thumbFile)),
+	}
+}
+
+// ThumbPathByHash returns the absolute filesystem path to a ready square
+// thumbnail looked up directly by its content hash. Returns ("", false) if
+// not ready.
 func (s *Service) ThumbPathByHash(hash string) (string, bool) {
+	files, ok := s.readyFiles(hash)
+	return files.square, ok
+}
+
+// PreviewPathByHash is ThumbPathByHash for the preview-sized thumbnail.
+func (s *Service) PreviewPathByHash(hash string) (string, bool) {
+	files, ok := s.readyFiles(hash)
+	return files.preview, ok
+}
+
+// readyFiles returns the thumbnails made for hash, if they're ready, and
+// records that they're in use (on the square's file, for both).
+func (s *Service) readyFiles(hash string) (outputs, bool) {
 	var thumbFile, status string
 	err := s.db.QueryRow(
 		`SELECT thumb_file, status FROM thumbnails WHERE content_hash = ?`, hash,
 	).Scan(&thumbFile, &status)
 	if err != nil || status != "done" {
-		return "", false
+		return outputs{}, false
 	}
-	thumbPath := filepath.Join(s.cacheDir, thumbFile)
-	s.markUsed(thumbPath)
-	return thumbPath, true
+	files := s.cachedFiles(thumbFile)
+	s.markUsed(files.square)
+	return files, true
 }
 
 // markUsed records that the thumbnail was just needed, so RemoveUnused keeps it.
@@ -199,8 +231,9 @@ func (s *Service) markUsed(thumbPath string) {
 	}
 }
 
-// RemoveUnused deletes thumbnails not needed for unusedThumbAge (or whose
-// file is gone) and the records of failed attempts, which are retried when
+// RemoveUnused deletes thumbnails not needed for unusedThumbAge (or with a
+// file gone — including those made before previews were, which are then made
+// again with one) and the records of failed attempts, which are retried when
 // the file is next listed anyway. It also forgets the hashes of files that
 // no longer exist.
 func (s *Service) RemoveUnused() error {
@@ -214,15 +247,12 @@ func (s *Service) RemoveUnused() error {
 		if rows.Scan(&hash, &thumbFile, &status) != nil {
 			continue
 		}
-		thumbPath := filepath.Join(s.cacheDir, thumbFile)
-		if info, err := os.Stat(thumbPath); status == "done" && err == nil && time.Since(info.ModTime()) <= unusedThumbAge {
+		files := s.cachedFiles(thumbFile)
+		if status == "done" && recentlyUsed(files) {
 			continue
 		}
 		unused = append(unused, hash)
-		if err := os.Remove(thumbPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("thumbs: failed to delete %s: %v", thumbPath, err)
-		}
-		s.marked.Delete(thumbPath)
+		s.removeFiles(files)
 	}
 	rows.Close()
 	for _, hash := range unused {
@@ -241,6 +271,30 @@ func (s *Service) RemoveUnused() error {
 		return true
 	})
 	return nil
+}
+
+// recentlyUsed reports whether both thumbnails exist and were used within
+// unusedThumbAge (recorded on the square's file).
+func recentlyUsed(files outputs) bool {
+	info, err := os.Stat(files.square)
+	if err != nil || time.Since(info.ModTime()) > unusedThumbAge {
+		return false
+	}
+	_, err = os.Stat(files.preview)
+	return err == nil
+}
+
+// removeFiles deletes both thumbnails, reporting whether any was there.
+func (s *Service) removeFiles(files outputs) (removed bool) {
+	for _, path := range []string{files.square, files.preview} {
+		if err := os.Remove(path); err == nil {
+			removed = true
+		} else if !os.IsNotExist(err) {
+			log.Printf("thumbs: failed to delete %s: %v", path, err)
+		}
+	}
+	s.marked.Delete(files.square)
+	return removed
 }
 
 func (s *Service) periodicCleanup() {
@@ -262,7 +316,7 @@ func (s *Service) enqueue(t task) {
 }
 
 func (s *Service) process(t task) {
-	thumbPath := filepath.Join(s.cacheDir, t.thumbFile)
+	files := s.cachedFiles(t.thumbFile)
 	// A file a tool hangs on would otherwise hold one of the few generation
 	// slots for good, and a handful of them would stop all thumbnails.
 	ctx, cancel := context.WithTimeout(context.Background(), toolTimeout)
@@ -270,15 +324,15 @@ func (s *Service) process(t task) {
 	err := runRecovered(func() error {
 		switch {
 		case strings.HasPrefix(t.mime, "video/"):
-			return generateVideoThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
+			return generateVideoThumb(ctx, t.absPath, files)
 		case t.mime == "image/svg+xml":
-			return generateSVGThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
+			return generateSVGThumb(ctx, t.absPath, files)
 		case t.mime == "application/pdf":
-			return generatePDFThumb(ctx, t.absPath, thumbPath, ThumbMaxDim)
+			return generatePDFThumb(ctx, t.absPath, files)
 		case isMagickThumbable(t.mime):
-			return generateMagickThumb(ctx, t.absPath, thumbPath, t.mime, ThumbMaxDim)
+			return generateMagickThumb(ctx, t.absPath, t.mime, files)
 		default:
-			return generateThumb(t.absPath, thumbPath, ThumbMaxDim)
+			return generateThumb(t.absPath, files)
 		}
 	})
 
@@ -311,8 +365,8 @@ func runRecovered(work func() error) (err error) {
 	return work()
 }
 
-// ClearAll deletes all thumbnail records from the database and removes all
-// physical thumbnail files from the cache directory.
+// ClearAll deletes all thumbnail records from the database and removes both
+// thumbnail files of each from the cache directory.
 func (s *Service) ClearAll() error {
 	rows, err := s.db.Query(`SELECT thumb_file FROM thumbnails`)
 	if err != nil {
@@ -336,16 +390,11 @@ func (s *Service) ClearAll() error {
 
 	deleted := 0
 	for _, thumbFile := range thumbFiles {
-		thumbPath := filepath.Join(s.cacheDir, thumbFile)
-		if err := os.Remove(thumbPath); err != nil {
-			if !os.IsNotExist(err) {
-				log.Printf("thumbs: failed to delete %s: %v", thumbPath, err)
-			}
-		} else {
+		if s.removeFiles(s.cachedFiles(thumbFile)) {
 			deleted++
 		}
 	}
 
-	log.Printf("thumbs: cleared %d records, deleted %d files", len(thumbFiles), deleted)
+	log.Printf("thumbs: cleared %d records, deleted the files of %d", len(thumbFiles), deleted)
 	return nil
 }

@@ -41,7 +41,7 @@ var allowedFileAccess = map[string]string{
 	"hls.go:touchCache":                   "the HLS cache",
 	"advancedrenamer.go:collectFileVars":  "reads metadata at a checked real location",
 	"advancedrenamer.go:collectImageVars": "reads metadata at a checked real location",
-	"thumbnails.go:Get":                   "the thumbnail cache",
+	"thumbnails.go:serve":                 "the thumbnail cache",
 	"users.go:Create":                     "creates a new user's folder",
 	"files.go:convertAudioAndStream":      "the conversion cache and a temp file",
 	"files.go:transcodeAudio":             "the conversion cache",

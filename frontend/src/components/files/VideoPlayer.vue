@@ -18,11 +18,12 @@ const props = defineProps<{ entry: FileEntry; active?: boolean }>()
 const needsRemux = !['video/mp4', 'video/webm'].includes(props.entry.mime)
 const src        = needsRemux ? undefined : filesApi.streamUrl(props.entry.path, props.entry.mod_time)
 const sourceType = needsRemux ? undefined : props.entry.mime
+// The whole frame (the square list thumbnail would be cropped by the player).
 // Computed so it reacts if the store entry gets its thumb_hash populated by the
 // SSE stream after the initial listing (thumbnail generated while folder is open).
 const poster = computed(() =>
   props.entry.has_thumb && props.entry.thumb_hash
-    ? filesApi.thumbUrl(props.entry.path, props.entry.thumb_hash)
+    ? filesApi.previewThumbUrl(props.entry.path, props.entry.thumb_hash)
     : undefined,
 )
 

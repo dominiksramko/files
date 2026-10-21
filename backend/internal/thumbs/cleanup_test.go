@@ -9,21 +9,34 @@ import (
 	"files/internal/testutil"
 )
 
-// addThumbnail records a thumbnail with the given status; for "done" its file
-// is written and last used lastUsed.
+// addThumbnail records a thumbnail with the given status; for "done" both its
+// files are written, last used lastUsed. It returns the square's path.
 func addThumbnail(t *testing.T, service *Service, hash, status string, lastUsed time.Time) string {
 	t.Helper()
-	thumbPath := filepath.Join(service.cacheDir, hash+".jpg")
+	files := service.cachedFiles(hash + ".jpg")
 	if _, err := service.db.Exec(`INSERT INTO thumbnails (content_hash, thumb_file, status) VALUES (?, ?, ?)`, hash, hash+".jpg", status); err != nil {
 		t.Fatal(err)
 	}
 	if status == "done" {
-		if err := os.WriteFile(thumbPath, []byte("jpeg"), 0o644); err != nil {
-			t.Fatal(err)
+		for _, path := range []string{files.square, files.preview} {
+			if err := os.WriteFile(path, []byte("jpeg"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
-		os.Chtimes(thumbPath, lastUsed, lastUsed)
+		os.Chtimes(files.square, lastUsed, lastUsed)
 	}
-	return thumbPath
+	return files.square
+}
+
+// assertFilesGone fails unless neither thumbnail file of hash is left.
+func assertFilesGone(t *testing.T, service *Service, hash string) {
+	t.Helper()
+	files := service.cachedFiles(hash + ".jpg")
+	for _, path := range []string{files.square, files.preview} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("%s kept (stat error: %v)", filepath.Base(path), err)
+		}
+	}
 }
 
 func thumbnailRecorded(t *testing.T, service *Service, hash string) bool {
@@ -40,16 +53,19 @@ func TestRemoveUnused(t *testing.T) {
 	}
 	longAgo := time.Now().Add(-unusedThumbAge - time.Hour)
 	recent := addThumbnail(t, service, "recent", "done", time.Now())
-	unused := addThumbnail(t, service, "unused", "done", longAgo)
+	addThumbnail(t, service, "unused", "done", longAgo)
 	addThumbnail(t, service, "failed", "error", longAgo)
 	addThumbnail(t, service, "making", "pending", longAgo)
 	addThumbnail(t, service, "lost", "done", time.Now())
 	os.Remove(filepath.Join(service.cacheDir, "lost.jpg"))
+	// Made before thumbnails came with a preview: made again when next listed.
+	addThumbnail(t, service, "noPreview", "done", time.Now())
+	os.Remove(filepath.Join(service.cacheDir, "noPreview-preview.jpg"))
 
 	if err := service.RemoveUnused(); err != nil {
 		t.Fatal(err)
 	}
-	for hash, kept := range map[string]bool{"recent": true, "making": true, "unused": false, "failed": false, "lost": false} {
+	for hash, kept := range map[string]bool{"recent": true, "making": true, "unused": false, "failed": false, "lost": false, "noPreview": false} {
 		if thumbnailRecorded(t, service, hash) != kept {
 			t.Errorf("%s: recorded = %v, want %v", hash, !kept, kept)
 		}
@@ -57,9 +73,9 @@ func TestRemoveUnused(t *testing.T) {
 	if _, err := os.Stat(recent); err != nil {
 		t.Errorf("recent thumbnail deleted: %v", err)
 	}
-	if _, err := os.Stat(unused); !os.IsNotExist(err) {
-		t.Errorf("unused thumbnail kept (stat error: %v)", err)
-	}
+	assertFilesGone(t, service, "unused")
+	assertFilesGone(t, service, "lost")
+	assertFilesGone(t, service, "noPreview")
 }
 
 func TestShownThumbnailsAreKept(t *testing.T) {
@@ -126,4 +142,44 @@ func TestRemoveUnusedForgetsDeletedFiles(t *testing.T) {
 	if _, ok := service.hashCache.Load(deleted); ok {
 		t.Error("hash of a deleted file kept")
 	}
+}
+
+func TestServedPreviewsKeepTheirThumbnail(t *testing.T) {
+	service, err := New(testutil.OpenDB(t), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	longAgo := time.Now().Add(-unusedThumbAge - time.Hour)
+	squarePath := addThumbnail(t, service, "photo", "done", longAgo)
+
+	previewPath, ok := service.PreviewPathByHash("photo")
+	if !ok || previewPath != service.cachedFiles("photo.jpg").preview {
+		t.Fatalf("preview = %q, %v", previewPath, ok)
+	}
+	if info, _ := os.Stat(squarePath); time.Since(info.ModTime()) > time.Minute {
+		t.Errorf("serving the preview didn't record the use: %v", info.ModTime())
+	}
+
+	addThumbnail(t, service, "making", "pending", time.Now())
+	if _, ok := service.PreviewPathByHash("making"); ok {
+		t.Error("preview of a thumbnail still being made served")
+	}
+	if _, ok := service.PreviewPathByHash("unknown"); ok {
+		t.Error("preview of an unknown file served")
+	}
+}
+
+func TestClearAllRemovesBothThumbnails(t *testing.T) {
+	service, err := New(testutil.OpenDB(t), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	addThumbnail(t, service, "photo", "done", time.Now())
+	if err := service.ClearAll(); err != nil {
+		t.Fatal(err)
+	}
+	if thumbnailRecorded(t, service, "photo") {
+		t.Error("record kept")
+	}
+	assertFilesGone(t, service, "photo")
 }

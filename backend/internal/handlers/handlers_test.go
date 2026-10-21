@@ -121,6 +121,8 @@ func serveWith(handler gin.HandlerFunc, root string, request *http.Request, setu
 		setup(ctx)
 	}
 	handler(ctx)
+	// As gin does after a request: a status set without a body (c.Status) is sent.
+	ctx.Writer.WriteHeaderNow()
 	if opened, ok := ctx.Get(userFSKey); ok {
 		opened.(*userfs.FS).Close()
 	}

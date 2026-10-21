@@ -138,6 +138,7 @@ func main() {
 
 			// Thumbnails
 			authed.GET("/thumbnails/get", thumbH.Get)
+			authed.GET("/thumbnails/preview", thumbH.Preview)
 
 			// Folder preferences
 			authed.GET("/folders/pref", foldersH.GetPref)
