@@ -23,7 +23,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const version = "1.0.0"
+// The running build, shown in Settings: deploy.sh sets it to `git describe`
+// (v1.2.0, or v1.2.0-3-g849a251 three commits after it) with
+// -ldflags "-X main.version=…"; anything built without it says "dev".
+var version = "dev"
 
 func main() {
 	cfg := config.Load()

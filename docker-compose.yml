@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        # The version Settings shows; deploy.sh sets it from git (see there).
+        VERSION: "${APP_VERSION:-dev}"
     # deploy.sh also tags each build with its commit (files:<commit>), keeps
     # the previous one to roll back to, and removes older ones.
     image: files:latest

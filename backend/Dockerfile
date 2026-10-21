@@ -24,9 +24,11 @@ COPY backend/ ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     go vet ./... && go test ./...
+# Declared only here, so a new version doesn't make the tests above run again.
+ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -o server ./cmd/server
+    go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/server
 
 # ---- runtime base: every CLI tool the backend shells out to (shared by dev + runtime) ----
 FROM alpine:3.24 AS runtime-base

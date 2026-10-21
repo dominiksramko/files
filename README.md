@@ -1,4 +1,4 @@
-# Files &nbsp;`v1.0.0`
+# Files
 
 A self-hosted file browser with a Vue 3 frontend and Go backend. Browse, preview, and manage your files from any browser.
 
@@ -146,6 +146,18 @@ It pulls the latest code, builds a new image (the build runs the tests and stops
 docker image ls files                      # find the previous commit's tag
 docker tag files:<previous-commit> files:latest
 docker compose up -d --no-build
+```
+
+### Versions
+
+Releases are git tags (`v1.2.0`). Settings shows the version the server was built from: `deploy.sh` bakes in `git describe`, so it reads `v1.2.0` for a release, `v1.2.0-3-g849a251` three commits after it, and `dev` for builds not made by `deploy.sh`. The number to raise for a new release:
+
+- **major** — updating needs something done by hand, or can't be undone (a new required setting, a database change an older version can't read)
+- **minor** — new features
+- **patch** — only fixes
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 ### Reaching the app

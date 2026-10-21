@@ -15,6 +15,9 @@ A self-hosted file browser with Vue3 frontend + Go backend.
 - `docker-compose.yml` — production deployment
 - `docker-compose.dev.yml` — dev stack (backend `dev` stage of `backend/Dockerfile` with air live reload via `backend/.air.toml`, + Vite on :5173). Run tooling inside it: `docker compose -f docker-compose.dev.yml exec backend go test ./...`, `... exec frontend npm run lint`
 
+## Versions
+Releases are git tags `vMAJOR.MINOR.PATCH`; the server's version comes from `git describe` at build (`deploy.sh` → `APP_VERSION` → Dockerfile `VERSION` → `-ldflags -X main.version`), shown in Settings — never write a version number into the code. When a piece of work is done, say which number it raises since the last tag (`git describe --tags --abbrev=0`): **major** if updating needs a manual step or can't be undone (new required setting, a database change older versions can't read), **minor** for a new feature, **patch** for fixes only — and offer to tag it. Creating and pushing a tag needs the user's go-ahead, like a commit.
+
 ## Backend
 - Entry: `backend/cmd/server/main.go`
 - Config: `backend/internal/config/config.go` (env vars: PORT, JWT_SECRET, DB_PATH, USERS_ROOT, GIN_MODE, THUMB_CACHE_DIR, HLS_CACHE_DIR, CONV_CACHE_DIR, HLS_CACHE_MAX_GB, CONV_CACHE_MAX_GB, ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_PATH, TRUSTED_PROXIES)

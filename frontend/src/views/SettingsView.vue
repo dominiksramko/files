@@ -231,7 +231,7 @@ async function changePassword() {
           </div>
           <div v-if="appVersion" class="pt-2 border-t border-zinc-800 flex justify-between items-center">
             <p class="text-xs text-zinc-500 font-medium">Version</p>
-            <p class="text-xs text-zinc-500 font-mono">v{{ appVersion }}</p>
+            <p class="text-xs text-zinc-500 font-mono">{{ appVersion }}</p>
           </div>
         </div>
       </div>
