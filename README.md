@@ -202,7 +202,7 @@ It starts (or rebuilds) the stack in the background and follows its logs; Ctrl-C
 
 Run commands inside the containers (the stack must be running):
 ```bash
-./dev.sh test                    # backend and frontend tests
+./dev.sh test                    # backend and frontend tests, and the frontend type check
 ./dev.sh lint                    # go vet + the frontend linters
 ./dev.sh migrate add_something   # a new database migration
 ./dev.sh sh backend              # a shell in a container

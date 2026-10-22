@@ -33,7 +33,7 @@ Releases are git tags `vMAJOR.MINOR.PATCH`; the server's version comes from `git
 
 ## Tests (IMPORTANT)
 - **Every function you add or change gets tests in the same change** — the behaviour it's for, and the ways it must refuse (bad paths, conflicts, other users' files). For a bug fix, add a test that fails without the fix.
-- Run them in the dev stack: `./dev.sh test` (both suites; `./dev.sh exec frontend npm run test:watch` while working).
+- Run them in the dev stack: `./dev.sh test` (both suites, then `npm run type-check`; `./dev.sh exec frontend npm run test:watch` while working). Vitest doesn't check types, but the production build does — `vue-tsc --build`, specs included — so a type error in a spec passes `npm test` and still stops the deploy.
 - They gate production: the builder stages of `backend/Dockerfile` run `go vet` + `go test` and `npm test`, so `deploy.sh` stops before replacing the running containers if any fail.
 - **Frontend:** Vitest, specs in a `__tests__/` folder next to the code (`src/utils/__tests__/merge.spec.ts`), named `*.spec.ts`. Keep logic in plain functions in `utils/` so it can be tested without mounting components.
 - **Backend** helpers in `backend/internal/handlers/handlers_test.go`: `serve` / `serveJSON` call a handler as a logged-in user with a given home folder (no router or session needed); `sessionRouter` / `login` / `call` in `auth_test.go` go through the real session middleware; `internal/testutil` (`OpenDB`, `CreateUser`) gives any package a migrated database; `newUserFolders` creates neighbouring home folders `ann` and `anna`; `assertUnchanged`, `assertFileContent`, `assertMissing`, `assertStatus`, `decodeResponse`. Keep logic testable: pure helpers for decisions, handlers only for request/response.

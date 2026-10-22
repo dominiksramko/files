@@ -6,7 +6,7 @@ set -eu
 #   ./dev.sh                  start it (or rebuild it) and follow the logs; Ctrl-C leaves it running
 #   ./dev.sh down             stop it
 #   ./dev.sh logs [service]   follow the logs
-#   ./dev.sh test             backend and frontend tests
+#   ./dev.sh test             backend and frontend tests, and the frontend type check
 #   ./dev.sh lint             go vet + the frontend linters (which fix what they can)
 #   ./dev.sh migrate <name>   create a database migration
 #   ./dev.sh sh <service>     a shell in backend or frontend
@@ -34,12 +34,15 @@ case "$command" in
     compose logs -f
     ;;
   test)
-    # Both suites run even when the first fails; the exit status says whether either did.
+    # Everything runs even when a step fails; the exit status says whether any did.
     status=0
     echo "==> Backend tests"
     compose exec backend go test ./... || status=1
     echo "==> Frontend tests"
     compose exec frontend npm test || status=1
+    # Vitest doesn't check types; the production build does (specs included), and stops on an error.
+    echo "==> Frontend type check"
+    compose exec frontend npm run type-check || status=1
     exit "$status"
     ;;
   lint)
