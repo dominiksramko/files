@@ -68,7 +68,7 @@ defineExpose({ focusTitle })
 
 <template>
   <section
-    class="group/column flex max-h-full w-[85vw] shrink-0 snap-start flex-col rounded-xl bg-zinc-800/50 ring-sky-500/70 transition-shadow sm:w-72"
+    class="group/column flex max-h-full w-[85vw] shrink-0 snap-start flex-col rounded-xl bg-zinc-800/50 ring-blue-500/60 transition-shadow sm:w-72"
     :class="{ 'ring-2': dropTarget }"
   >
     <!-- Header -->
