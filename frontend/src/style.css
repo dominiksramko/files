@@ -83,6 +83,27 @@
 }
 .markdown-body img { max-width: 100%; border-radius: 0.5rem; }
 
+/* Scrollbars, for every scroll area: a thin translucent zinc thumb on no track, so it
+   reads on any of the app's backgrounds. In base so a component can still override it. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(113 113 122 / 0.5) transparent;
+  }
+  /* Browsers without scrollbar-color (Safari). Chrome ignores these once it's set. */
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: rgb(113 113 122 / 0.5) padding-box;
+      border: 2px solid transparent;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: rgb(161 161 170 / 0.7); }
+  }
+}
+
 /* Drag-and-drop (vue-draggable-plus with force-fallback). Global because
    SortableJS clones the dragged element onto document.body. */
 /* The faded placeholder left in the list while dragging. */
