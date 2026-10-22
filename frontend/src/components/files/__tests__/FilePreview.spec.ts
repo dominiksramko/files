@@ -42,8 +42,8 @@ describe('FilePreview', () => {
     expect(closes).toHaveLength(1)
   })
 
-  // The preview over files that all show the fallback, as FilesView passes them;
-  // shown: the open file's index, or null when closed.
+  // The preview over files that all show the fallback, moving between them as
+  // FilesView does; shown: the open file's index, or null when closed.
   function mountOver(files: FileEntry[], shown: { value: number | null }, steps: string[]) {
     const root = document.createElement('div')
     document.body.append(root)
@@ -58,8 +58,8 @@ describe('FilePreview', () => {
           hasNext: index !== null && index < files.length - 1,
           index: index ?? -1,
           total: files.length,
-          onPrev: () => steps.push('prev'),
-          onNext: () => steps.push('next'),
+          onPrev: () => { steps.push('prev'); shown.value = (shown.value ?? 0) - 1 },
+          onNext: () => { steps.push('next'); shown.value = (shown.value ?? -1) + 1 },
           onClose: () => (shown.value = null),
         })
       },
@@ -68,21 +68,24 @@ describe('FilePreview', () => {
     cleanups.push(() => { app.unmount(); root.remove() })
   }
 
-  const files: FileEntry[] = ['a.bin', 'b.bin', 'c.bin'].map((name) => ({ ...entry, name, path: name }))
+  const files: FileEntry[] = ['a.bin', 'b.bin', 'c.bin', 'd.bin'].map((name) => ({ ...entry, name, path: name }))
 
-  it('moves to the next file when the slide an arrow key starts ends', async () => {
+  it('moves on each arrow key at once, without waiting for the slide', async () => {
     vi.useFakeTimers()
     const steps: string[] = []
-    mountOver(files, ref<number | null>(1), steps)
+    const shown = ref<number | null>(0)
+    mountOver(files, shown, steps)
     await nextTick()
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
-    expect(steps).toEqual([])
-    vi.advanceTimersByTime(300)
-    expect(steps).toEqual(['next'])
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft']) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key }))
+      await nextTick()
+    }
+    expect(steps).toEqual(['next', 'next', 'next', 'prev'])
+    expect(shown.value).toBe(2)
   })
 
-  it("doesn't move on when it's closed while the slide is still running", async () => {
+  it("stays closed when it's closed while a slide is still running", async () => {
     vi.useFakeTimers()
     const steps: string[] = []
     const shown = ref<number | null>(1)
@@ -90,12 +93,12 @@ describe('FilePreview', () => {
     await nextTick()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(shown.value).toBeNull()
     await nextTick()
-    vi.advanceTimersByTime(300)
-    // With nothing open, a late "next" made FilesView open the folder's first file.
-    expect(steps).toEqual([])
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    // A move that came only once the slide ended made FilesView open the folder's first file.
+    expect(steps).toEqual(['next'])
+    expect(shown.value).toBeNull()
   })
 })

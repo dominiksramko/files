@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { catIconName, customViewName, fileCategory, isKanbanFile, isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
@@ -13,6 +13,7 @@ import TextViewer   from '@/components/files/TextViewer.vue'
 import TodoViewer   from '@/components/files/TodoViewer.vue'
 import VideoPlayer  from '@/components/files/VideoPlayer.vue'
 import AppIcon      from '@/components/ui/AppIcon.vue'
+import { slideStart, translateXOf } from '@/utils/carousel'
 import { isModalOpen, isTypingTarget } from '@/utils/keyboard'
 
 const props = defineProps<{
@@ -85,11 +86,11 @@ const panelEntries = computed<(FileEntry | null)[]>(() => [
 
 const dragX             = ref(0)
 const transitionEnabled = ref(false)
-const isSnapping        = ref(false)
 
 let dragStartX    = 0
 let dragStartY    = 0
 let dragStartTime = 0
+let dragBase      = 0 // where the track was when the drag took it (mid-slide too)
 let dragDirection: 'h' | 'v' | null = null
 let isSwiping     = false
 
@@ -101,8 +102,22 @@ function ownsHorizontalGestures(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('[data-no-carousel-swipe]') !== null
 }
 
+function panelWidth(): number {
+  return carouselRef.value?.clientWidth ?? window.innerWidth
+}
+
+// Where the track is drawn now, in px from the middle panel: during a slide,
+// part of the way there.
+function shownOffset(): number {
+  const track = trackRef.value
+  if (!transitionEnabled.value || !track) return dragX.value
+  const translateX = translateXOf(getComputedStyle(track).transform)
+  // The track is three panels wide and sits one panel to the left.
+  return translateX === null ? dragX.value : translateX + panelWidth()
+}
+
 function onCarouselTouchStart(e: TouchEvent) {
-  if (isSnapping.value || e.touches.length !== 1) return
+  if (e.touches.length !== 1) return
   if (ownsHorizontalGestures(e.target)) {
     isSwiping = false
     return
@@ -112,7 +127,6 @@ function onCarouselTouchStart(e: TouchEvent) {
   dragStartTime = Date.now()
   dragDirection = null
   isSwiping     = true
-  transitionEnabled.value = false
 }
 
 function onCarouselTouchMove(e: TouchEvent) {
@@ -128,6 +142,12 @@ function onCarouselTouchMove(e: TouchEvent) {
         dragDirection = null
         isSwiping = false
       }
+      // A slide still running stops where it is and follows the finger.
+      if (dragDirection === 'h') {
+        dragBase = shownOffset()
+        transitionEnabled.value = false
+        dragX.value = dragBase
+      }
     }
     return
   }
@@ -139,7 +159,7 @@ function onCarouselTouchMove(e: TouchEvent) {
   let dx = deltaX
   if (dx > 0 && !props.hasPrev) dx *= 0.15
   if (dx < 0 && !props.hasNext) dx *= 0.15
-  dragX.value = dx
+  dragX.value = dragBase + dx
 }
 
 function onCarouselTouchEnd() {
@@ -149,48 +169,40 @@ function onCarouselTouchEnd() {
   if (dragDirection !== 'h') { dragDirection = null; return }
   dragDirection = null
 
-  const containerW = carouselRef.value?.clientWidth ?? window.innerWidth
-  const elapsed    = Math.max(1, Date.now() - dragStartTime)
-  const velocity   = dragX.value / elapsed // px/ms
+  const elapsed  = Math.max(1, Date.now() - dragStartTime)
+  const velocity = (dragX.value - dragBase) / elapsed // px/ms
 
-  const shouldSnap = Math.abs(dragX.value) > containerW * 0.35 || Math.abs(velocity) > 0.3
+  const shouldSnap = Math.abs(dragX.value) > panelWidth() * 0.35 || Math.abs(velocity) > 0.3
 
   if (shouldSnap && dragX.value < 0 && props.hasNext) snapTo('next')
   else if (shouldSnap && dragX.value > 0 && props.hasPrev) snapTo('prev')
   else snapTo('reset')
 }
 
-// Counts the times the preview closed. A slide still running when it closes
-// (Escape pressed mid-swipe) must not move on afterwards: with nothing open,
-// "next" would open the folder's first file.
-let closeCount = 0
-watch(() => props.entry === null, (closed) => { if (closed) closeCount++ })
-
-function snapTo(direction: 'prev' | 'next' | 'reset') {
-  transitionEnabled.value = true
-  isSnapping.value        = true
-  const closeCountAtStart = closeCount
-
+// Moves to the next or previous file at once, so presses and swipes can follow
+// each other as fast as they come; the picture then slides in from where it
+// was drawn. 'reset' slides a drag that didn't go far enough back.
+async function snapTo(direction: 'prev' | 'next' | 'reset') {
   if (direction === 'reset') {
+    transitionEnabled.value = true
     dragX.value = 0
-    setTimeout(() => {
-      transitionEnabled.value = false
-      isSnapping.value        = false
-    }, 300)
     return
   }
+  const start = slideStart(shownOffset(), direction, panelWidth())
+  if (direction === 'prev') emit('prev')
+  else emit('next')
+  // The panels move over by one in the next render: draw the picture where it
+  // was then, and only after that turn the transition on and slide it.
+  transitionEnabled.value = false
+  dragX.value = start
+  await nextTick()
+  trackRef.value?.getBoundingClientRect()
+  transitionEnabled.value = true
+  dragX.value = 0
+}
 
-  const containerW = carouselRef.value?.clientWidth ?? window.innerWidth
-  dragX.value = direction === 'prev' ? containerW : -containerW
-
-  setTimeout(() => {
-    transitionEnabled.value = false
-    const stillOpen = closeCount === closeCountAtStart
-    if (stillOpen && direction === 'prev') emit('prev')
-    if (stillOpen && direction === 'next') emit('next')
-    dragX.value      = 0
-    isSnapping.value = false
-  }, 300)
+function onTrackTransitionEnd(event: TransitionEvent) {
+  if (event.propertyName === 'transform') transitionEnabled.value = false
 }
 
 // --- Horizontal wheel / trackpad swipe navigation ---
@@ -198,7 +210,11 @@ function snapTo(direction: 'prev' | 'next' | 'reset') {
 // prev/next. A small accumulator prevents accidental triggers from light brushes.
 let wheelAccX     = 0
 let wheelResetTimer: ReturnType<typeof setTimeout> | null = null
-const WHEEL_THRESHOLD = 60 // px of accumulated deltaX before snapping
+// After a move, the rest of that swipe (the trackpad's momentum keeps sending
+// events) is ignored for a while, so one swipe moves one file.
+let wheelIgnoredUntil = 0
+const WHEEL_THRESHOLD = 60  // px of accumulated deltaX before snapping
+const WHEEL_SWIPE_MS  = 300
 
 function onCarouselWheel(e: WheelEvent) {
   // Only act when horizontal scroll is dominant (trackpad swipe, not zoom scroll)
@@ -206,7 +222,7 @@ function onCarouselWheel(e: WheelEvent) {
   if (ownsHorizontalGestures(e.target)) return
   // Don't intercept when image is zoomed — ImageViewer handles panning
   if (trackRef.value?.children[1]?.querySelector('[data-image-zoomed]')) return
-  if (isSnapping.value) return
+  if (Date.now() < wheelIgnoredUntil) return
 
   e.preventDefault()
   wheelAccX += e.deltaX
@@ -216,9 +232,11 @@ function onCarouselWheel(e: WheelEvent) {
 
   if (wheelAccX > WHEEL_THRESHOLD && props.hasNext) {
     wheelAccX = 0
+    wheelIgnoredUntil = Date.now() + WHEEL_SWIPE_MS
     snapTo('next')
   } else if (wheelAccX < -WHEEL_THRESHOLD && props.hasPrev) {
     wheelAccX = 0
+    wheelIgnoredUntil = Date.now() + WHEEL_SWIPE_MS
     snapTo('prev')
   }
 }
@@ -325,6 +343,7 @@ onUnmounted(() => {
               transition: transitionEnabled ? 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none',
               willChange: 'transform',
             }"
+            @transitionend.self="onTrackTransitionEnd"
           >
             <div
               v-for="(panelEntry, slotIndex) in panelEntries"
