@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { FileEntry } from '@/types'
 import { useEditableFile } from '@/composables/useFileContent'
+import { dragOverNearestList } from '@/utils/sortable'
 import {
   adoptBoardIds,
   DEFAULT_COLUMNS,
@@ -67,6 +68,31 @@ async function addColumn() {
 function removeColumn(columnId: number) {
   board.value.columns = board.value.columns.filter((column) => column.id !== columnId)
 }
+
+// ── Card drag: the whole height above and below a column counts as dropping
+// into it, and the column the card would land in is outlined ─────────────────
+const dropColumnId = ref<number | null>(null)
+
+function followPointer(event: PointerEvent | TouchEvent) {
+  const point = 'touches' in event ? event.touches[0] : event
+  const scroller = boardScrollerRef.value
+  if (!point || !scroller) return
+  dragOverNearestList([...scroller.querySelectorAll<HTMLElement>('[data-kanban-cards]')], point.clientX, point.clientY)
+}
+
+function startCardDrag(columnId: number) {
+  dropColumnId.value = columnId
+  document.addEventListener('pointermove', followPointer)
+  document.addEventListener('touchmove', followPointer, { passive: true })
+}
+
+function endCardDrag() {
+  dropColumnId.value = null
+  document.removeEventListener('pointermove', followPointer)
+  document.removeEventListener('touchmove', followPointer)
+}
+
+onUnmounted(endCardDrag)
 
 // ── Card editor ──────────────────────────────────────────────────────────────
 const openedCardId = ref<number | null>(null)
@@ -141,8 +167,12 @@ function moveOpenedCard(targetColumnId: number) {
               :ref="(instance) => setColumnRef(column.id, instance)"
               v-model:title="column.title"
               v-model:cards="column.cards"
+              :drop-target="dropColumnId === column.id"
               @remove="removeColumn(column.id)"
               @open-card="openCard"
+              @card-drag-start="startCardDrag(column.id)"
+              @card-drag-enter="dropColumnId = column.id"
+              @card-drag-end="endCardDrag"
             />
           </VueDraggable>
 

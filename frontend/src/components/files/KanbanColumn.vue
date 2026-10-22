@@ -6,12 +6,18 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import KanbanCard from '@/components/files/KanbanCard.vue'
 
+defineProps<{ dropTarget?: boolean }>()
+
 const title = defineModel<string>('title', { required: true })
 const cards = defineModel<KanbanCardData[]>('cards', { required: true })
 
 const emit = defineEmits<{
   remove: []
   openCard: [card: KanbanCardData]
+  // A card drag started here / the dragged card moved into this column / the drag ended.
+  cardDragStart: []
+  cardDragEnter: []
+  cardDragEnd: []
 }>()
 
 const titleInputRef = ref<HTMLInputElement | null>(null)
@@ -61,7 +67,10 @@ defineExpose({ focusTitle })
 </script>
 
 <template>
-  <section class="group/column flex max-h-full w-[85vw] shrink-0 snap-start flex-col rounded-xl bg-zinc-800/50 sm:w-72">
+  <section
+    class="group/column flex max-h-full w-[85vw] shrink-0 snap-start flex-col rounded-xl bg-zinc-800/50 ring-sky-500/70 transition-shadow sm:w-72"
+    :class="{ 'ring-2': dropTarget }"
+  >
     <!-- Header -->
     <div class="flex items-center gap-1 px-2 pb-1 pt-2">
       <button
@@ -101,18 +110,24 @@ defineExpose({ focusTitle })
       <button type="button" class="text-zinc-400 hover:text-zinc-200" @click="confirmingDelete = false">Cancel</button>
     </div>
 
-    <!-- Cards -->
+    <!-- Cards. overflow-clip: when a card leaves, the list shrinks at once while the
+         cards below still slide up past its end; clipping them keeps the scroller from
+         flashing a scrollbar (clip isn't a scroll container, so auto-scroll still finds the outer one). -->
     <div ref="cardListRef" class="min-h-0 flex-1 overflow-y-auto px-2">
       <VueDraggable
         v-model="cards"
+        data-kanban-cards
         group="kanban-cards"
-        class="flex min-h-10 flex-col gap-2 pb-1"
+        class="flex min-h-10 flex-col gap-2 overflow-clip pb-1"
         :animation="180"
         :force-fallback="true"
         :delay="150"
         :delay-on-touch-only="true"
         ghost-class="drag-ghost"
         fallback-class="drag-fallback"
+        @start="emit('cardDragStart')"
+        @change="emit('cardDragEnter')"
+        @end="emit('cardDragEnd')"
       >
         <KanbanCard v-for="card in cards" :key="card.id" :card="card" @open="emit('openCard', card)" />
       </VueDraggable>
