@@ -51,7 +51,7 @@ describe('FilePreview', () => {
       render: () => {
         const index = shown.value
         return h(FilePreview, {
-          entry: index === null ? null : files[index],
+          entry: index === null ? null : files[index] ?? null,
           prevEntry: index === null ? null : files[index - 1] ?? null,
           nextEntry: index === null ? null : files[index + 1] ?? null,
           hasPrev: index !== null && index > 0,
