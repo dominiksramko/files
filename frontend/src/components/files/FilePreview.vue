@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { FileEntry } from '@/types'
 import { files as filesApi } from '@/utils/api'
 import { catIconName, customViewName, fileCategory, isKanbanFile, isOfficeFile, isTextFile, isTodoFile } from '@/utils/formatters'
@@ -160,9 +160,16 @@ function onCarouselTouchEnd() {
   else snapTo('reset')
 }
 
+// Counts the times the preview closed. A slide still running when it closes
+// (Escape pressed mid-swipe) must not move on afterwards: with nothing open,
+// "next" would open the folder's first file.
+let closeCount = 0
+watch(() => props.entry === null, (closed) => { if (closed) closeCount++ })
+
 function snapTo(direction: 'prev' | 'next' | 'reset') {
   transitionEnabled.value = true
   isSnapping.value        = true
+  const closeCountAtStart = closeCount
 
   if (direction === 'reset') {
     dragX.value = 0
@@ -178,8 +185,9 @@ function snapTo(direction: 'prev' | 'next' | 'reset') {
 
   setTimeout(() => {
     transitionEnabled.value = false
-    if (direction === 'prev') emit('prev')
-    else emit('next')
+    const stillOpen = closeCount === closeCountAtStart
+    if (stillOpen && direction === 'prev') emit('prev')
+    if (stillOpen && direction === 'next') emit('next')
     dragX.value      = 0
     isSnapping.value = false
   }, 300)
