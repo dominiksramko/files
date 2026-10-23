@@ -2,6 +2,7 @@
 import { computed, nextTick, onUnmounted, ref } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { FileEntry } from '@/types'
+import { useCardInUrl } from '@/composables/useCardInUrl'
 import { useEditableFile } from '@/composables/useFileContent'
 import { dragOverNearestList } from '@/utils/sortable'
 import {
@@ -21,6 +22,7 @@ import KanbanColumn from '@/components/files/KanbanColumn.vue'
 const props = defineProps<{ entry: FileEntry; active?: boolean }>()
 
 const board = ref<KanbanBoard>({ preamble: '', columns: [] })
+const boardLoaded = ref(false)
 
 const cardCount = computed(() => board.value.columns.reduce((total, column) => total + column.cards.length, 0))
 
@@ -40,6 +42,7 @@ const { loading, loadError, tooLarge, saveLabel } = useEditableFile(() => props.
   parse: parseKanban,
   serialize: serializeKanban,
   onLoaded() {
+    boardLoaded.value = true
     // A new / empty board starts with the usual three columns (saved on first edit).
     if (board.value.columns.length === 0) {
       board.value.columns = DEFAULT_COLUMNS.map((title) => makeColumn(title))
@@ -114,6 +117,8 @@ const columnOptions = computed(() =>
 function openCard(card: KanbanCard) {
   openedCardId.value = card.id
 }
+
+useCardInUrl({ board, openedCardId, active: () => props.active === true, loaded: boardLoaded })
 
 function deleteOpenedCard() {
   const opened = openedCard.value

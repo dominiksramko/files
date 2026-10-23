@@ -35,8 +35,9 @@ import { useHeaderCenter } from '@/composables/useHeaderCenter'
 import { debounce } from '@/utils/debounce'
 import { nameOf, parentOf } from '@/utils/paths'
 import { usageStateFrom, withUsageState } from '@/utils/diskUsage'
-import { PREVIEW_OPENED_STATE, previewHistoryStep } from '@/utils/previewHistory'
+import { PREVIEW_OPENED_STATE, layerHistoryStep } from '@/utils/layerHistory'
 import { archiveStateFrom, withArchiveState } from '@/utils/archiveTree'
+import { withCardKept } from '@/utils/kanban'
 import FileBreadcrumb from '@/components/files/FileBreadcrumb.vue'
 import DiskUsageModal from '@/components/usage/DiskUsageModal.vue'
 import SecretInput from '@/components/ui/SecretInput.vue'
@@ -243,14 +244,16 @@ function nextPreview() {
 }
 
 // ── URL-synced navigation ──────────────────────────────────────────────────
-// The URL for what's shown, with the disk usage and archive modals' keys kept.
+// The URL for what's shown, with the disk usage and archive modals' keys kept,
+// and the open kanban card's while the same board stays on show.
 function routeQuery() {
   const q: Record<string, string> = {}
   if (filesStore.currentPath) q.path = filesStore.currentPath
   if (searchQuery.value) q.q = searchQuery.value
   if (previewEntry.value) q.preview = previewEntry.value.path
   if (previewEntry.value && previewRawText.value) q.view = 'text'
-  return withArchiveState(withUsageState(q, usageStateFrom(route.query)), archiveStateFrom(route.query))
+  const modals = withArchiveState(withUsageState(q, usageStateFrom(route.query)), archiveStateFrom(route.query))
+  return withCardKept(modals, route.query)
 }
 
 async function navigate(path: string) {
@@ -272,7 +275,7 @@ watch(() => filesStore.folderGone, (fallback) => {
 })
 
 watch(previewEntry, (entry) => {
-  const step = previewHistoryStep(
+  const step = layerHistoryStep(
     entry?.path ?? null,
     (route.query.preview as string | undefined) ?? null,
     router.options.history.state[PREVIEW_OPENED_STATE] === true,

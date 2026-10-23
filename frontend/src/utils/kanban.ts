@@ -1,4 +1,6 @@
+import type { LocationQuery } from 'vue-router'
 import { adoptIds } from '@/utils/merge'
+import { queryString, withKeys } from '@/utils/query'
 
 // .kanban boards are Markdown, so they stay readable and editable by hand:
 //
@@ -146,6 +148,58 @@ export function adoptBoardIds(previous: KanbanBoard, next: KanbanBoard) {
     (card) => card.title,
     (previousCard, nextCard) => adoptIds(previousCard.checklist, nextCard.checklist, (item) => item.text),
   )
+}
+
+// ── The open card in the URL ─────────────────────────────────────────────────
+// Ids aren't written to the file, so the URL names the open card by its title
+// (?card=Fix+login), adding which of the board's cards with that title it is
+// when it isn't the first (&card_n=2). A link to a card renamed or deleted
+// since then finds nothing rather than another card.
+export interface CardLocator {
+  title: string
+  occurrence: number // 1: the board's first card with this title, in board order
+}
+
+const allCards = (board: KanbanBoard) => board.columns.flatMap((column) => column.cards)
+
+// How the URL names the card with this id; null when it isn't on the board.
+export function locateCard(board: KanbanBoard, cardId: number): CardLocator | null {
+  const cards = allCards(board)
+  const card = cards.find((candidate) => candidate.id === cardId)
+  if (!card) return null
+  const sameTitle = cards.filter((candidate) => candidate.title === card.title)
+  return { title: card.title, occurrence: sameTitle.indexOf(card) + 1 }
+}
+
+// The card the URL names, or null when there's none like it.
+export function findCard(board: KanbanBoard, locator: CardLocator): KanbanCard | null {
+  return allCards(board).filter((card) => card.title === locator.title)[locator.occurrence - 1] ?? null
+}
+
+const cardKeys = ['card', 'card_n']
+
+// The card query names, or null when none is open. An untitled card is a bare ?card.
+export function cardLocatorFrom(query: LocationQuery): CardLocator | null {
+  const title = queryString(query.card)
+  if (title === undefined) return null
+  const occurrence = Number(queryString(query.card_n) ?? 1)
+  return { title, occurrence: Number.isInteger(occurrence) && occurrence >= 1 ? occurrence : 1 }
+}
+
+// query with locator's card open (null closes it); the other keys stay.
+export function withCardLocator(query: LocationQuery, locator: CardLocator | null): LocationQuery {
+  return withKeys(query, cardKeys, {
+    card: locator?.title,
+    card_n: locator && locator.occurrence > 1 ? String(locator.occurrence) : undefined,
+  })
+}
+
+// For the file browser, which rebuilds its URL from what it shows: query with
+// previous's open card kept while it shows the same board, as a board (not as
+// text), and without one otherwise.
+export function withCardKept(query: LocationQuery, previous: LocationQuery): LocationQuery {
+  const sameBoard = !!query.preview && query.preview === previous.preview && query.view === undefined
+  return withCardLocator(query, sameBoard ? cardLocatorFrom(previous) : null)
 }
 
 export function parseKanban(content: string): KanbanBoard {
