@@ -61,7 +61,7 @@ function removeLabel(label: string) {
 // ── Description ──────────────────────────────────────────────────────────────
 const editingDescription = ref(false)
 const descriptionRef = ref<HTMLTextAreaElement | null>(null)
-const renderedDescription = computed(() => renderMarkdown(description.value, props.entryPath))
+const renderedDescription = computed(() => renderMarkdown(description.value, props.entryPath, { lineBreaks: true }))
 
 async function startEditingDescription() {
   editingDescription.value = true

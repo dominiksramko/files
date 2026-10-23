@@ -115,3 +115,16 @@ describe('renderMarkdown keeps ordinary Markdown', () => {
     expect(image.getAttribute('src')).toBe('https://example.com/a.png?size=1&dark=1')
   })
 })
+
+describe('renderMarkdown line breaks', () => {
+  const typed = 'first line\nsecond line\n\nnew paragraph'
+
+  it('joins lines broken by a single line break into one paragraph, as Markdown files expect', () => {
+    expect(renderMarkdown(typed, 'notes/readme.md')).toBe('<p>first line\nsecond line</p>\n<p>new paragraph</p>\n')
+  })
+
+  it('keeps every line break as typed with lineBreaks, for text written in a box', () => {
+    expect(renderMarkdown(typed, 'board.kanban', { lineBreaks: true }))
+      .toBe('<p>first line<br>second line</p>\n<p>new paragraph</p>\n')
+  })
+})

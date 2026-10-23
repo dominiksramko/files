@@ -33,8 +33,12 @@ const SANITIZE_OPTIONS = {
 // Renders Markdown to safe HTML with highlighted code blocks. entryPath is the
 // file the Markdown belongs to; each call gets its own parser so concurrent
 // previews never resolve images against another file's folder.
-export function renderMarkdown(source: string, entryPath: string): string {
+// lineBreaks keeps every line break as typed, for text written in a box (a
+// card's description); without it a single line break joins the lines into one
+// paragraph, as Markdown files expect (many are wrapped at a fixed width).
+export function renderMarkdown(source: string, entryPath: string, { lineBreaks = false } = {}): string {
   const parser = new Marked({
+    breaks: lineBreaks,
     renderer: {
       code({ text, lang }: Tokens.Code) {
         const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
