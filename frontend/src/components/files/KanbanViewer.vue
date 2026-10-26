@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { FileEntry } from '@/types'
+import { useAttachmentUploads } from '@/composables/useAttachmentUploads'
 import { useCardInUrl } from '@/composables/useCardInUrl'
 import { useEditableFile } from '@/composables/useFileContent'
+import { useFileEntries } from '@/composables/useFileEntries'
+import { parentOf } from '@/utils/paths'
 import { dragOverNearestList } from '@/utils/sortable'
 import {
+  addAttachments,
   adoptBoardIds,
+  attachmentFolder,
+  attachmentImageUrl,
   buildCardMenu,
+  cardCover,
   columnName,
   duplicateCard,
   DEFAULT_COLUMNS,
@@ -16,6 +24,7 @@ import {
   moveCard,
   parseKanban,
   removeCard,
+  resolveAttachment,
   serializeKanban,
   type KanbanBoard,
   type KanbanCard,
@@ -139,6 +148,44 @@ function toggleDueDone(card: KanbanCard) {
   card.dueDone = !card.dueDone
 }
 
+// ── Attachments ──────────────────────────────────────────────────────────────
+const router = useRouter()
+
+const attachedPaths = computed(() =>
+  board.value.columns.flatMap((column) =>
+    column.cards.flatMap((card) => card.attachments.map((link) => resolveAttachment(props.entry.path, link))),
+  ).filter((path): path is string => path !== null),
+)
+const attachedFiles = useFileEntries(attachedPaths)
+
+function coverFor(card: KanbanCard): string | null {
+  const cover = cardCover(card, props.entry.path, attachedFiles.entryFor)
+  return cover ? attachmentImageUrl(cover) : null
+}
+
+// Opening a card reads its files' folders again: they may have changed since.
+watch(openedCardId, (cardId) => {
+  if (cardId !== null) attachedFiles.refresh()
+})
+
+function attachToCard(cardId: number, paths: string[]) {
+  const found = findCardWithColumn(board.value, cardId)
+  if (found) addAttachments(found.card, props.entry.path, paths)
+}
+
+// Uploads go into the folder next to the board.
+const uploads = useAttachmentUploads({
+  folder: () => attachmentFolder(props.entry.path),
+  entryFor: attachedFiles.entryFor,
+  attach: attachToCard,
+})
+
+// Shows the file in the preview, in its folder; Back comes back to the card.
+function openAttachment(path: string) {
+  const folder = parentOf(path)
+  router.push({ query: { ...(folder ? { path: folder } : {}), preview: path } })
+}
+
 // ── Card menu (right-click or ⋯ on a card) ───────────────────────────────────
 const cardMenu = ref<{ cardId: number; x: number; y: number } | null>(null)
 
@@ -209,6 +256,7 @@ function confirmDeleteCard() {
               v-model:title="column.title"
               v-model:cards="column.cards"
               :drop-target="dropColumnId === column.id"
+              :cover-for="coverFor"
               @remove="removeColumn(column.id)"
               @open-card="openCard"
               @toggle-due-done="toggleDueDone"
@@ -238,15 +286,21 @@ function confirmDeleteCard() {
       v-model:labels="openedCard.card.labels"
       v-model:due="openedCard.card.due"
       v-model:due-done="openedCard.card.dueDone"
+      v-model:attachments="openedCard.card.attachments"
       v-model:checklist="openedCard.card.checklist"
       :column-id="openedCard.column.id"
       :column-title="openedCard.column.title"
       :column-options="columnOptions"
       :board-labels="boardLabels"
       :entry-path="entry.path"
+      :attachment-entry="attachedFiles.entryFor"
+      :upload-percent="uploads.percents.get(openedCard.card.id) ?? null"
       @close="openedCardId = null"
       @delete="deleteOpenedCard"
       @move="moveOpenedCard"
+      @upload="(files) => uploads.upload(openedCard!.card.id, files)"
+      @attach="(paths) => attachToCard(openedCard!.card.id, paths)"
+      @open-attachment="openAttachment"
     />
 
     <!-- On <body>: the preview's carousel is moved with a transform, which

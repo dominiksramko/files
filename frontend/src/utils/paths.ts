@@ -41,3 +41,25 @@ export function breadcrumbTrail(path: string, root = '', rootLabel?: string): Cr
     })
   return crumbs
 }
+
+// The path link leads to from folder: relative ("img/a.png", "../b.pdf"), or
+// from the home folder when it starts with "/". null when it climbs above the
+// home folder, where nothing can be reached.
+export function resolvePath(folder: string, link: string): string | null {
+  const segments = link.startsWith('/') ? [] : folder.split('/').filter(Boolean)
+  for (const segment of link.split('/')) {
+    if (segment === '' || segment === '.') continue
+    if (segment !== '..') segments.push(segment)
+    else if (segments.pop() === undefined) return null
+  }
+  return segments.join('/')
+}
+
+// How to reach path from folder: the link resolvePath(folder, link) turns back into path.
+export function relativePath(folder: string, path: string): string {
+  const from = folder.split('/').filter(Boolean)
+  const to = path.split('/').filter(Boolean)
+  let shared = 0
+  while (shared < from.length && shared < to.length - 1 && from[shared] === to[shared]) shared++
+  return [...Array<string>(from.length - shared).fill('..'), ...to.slice(shared)].join('/')
+}

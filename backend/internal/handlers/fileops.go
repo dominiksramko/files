@@ -132,7 +132,9 @@ func (h *FileOpsHandler) transfer(c *gin.Context, done string, apply func(fsys *
 // POST /api/v1/files/upload?path=rel/dest_dir&conflict_mode=error|replace|rename
 // multipart fields: "files" (any number), "mtime_<i>" (Unix seconds for the i-th file)
 // conflict_mode defaults to "error" — returns HTTP 409 with the names already
-// in the folder, and nothing changes in it.
+// in the folder, and nothing changes in it. The folder is created if missing.
+// Responds with the names the files were saved under, in the order sent
+// (" (n)" added where they had to be kept apart).
 //
 // Files are streamed from the request into hidden ".part" files in the
 // target folder (no copy in the container's temp space), then renamed into
@@ -221,8 +223,10 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 	}
 
 	existing, claimed := buildExistingMap(fsys, dest)
+	saved := make([]string, len(files))
 	for i, file := range files {
-		target := filepath.Join(dest, batchTargetName(file.name, conflictMode, existing, claimed))
+		saved[i] = batchTargetName(file.name, conflictMode, existing, claimed)
+		target := filepath.Join(dest, saved[i])
 		if err := fsys.Rename(file.partName, target); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -233,7 +237,7 @@ func (h *FileOpsHandler) Upload(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "uploaded", "count": len(files)})
+	c.JSON(http.StatusOK, gin.H{"message": "uploaded", "count": len(files), "names": saved})
 }
 
 // receivePart streams one uploaded file into a new hidden ".part" file in the

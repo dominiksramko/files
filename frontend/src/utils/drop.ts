@@ -17,3 +17,10 @@ export function droppedFiles(dataTransfer: DataTransfer): DroppedFiles {
   }
   return dropped
 }
+
+// What to tell the user about dropped folders that were left out; null for none.
+export function leftOutFoldersMessage(folders: string[]): string | null {
+  if (!folders.length) return null
+  const leftOut = folders.length === 1 ? `"${folders[0]}" was` : `${folders.length} folders were`
+  return `${leftOut} left out: folders can't be uploaded`
+}

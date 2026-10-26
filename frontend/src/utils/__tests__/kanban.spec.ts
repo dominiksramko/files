@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { FileEntry } from '@/types'
 import {
+  addAttachments,
   adoptBoardIds,
+  attachmentFolder,
+  attachmentImageUrl,
+  attachmentLink,
   buildCardMenu,
+  cardCover,
   cardLocatorFrom,
   columnName,
   duplicateCard,
@@ -9,10 +15,12 @@ import {
   findCard,
   findCardWithColumn,
   locateCard,
+  makeCard,
   makeColumn,
   moveCard,
   parseKanban,
   removeCard,
+  resolveAttachment,
   serializeKanban,
   withCardKept,
   withCardLocator,
@@ -174,6 +182,110 @@ describe('a due date marked done', () => {
     expect(dueStatus('2000-01-01')).toBe('overdue')
     expect(dueStatus('2000-01-01', true)).toBe('done')
     expect(dueStatus('2999-01-01', true)).toBe('done')
+  })
+})
+
+describe('attachments', () => {
+  const text = [
+    '## To do',
+    '- Design login page #frontend',
+    '  Needs a dark mode variant.',
+    '  @file Roadmap files/mockup.png',
+    '  - [ ] wireframe',
+    '  @file ../specs/login spec.pdf',
+    '',
+  ].join('\n')
+
+  it('are read from indented @file lines, wherever they sit among the card\'s lines', () => {
+    const card = parseKanban(text).columns[0]!.cards[0]!
+    expect(card.attachments).toEqual(['Roadmap files/mockup.png', '../specs/login spec.pdf'])
+    expect(card.description).toBe('Needs a dark mode variant.')
+    expect(card.checklist.map((item) => item.text)).toEqual(['wireframe'])
+  })
+
+  it('are written after the description, before the checklist', () => {
+    expect(serializeKanban(parseKanban(text))).toBe([
+      '## To do',
+      '- Design login page #frontend',
+      '  Needs a dark mode variant.',
+      '  @file Roadmap files/mockup.png',
+      '  @file ../specs/login spec.pdf',
+      '  - [ ] wireframe',
+      '',
+    ].join('\n'))
+  })
+
+  it('leave a bare @file, an unindented one or @files in the description, so nothing is dropped', () => {
+    const board = parseKanban(['## To do', '- Card', '  @file', '  @files a.png', '  see @file a.png', '@file b.png', ''].join('\n'))
+    const [card, stray] = board.columns[0]!.cards
+    expect(card!.attachments).toEqual([])
+    expect(card!.description).toBe('@file\n@files a.png\nsee @file a.png')
+    expect(stray!.title).toBe('@file b.png')
+  })
+
+  it('go into a folder next to the board named after it', () => {
+    expect(attachmentFolder('work/Roadmap.kanban')).toBe('work/Roadmap files')
+    expect(attachmentFolder('Roadmap.KANBAN')).toBe('Roadmap files')
+    expect(attachmentFolder('work/.kanban')).toBe('work/Board files')
+  })
+
+  it('link files relative to the board, and lead back to them', () => {
+    expect(attachmentLink('work/Roadmap.kanban', 'work/Roadmap files/a b.png')).toBe('Roadmap files/a b.png')
+    expect(attachmentLink('work/Roadmap.kanban', 'photos/c.jpg')).toBe('../photos/c.jpg')
+    expect(resolveAttachment('work/Roadmap.kanban', '../photos/c.jpg')).toBe('photos/c.jpg')
+    expect(resolveAttachment('work/Roadmap.kanban', '/photos/c.jpg')).toBe('photos/c.jpg')
+    expect(resolveAttachment('work/Roadmap.kanban', '../../c.jpg')).toBeNull()
+  })
+
+  it('attach each file once, even when linked differently by hand', () => {
+    const card = makeCard('Design')
+    card.attachments = ['./Roadmap files/a.png']
+    addAttachments(card, 'work/Roadmap.kanban', ['work/Roadmap files/a.png', 'photos/c.jpg', 'photos/c.jpg'])
+    expect(card.attachments).toEqual(['./Roadmap files/a.png', '../photos/c.jpg'])
+  })
+
+  it('are copied with a duplicated card, not shared', () => {
+    const board = parseKanban(text)
+    const card = board.columns[0]!.cards[0]!
+    const duplicate = duplicateCard(board, card.id)!
+    duplicate.attachments.push('more.png')
+    expect(card.attachments).toHaveLength(2)
+  })
+
+  describe('the cover', () => {
+    const fileEntry = (path: string, mime: string, isDir = false): FileEntry =>
+      ({ name: path.split('/').pop()!, path, is_dir: isDir, size: 1, mod_time: '', mime, has_thumb: false })
+    const entries = new Map<string, FileEntry>([
+      ['work/spec.pdf', fileEntry('work/spec.pdf', 'application/pdf')],
+      ['work/a.png', fileEntry('work/a.png', 'image/png')],
+      ['work/b.jpg', fileEntry('work/b.jpg', 'image/jpeg')],
+      ['work/c.png', fileEntry('work/c.png', '', true)],
+    ])
+    const entryFor = (path: string) => entries.get(path) ?? null
+    const coverOf = (attachments: string[]) => {
+      const card = makeCard('Design')
+      card.attachments = attachments
+      return cardCover(card, 'work/Roadmap.kanban', entryFor)?.path ?? null
+    }
+
+    it('is the first attached image', () => {
+      expect(coverOf(['spec.pdf', 'a.png', 'b.jpg'])).toBe('work/a.png')
+    })
+
+    it('skips missing files and a folder named like an image', () => {
+      expect(coverOf(['gone.png', 'c.png', 'b.jpg'])).toBe('work/b.jpg')
+    })
+
+    it('shows the thumbnail once ready, else the file itself', () => {
+      const image = fileEntry('work/a b.png', 'image/png')
+      expect(attachmentImageUrl({ ...image, mod_time: '2026-10-26T10:00:00Z' })).toBe('/api/v1/files/stream?path=work%2Fa%20b.png&t=1793008800000')
+      expect(attachmentImageUrl({ ...image, has_thumb: true, thumb_hash: 'abc' })).toBe('/api/v1/thumbnails/preview?path=work%2Fa%20b.png&hash=abc')
+    })
+
+    it('is none without an image', () => {
+      expect(coverOf(['spec.pdf', '../../x.png'])).toBeNull()
+      expect(coverOf([])).toBeNull()
+    })
   })
 })
 

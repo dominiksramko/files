@@ -44,6 +44,28 @@ describe('runWithConflictPrompt', () => {
     expect(run).toHaveBeenCalledOnce()
   })
 
+  it('asks first about names known to be taken, then runs once with the choice', async () => {
+    const { runWithConflictPrompt, visible, conflicts, choose } = useConflictDialog()
+    const run = vi.fn(async (mode: ConflictMode) => mode)
+    const result = runWithConflictPrompt('Upload conflicts', run, ['a.png'])
+    await vi.waitFor(() => expect(visible.value).toBe(true))
+    expect(conflicts.value).toEqual(['a.png'])
+    expect(run).not.toHaveBeenCalled()
+    choose('rename')
+    expect(await result).toBe('rename')
+    expect(run).toHaveBeenCalledExactlyOnceWith('rename')
+  })
+
+  it("doesn't run at all when the user cancels over known names", async () => {
+    const { runWithConflictPrompt, visible, choose } = useConflictDialog()
+    const run = vi.fn(async () => 'done')
+    const result = runWithConflictPrompt('Upload conflicts', run, ['a.png'])
+    await vi.waitFor(() => expect(visible.value).toBe(true))
+    choose(null)
+    expect(await result).toBeNull()
+    expect(run).not.toHaveBeenCalled()
+  })
+
   it('passes other errors on without asking', async () => {
     const { runWithConflictPrompt, visible } = useConflictDialog()
     await expect(runWithConflictPrompt('Title', async () => { throw new Error('wrong password') })).rejects.toThrow('wrong password')

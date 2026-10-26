@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -313,6 +314,38 @@ func TestUploadKeepAll(t *testing.T) {
 	assertStatus(t, response, http.StatusOK)
 	assertFileContent(t, filepath.Join(annRoot, "notes.txt"), "ann's notes")
 	assertFileContent(t, filepath.Join(annRoot, "notes (1).txt"), "uploaded")
+}
+
+func TestUploadRespondsWithTheSavedNames(t *testing.T) {
+	// A kanban card links its uploads by the names they were saved under.
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "", "rename", [][2]string{{"new.txt", "a"}, {"notes.txt", "b"}, {"new.txt", "c"}}))
+	assertStatus(t, response, http.StatusOK)
+	names := decodeResponse[struct{ Names []string }](t, response).Names
+	if want := []string{"new.txt", "notes (1).txt", "new (1).txt"}; !slices.Equal(names, want) {
+		t.Errorf("names = %q, want %q", names, want)
+	}
+}
+
+func TestUploadCreatesAMissingFolder(t *testing.T) {
+	// A board's attachments folder ("Roadmap files") is made by its first upload.
+	annRoot, _ := newUserFolders(t)
+	response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, "docs/Roadmap files", "", [][2]string{{"mockup.png", "png"}}))
+	assertStatus(t, response, http.StatusOK)
+	assertFileContent(t, filepath.Join(annRoot, "docs/Roadmap files/mockup.png"), "png")
+}
+
+func TestUploadRefusesAFolderOutsideHome(t *testing.T) {
+	annRoot, annaRoot := newUserFolders(t)
+	for _, folder := range []string{"../anna", "../anna/new", "docs/../../anna"} {
+		response := serve(NewFileOpsHandler().Upload, annRoot, uploadRequest(t, folder, "", [][2]string{{"x.txt", "x"}}))
+		if response.Code == http.StatusOK {
+			t.Errorf("upload into %q succeeded", folder)
+		}
+	}
+	assertUnchanged(t, annRoot, annaRoot)
+	assertMissing(t, filepath.Join(annaRoot, "x.txt"))
+	assertMissing(t, filepath.Join(annaRoot, "new"))
 }
 
 func TestUploadReplace(t *testing.T) {

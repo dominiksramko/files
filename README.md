@@ -47,7 +47,9 @@ Each file gets two from one pass over it: a 320 px square for the file list and 
 - File conflict resolution: replace, keep both, or cancel
 
 ### Kanban Boards
-Each `.kanban` file is one board. Drag cards within and between columns (drop anywhere above or below a column), reorder columns, and open a card to edit its labels, due date (highlighted when due or overdue, green once marked done), Markdown description and checklist. Click a card's due date to mark it done; right-click a card, or use its ⋯ button, to open, mark done, move, duplicate or delete it. An open card is in the page's address, so a refresh or a link opens it again. Changes auto-save.
+Each `.kanban` file is one board. Drag cards within and between columns (drop anywhere above or below a column), reorder columns, and open a card to edit its labels, due date (highlighted when due or overdue, green once marked done), Markdown description, attachments and checklist. Click a card's due date to mark it done; right-click a card, or use its ⋯ button, to open, mark done, move, duplicate or delete it. An open card is in the page's address, so a refresh or a link opens it again. Changes auto-save.
+
+Attach files to a card by uploading them (or dropping them on the open card) or by choosing files you already have. Uploads go into a folder next to the board, named after it (`Roadmap.kanban` → `Roadmap files/`), made by the first upload. Click an attachment to open it; Back returns to the card. A card's first attached image is shown as its cover on the board. Removing an attachment, deleting its card or deleting the board leaves the files where they are.
 
 Boards are stored as plain Markdown, so they stay readable and editable in any text editor:
 
@@ -55,6 +57,7 @@ Boards are stored as plain Markdown, so they stay readable and editable in any t
 ## To do
 - Design login page #frontend #urgent @2026-11-01
   Needs a dark mode variant.
+  @file Roadmap files/mockup.png
   - [x] wireframe
   - [ ] build component
 
@@ -65,7 +68,7 @@ Boards are stored as plain Markdown, so they stay readable and editable in any t
 ## Done
 ```
 
-`## ` starts a column and `- ` starts a card. Trailing `#labels` (must start with a letter) and an `@YYYY-MM-DD` due date sit on the card's line, with `@done` once the due date is marked done. Indented lines belong to the card: `- [ ]` / `- [x]` are checklist items, everything else is its description.
+`## ` starts a column and `- ` starts a card. Trailing `#labels` (must start with a letter) and an `@YYYY-MM-DD` due date sit on the card's line, with `@done` once the due date is marked done. Indented lines belong to the card: `- [ ]` / `- [x]` are checklist items, `@file <path>` attaches a file (the path relative to the board's folder, or from your home folder when it starts with `/`), everything else is its description.
 
 ### Disk Usage
 Find out what takes the space in a folder: open **Details** on it and choose **Disk usage**. It opens over the file browser (close it with ×, Escape or a click outside, and you're back where you were). The folder is scanned once (with live progress), then shown largest first, each item with a bar for its share, next to a treemap where each item's area matches its size. Click into folders to dig deeper, or open the **Largest files** tab for the biggest files anywhere in the scan. Sizes are the space taken on disk, as `du` measures it: a file with several hard links is counted once. That's often more than the files' size, since each file takes whole disk blocks (4 KB each, usually); **Details** shows both, as **Size** and **On disk**. Select items to delete them for good, or jump to one in the file browser. Symbolic links aren't followed. The scan is kept for 30 minutes after it was last looked at; **Rescan** measures again.

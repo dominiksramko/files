@@ -10,13 +10,14 @@ afterEach(() => cleanups.splice(0).forEach((cleanup) => cleanup()))
 const cardOf = (line: string) => parseKanban(`## To do\n${line}\n`).columns[0]!.cards[0]!
 
 // Mounts the card; returns the events it sent, in order.
-async function mountCard(card: KanbanCardData) {
+async function mountCard(card: KanbanCardData, coverUrl: string | null = null) {
   const events: unknown[][] = []
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
     render: () => h(KanbanCard, {
       card,
+      coverUrl,
       onOpen: () => events.push(['open']),
       onToggleDueDone: () => events.push(['toggleDueDone']),
       onMenu: (x: number, y: number) => events.push(['menu', x, y]),
@@ -62,5 +63,20 @@ describe('KanbanCard', () => {
     const { events, root } = await mountCard(cardOf('- Ship @2026-11-01'))
     root.querySelector<HTMLElement>('[role="button"] p')!.click()
     expect(events).toEqual([['open']])
+  })
+
+  it('counts its attachments', async () => {
+    const card = cardOf('- Ship\n  @file a.png\n  @file b.pdf')
+    const { root } = await mountCard(card)
+    expect(root.querySelector('[title="2 attached"]')!.textContent!.trim()).toBe('2')
+  })
+
+  it('shows a cover across its top when it has one, and none otherwise', async () => {
+    const { root } = await mountCard(cardOf('- Ship\n  @file a.png'), '/api/v1/files/stream?path=a.png')
+    expect(root.querySelector('[data-card-cover]')!.getAttribute('src')).toBe('/api/v1/files/stream?path=a.png')
+    cleanups.splice(0).forEach((cleanup) => cleanup())
+
+    const { root: plain } = await mountCard(cardOf('- Ship'))
+    expect(plain.querySelector('[data-card-cover]')).toBeNull()
   })
 })

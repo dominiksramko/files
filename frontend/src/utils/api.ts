@@ -245,6 +245,12 @@ export const usage = {
 }
 
 // --- File operations ---
+export interface UploadResult {
+  message: string
+  count: number
+  names: string[]
+}
+
 export const fileops = {
   delete: (paths: string[]) => request<{ message: string }>('DELETE', '/files', { paths }),
 
@@ -285,14 +291,16 @@ export const fileops = {
   compress: (paths: string[], dest: string, format: string, password?: string, protectFilenames?: boolean, conflictMode: ConflictMode = 'error') =>
     request<{ message: string }>('POST', '/files/compress', { paths, dest, format, password, protect_filenames: protectFilenames, conflict_mode: conflictMode }),
 
+  // Resolves with the names the files were saved under, in order (the folder
+  // is created if missing).
   upload: (
     path: string,
     files: File[],
     onProgress?: (loaded: number, total: number) => void,
     conflictMode: ConflictMode = 'error',
-  ): { promise: Promise<{ message: string; count: number }>; abort: () => void } => {
+  ): { promise: Promise<UploadResult>; abort: () => void } => {
     let xhr: XMLHttpRequest
-    const promise = new Promise<{ message: string; count: number }>((resolve, reject) => {
+    const promise = new Promise<UploadResult>((resolve, reject) => {
       const form = new FormData()
       files.forEach((f, i) => {
         form.append('files', f)

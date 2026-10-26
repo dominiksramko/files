@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { droppedFiles } from '../drop'
+import { droppedFiles, leftOutFoldersMessage } from '../drop'
 
 function fileItem(name: string, isDirectory = false): DataTransferItem {
   const file = new File(['content'], name)
@@ -30,5 +30,13 @@ describe('droppedFiles', () => {
   it('takes every file where entries are not available', () => {
     const item = { kind: 'file', type: '', getAsFile: () => new File([''], 'a.txt') } as unknown as DataTransferItem
     expect(droppedFiles(transfer(item))).toEqual({ files: [expect.any(File)], folders: [] })
+  })
+})
+
+describe('leftOutFoldersMessage', () => {
+  it('names a single folder, counts several, and says nothing for none', () => {
+    expect(leftOutFoldersMessage(['photos'])).toBe(`"photos" was left out: folders can't be uploaded`)
+    expect(leftOutFoldersMessage(['a', 'b'])).toBe(`2 folders were left out: folders can't be uploaded`)
+    expect(leftOutFoldersMessage([])).toBeNull()
   })
 })

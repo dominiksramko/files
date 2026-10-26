@@ -33,8 +33,11 @@ export function archivePath(name: string): string {
 // on each call, 35 times slower over a large archive.
 const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-// Folders first, then by name, numbers in order (2 before 10).
-export function compareArchiveItems(first: ArchiveItem, second: ArchiveItem): number {
+// Folders first, then by name, numbers in order (2 before 10): an archive's
+// items, or the entries of a folder listing.
+type FolderItem = Pick<ArchiveItem, 'name' | 'is_dir'>
+
+export function compareFolderItems(first: FolderItem, second: FolderItem): number {
   if (first.is_dir !== second.is_dir) return first.is_dir ? -1 : 1
   return nameCollator.compare(first.name, second.name)
 }
@@ -81,7 +84,7 @@ export function archiveTree(entries: ArchiveEntry[]): ArchiveTree {
     if (!folders.has(parent)) folders.set(parent, [])
     folders.get(parent)!.push(item)
   }
-  for (const contents of folders.values()) contents.sort(compareArchiveItems)
+  for (const contents of folders.values()) contents.sort(compareFolderItems)
   return { items, folders, encrypted: items.some((item) => item.encrypted) }
 }
 
@@ -91,7 +94,7 @@ export function searchArchive(items: ArchiveItem[], folder: string, query: strin
   if (!needle) return []
   return items
     .filter((item) => item.path !== folder && isWithin(folder, item.path) && item.name.toLowerCase().includes(needle))
-    .sort((first, second) => compareArchiveItems(first, second) || nameCollator.compare(first.path, second.path))
+    .sort((first, second) => compareFolderItems(first, second) || nameCollator.compare(first.path, second.path))
 }
 
 // What the archive modal shows: the archive at path (in the user's folder) and

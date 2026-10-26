@@ -1,6 +1,10 @@
 import type { LocationQuery } from 'vue-router'
 import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
+import type { FileEntry } from '@/types'
+import { files as filesApi } from '@/utils/api'
+import { fileCategory } from '@/utils/formatters'
 import { adoptIds } from '@/utils/merge'
+import { nameOf, parentOf, relativePath, resolvePath } from '@/utils/paths'
 import { queryString, withKeys } from '@/utils/query'
 
 // .kanban boards are Markdown, so they stay readable and editable by hand:
@@ -8,14 +12,16 @@ import { queryString, withKeys } from '@/utils/query'
 //   ## To do
 //   - Design login page #frontend @2026-11-01
 //     Needs a dark mode variant.
+//     @file Roadmap files/mockup.png
 //     - [x] wireframe
 //     - [ ] build component
 //
 // "## " starts a column and an unindented "- " starts a card. Trailing #labels
 // and an @YYYY-MM-DD due date (with @done once it's done) are lifted off the
-// card's title line. Indented
-// lines belong to the card: "- [ ]" / "- [x]" are checklist items, anything
-// else is the card's Markdown description. Nothing in a hand-edited file is
+// card's title line. Indented lines belong to the card: "- [ ]" / "- [x]" are
+// checklist items, "@file <path>" attaches a file (the path relative to the
+// board's folder, see resolveAttachment), anything else is the card's Markdown
+// description. Nothing in a hand-edited file is
 // dropped: text before the first column is kept as a preamble, and a stray
 // line inside a column becomes a card.
 
@@ -32,6 +38,7 @@ export interface KanbanCard {
   labels: string[]
   due: string | null // YYYY-MM-DD
   dueDone: boolean // the due date is marked done: "@done" on the title line
+  attachments: string[] // links to files, as written after "@file"
   checklist: KanbanChecklistItem[]
 }
 
@@ -54,7 +61,7 @@ export function makeChecklistItem(text: string, done = false): KanbanChecklistIt
 }
 
 export function makeCard(title: string): KanbanCard {
-  return { id: nextId++, title, description: '', labels: [], due: null, dueDone: false, checklist: [] }
+  return { id: nextId++, title, description: '', labels: [], due: null, dueDone: false, attachments: [], checklist: [] }
 }
 
 export function makeColumn(title: string): KanbanColumn {
@@ -124,6 +131,7 @@ const COLUMN_RE = /^##(?:\s+(.*))?$/
 const CARD_RE = /^[-*](?:\s+(.*))?$/
 const INDENTED_RE = /^(?: {2}|\t)(.*)$/
 const CHECKLIST_RE = /^[-*]\s+\[([ xX])\](?:\s(.*))?$/
+const ATTACHMENT_RE = /^@file\s+(\S.*)$/
 const TRAILING_META_RE = new RegExp(`(?:^|\\s+)(#${LABEL_PATTERN}|@\\d{4}-\\d{2}-\\d{2}|@done)$`, 'u')
 
 function parseTitleLine(text: string): Pick<KanbanCard, 'title' | 'labels' | 'due' | 'dueDone'> {
@@ -193,10 +201,65 @@ export function duplicateCard(board: KanbanBoard, cardId: number): KanbanCard | 
     ...card,
     id: nextId++,
     labels: [...card.labels],
+    attachments: [...card.attachments],
     checklist: card.checklist.map((item) => makeChecklistItem(item.text, item.done)),
   }
   column.cards.splice(column.cards.indexOf(card) + 1, 0, duplicate)
   return duplicate
+}
+
+// ── Attachments ──────────────────────────────────────────────────────────────
+// A card links files anywhere in the user's folder, relative to the board's
+// folder. Uploads go into a folder next to the board named after it
+// ("Roadmap.kanban" → "Roadmap files"), made by the first upload. Removing an
+// attachment, deleting its card or the board leaves the file where it is.
+
+// Where uploads for the board at boardPath go.
+export function attachmentFolder(boardPath: string): string {
+  const stem = nameOf(boardPath).replace(/\.kanban$/i, '') || 'Board'
+  return [parentOf(boardPath), `${stem} files`].filter(Boolean).join('/')
+}
+
+// The file an attachment link leads to; null when it can't lead anywhere.
+export function resolveAttachment(boardPath: string, link: string): string | null {
+  return resolvePath(parentOf(boardPath), link)
+}
+
+// How the board at boardPath links the file at path.
+export function attachmentLink(boardPath: string, path: string): string {
+  return relativePath(parentOf(boardPath), path)
+}
+
+// Attaches the files at paths to the card, each once.
+export function addAttachments(card: KanbanCard, boardPath: string, paths: string[]) {
+  const attached = new Set(card.attachments.map((link) => resolveAttachment(boardPath, link)))
+  for (const path of paths) {
+    if (attached.has(path)) continue
+    attached.add(path)
+    card.attachments.push(attachmentLink(boardPath, path))
+  }
+}
+
+// The card's first attached image, shown as its cover; entryFor gives a
+// file's details (null while unknown or when it's missing).
+export function cardCover(
+  card: KanbanCard,
+  boardPath: string,
+  entryFor: (path: string) => FileEntry | null | undefined,
+): FileEntry | null {
+  for (const link of card.attachments) {
+    const path = resolveAttachment(boardPath, link)
+    const entry = path === null ? null : entryFor(path)
+    if (entry && !entry.is_dir && fileCategory(entry.mime, entry.name) === 'image') return entry
+  }
+  return null
+}
+
+// An attached image to show small: its thumbnail once one is ready, else the file.
+export function attachmentImageUrl(entry: FileEntry): string {
+  return entry.has_thumb && entry.thumb_hash
+    ? filesApi.previewThumbUrl(entry.path, entry.thumb_hash)
+    : filesApi.streamUrl(entry.path, entry.mod_time)
 }
 
 // ── Card menu (right-click or ⋯ on a card) ───────────────────────────────────
@@ -321,8 +384,11 @@ export function parseKanban(content: string): KanbanBoard {
     if (indentedMatch && card) {
       const body = indentedMatch[1]!
       const checklistMatch = CHECKLIST_RE.exec(body)
+      const attachmentMatch = ATTACHMENT_RE.exec(body)
       if (checklistMatch) {
         card.checklist.push(makeChecklistItem((checklistMatch[2] ?? '').trim(), checklistMatch[1] !== ' '))
+      } else if (attachmentMatch) {
+        card.attachments.push(attachmentMatch[1]!.trimEnd())
       } else {
         // Blank lines only matter between description lines (paragraph breaks).
         if (descriptionLines.length) descriptionLines.push(...Array<string>(pendingBlankLines).fill(''))
@@ -365,11 +431,13 @@ function serializeCard(card: KanbanCard): string[] {
     ? description.split('\n').map((line) => (line.trim() ? `  ${line.trimEnd()}` : ''))
     : []
 
+  const attachmentLines = card.attachments.map((link) => `  @file ${singleLine(link)}`)
+
   const checklistLines = card.checklist.map((item) =>
     `  - [${item.done ? 'x' : ' '}] ${singleLine(item.text)}`.trimEnd(),
   )
 
-  return [titleLine, ...descriptionLines, ...checklistLines]
+  return [titleLine, ...descriptionLines, ...attachmentLines, ...checklistLines]
 }
 
 export function serializeKanban(board: KanbanBoard): string {

@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { dueStatus, formatDue, labelColor, type KanbanCard } from '@/utils/kanban'
 import AppIcon from '@/components/ui/AppIcon.vue'
 
-const props = defineProps<{ card: KanbanCard }>()
+// coverUrl: an attached image shown across the top of the card.
+const props = defineProps<{ card: KanbanCard; coverUrl?: string | null }>()
 
 const emit = defineEmits<{
   open: []
@@ -14,7 +15,9 @@ const emit = defineEmits<{
 
 const checklistDone = computed(() => props.card.checklist.filter((item) => item.done).length)
 const hasDescription = computed(() => props.card.description.trim() !== '')
-const hasBadges = computed(() => props.card.due || hasDescription.value || props.card.checklist.length)
+const hasBadges = computed(() =>
+  props.card.due || hasDescription.value || props.card.attachments.length || props.card.checklist.length,
+)
 
 const dueClass = computed(() => {
   if (!props.card.due) return ''
@@ -43,7 +46,8 @@ function openMenuBelow(event: MouseEvent) {
   >
     <button
       type="button"
-      class="absolute right-1 top-1 rounded p-1 text-zinc-500 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100"
+      class="absolute right-1 top-1 z-10 rounded p-1 transition-all hover:bg-zinc-700 hover:text-zinc-200 focus-visible:opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100"
+      :class="coverUrl ? 'bg-zinc-900/70 text-zinc-200' : 'text-zinc-500'"
       title="Card actions"
       aria-label="Card actions"
       @click.stop="openMenuBelow"
@@ -51,6 +55,16 @@ function openMenuBelow(event: MouseEvent) {
     >
       <AppIcon name="ellipsis" class="size-4" />
     </button>
+
+    <img
+      v-if="coverUrl"
+      :src="coverUrl"
+      alt=""
+      loading="lazy"
+      draggable="false"
+      class="-ml-3 -mr-7 -mt-2 mb-2 block h-32 w-[calc(100%+2.5rem)] max-w-none rounded-t-lg object-cover"
+      data-card-cover
+    />
 
     <div v-if="card.labels.length" class="mb-1.5 flex flex-wrap gap-1">
       <span
@@ -80,6 +94,10 @@ function openMenuBelow(event: MouseEvent) {
       </button>
       <span v-if="hasDescription" title="Has a description">
         <AppIcon name="alignLeft" class="size-3.5" />
+      </span>
+      <span v-if="card.attachments.length" class="flex items-center gap-1" :title="`${card.attachments.length} attached`">
+        <AppIcon name="paperclip" class="size-3.5" />
+        {{ card.attachments.length }}
       </span>
       <span
         v-if="card.checklist.length"

@@ -6,7 +6,8 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import KanbanCard from '@/components/files/KanbanCard.vue'
 
-defineProps<{ dropTarget?: boolean }>()
+// coverFor: the image shown at the top of a card (its first attached image), if any.
+defineProps<{ dropTarget?: boolean; coverFor?: (card: KanbanCardData) => string | null }>()
 
 const title = defineModel<string>('title', { required: true })
 const cards = defineModel<KanbanCardData[]>('cards', { required: true })
@@ -135,6 +136,7 @@ defineExpose({ focusTitle })
           v-for="card in cards"
           :key="card.id"
           :card="card"
+          :cover-url="coverFor?.(card) ?? null"
           @open="emit('openCard', card)"
           @toggle-due-done="emit('toggleDueDone', card)"
           @menu="(x, y) => emit('cardMenu', card, x, y)"

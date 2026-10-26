@@ -26,7 +26,17 @@ export function useConflictDialog() {
   // 'error' first; on a conflict, asks how to resolve it and runs it again
   // with the choice. Resolves with the operation's result, or null when the
   // user cancels. Other errors are passed on.
-  async function runWithConflictPrompt<T>(dialogTitle: string, run: (mode: ConflictMode) => Promise<T>): Promise<T | null> {
+  // knownConflicts: names already known to be taken (from a listing): asks
+  // before running at all, so a large upload isn't sent just to be refused.
+  async function runWithConflictPrompt<T>(
+    dialogTitle: string,
+    run: (mode: ConflictMode) => Promise<T>,
+    knownConflicts: string[] = [],
+  ): Promise<T | null> {
+    if (knownConflicts.length) {
+      const choice = await prompt(dialogTitle, knownConflicts)
+      return choice ? run(choice) : null
+    }
     try {
       return await run('error')
     } catch (err) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ArchiveEntry } from '@/types'
-import { archivePath, archiveStateFrom, archiveTree, searchArchive, withArchiveState } from '@/utils/archiveTree'
+import { archivePath, archiveStateFrom, archiveTree, compareFolderItems, searchArchive, withArchiveState } from '@/utils/archiveTree'
 
 const file = (name: string, size: number, encrypted = false): ArchiveEntry => ({ name, size, is_dir: false, encrypted })
 const dir = (name: string): ArchiveEntry => ({ name, size: 0, is_dir: true })
@@ -114,5 +114,18 @@ describe('archive state in the URL', () => {
   it('reads back what it writes', () => {
     const state = { path: 'a.zip', at: 'WTF/Ann' }
     expect(archiveStateFrom(withArchiveState({ path: 'x' }, state))).toEqual(state)
+  })
+})
+
+describe('compareFolderItems', () => {
+  it('puts folders first, then names in order, numbers by value, whatever the case', () => {
+    const items = [
+      { name: 'b.txt', is_dir: false },
+      { name: 'Photos', is_dir: true },
+      { name: 'a10.png', is_dir: false },
+      { name: 'A2.png', is_dir: false },
+      { name: 'docs', is_dir: true },
+    ]
+    expect(items.sort(compareFolderItems).map((item) => item.name)).toEqual(['docs', 'Photos', 'A2.png', 'a10.png', 'b.txt'])
   })
 })

@@ -28,7 +28,7 @@ import AppDropdown from '@/components/ui/AppDropdown.vue'
 import { useConflictDialog } from '@/composables/useConflictDialog'
 import { useArchiveExtract } from '@/composables/useArchiveExtract'
 import { isTypingTarget } from '@/utils/keyboard'
-import { droppedFiles } from '@/utils/drop'
+import { droppedFiles, leftOutFoldersMessage } from '@/utils/drop'
 import { useJobSelection } from '@/composables/useJobSelection'
 import { useFileOps } from '@/composables/useFileOps'
 import { useHeaderCenter } from '@/composables/useHeaderCenter'
@@ -44,7 +44,7 @@ import SecretInput from '@/components/ui/SecretInput.vue'
 const filesStore = useFilesStore()
 const route = useRoute()
 const router = useRouter()
-const { prompt: promptConflict, runWithConflictPrompt } = useConflictDialog()
+const { runWithConflictPrompt } = useConflictDialog()
 const { extractArchive, passwordPrompt: extractPasswordPrompt } = useArchiveExtract()
 const { show: showToast } = useToast()
 
@@ -511,16 +511,8 @@ async function handleFileInput(e: Event) {
 // checks again, in case the folder changed since.
 async function uploadFiles(files: File[]) {
   try {
-    const known = detectConflicts(files)
-    let uploaded
-    if (known.length > 0) {
-      const choice = await promptConflict('Upload conflicts', known)
-      if (!choice) return
-      uploaded = await performUpload(files, choice)
-    } else {
-      uploaded = await runWithConflictPrompt('Upload conflicts', (conflictMode) => performUpload(files, conflictMode))
-      if (uploaded === null) return
-    }
+    const uploaded = await runWithConflictPrompt('Upload conflicts', (conflictMode) => performUpload(files, conflictMode), detectConflicts(files))
+    if (uploaded === null) return
     showToast(`Uploaded ${uploaded.count} file${uploaded.count !== 1 ? 's' : ''}`, 'success')
   } catch (err) {
     if ((err as Error).message !== 'cancelled') showToast((err as Error).message, 'error')
@@ -564,10 +556,8 @@ async function onDrop(e: DragEvent) {
   dragCounter.value = 0
   if (!e.dataTransfer?.types.includes('Files')) return
   const { files, folders } = droppedFiles(e.dataTransfer)
-  if (folders.length) {
-    const skipped = folders.length === 1 ? `"${folders[0]}" was` : `${folders.length} folders were`
-    showToast(`${skipped} left out: folders can't be uploaded`, 'info')
-  }
+  const leftOut = leftOutFoldersMessage(folders)
+  if (leftOut) showToast(leftOut, 'info')
   if (files.length) await uploadFiles(files)
 }
 
