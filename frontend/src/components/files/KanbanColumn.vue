@@ -14,6 +14,8 @@ const cards = defineModel<KanbanCardData[]>('cards', { required: true })
 const emit = defineEmits<{
   remove: []
   openCard: [card: KanbanCardData]
+  toggleDueDone: [card: KanbanCardData]
+  cardMenu: [card: KanbanCardData, x: number, y: number]
   // A card drag started here / the dragged card moved into this column / the drag ended.
   cardDragStart: []
   cardDragEnter: []
@@ -129,7 +131,14 @@ defineExpose({ focusTitle })
         @change="emit('cardDragEnter')"
         @end="emit('cardDragEnd')"
       >
-        <KanbanCard v-for="card in cards" :key="card.id" :card="card" @open="emit('openCard', card)" />
+        <KanbanCard
+          v-for="card in cards"
+          :key="card.id"
+          :card="card"
+          @open="emit('openCard', card)"
+          @toggle-due-done="emit('toggleDueDone', card)"
+          @menu="(x, y) => emit('cardMenu', card, x, y)"
+        />
       </VueDraggable>
     </div>
 

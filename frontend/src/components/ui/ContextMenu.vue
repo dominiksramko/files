@@ -29,8 +29,11 @@ function onMousedown(e: MouseEvent) {
   }
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
+// Marked handled, so a preview or modal under the menu doesn't close too.
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  event.preventDefault()
+  emit('close')
 }
 
 onMounted(async () => {

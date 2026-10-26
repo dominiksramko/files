@@ -1,4 +1,5 @@
 import type { LocationQuery } from 'vue-router'
+import type { ContextMenuItem } from '@/components/ui/ContextMenu.vue'
 import { adoptIds } from '@/utils/merge'
 import { queryString, withKeys } from '@/utils/query'
 
@@ -11,7 +12,8 @@ import { queryString, withKeys } from '@/utils/query'
 //     - [ ] build component
 //
 // "## " starts a column and an unindented "- " starts a card. Trailing #labels
-// and an @YYYY-MM-DD due date are lifted off the card's title line. Indented
+// and an @YYYY-MM-DD due date (with @done once it's done) are lifted off the
+// card's title line. Indented
 // lines belong to the card: "- [ ]" / "- [x]" are checklist items, anything
 // else is the card's Markdown description. Nothing in a hand-edited file is
 // dropped: text before the first column is kept as a preamble, and a stray
@@ -29,6 +31,7 @@ export interface KanbanCard {
   description: string
   labels: string[]
   due: string | null // YYYY-MM-DD
+  dueDone: boolean // the due date is marked done: "@done" on the title line
   checklist: KanbanChecklistItem[]
 }
 
@@ -51,7 +54,7 @@ export function makeChecklistItem(text: string, done = false): KanbanChecklistIt
 }
 
 export function makeCard(title: string): KanbanCard {
-  return { id: nextId++, title, description: '', labels: [], due: null, checklist: [] }
+  return { id: nextId++, title, description: '', labels: [], due: null, dueDone: false, checklist: [] }
 }
 
 export function makeColumn(title: string): KanbanColumn {
@@ -99,7 +102,9 @@ function todayIso(): string {
   return `${now.getFullYear()}-${month}-${day}`
 }
 
-export function dueStatus(due: string): 'overdue' | 'today' | 'upcoming' {
+// A due date marked done is done whenever it was, never overdue.
+export function dueStatus(due: string, done = false): 'done' | 'overdue' | 'today' | 'upcoming' {
+  if (done) return 'done'
   const today = todayIso()
   return due < today ? 'overdue' : due === today ? 'today' : 'upcoming'
 }
@@ -119,15 +124,19 @@ const COLUMN_RE = /^##(?:\s+(.*))?$/
 const CARD_RE = /^[-*](?:\s+(.*))?$/
 const INDENTED_RE = /^(?: {2}|\t)(.*)$/
 const CHECKLIST_RE = /^[-*]\s+\[([ xX])\](?:\s(.*))?$/
-const TRAILING_META_RE = new RegExp(`(?:^|\\s+)(#${LABEL_PATTERN}|@\\d{4}-\\d{2}-\\d{2})$`, 'u')
+const TRAILING_META_RE = new RegExp(`(?:^|\\s+)(#${LABEL_PATTERN}|@\\d{4}-\\d{2}-\\d{2}|@done)$`, 'u')
 
-function parseTitleLine(text: string): Pick<KanbanCard, 'title' | 'labels' | 'due'> {
+function parseTitleLine(text: string): Pick<KanbanCard, 'title' | 'labels' | 'due' | 'dueDone'> {
   let title = text.trim()
   const labels: string[] = []
   let due: string | null = null
+  let dueDone = false
   for (let match = TRAILING_META_RE.exec(title); match; match = TRAILING_META_RE.exec(title)) {
     const token = match[1]!
-    if (token.startsWith('@')) {
+    if (token === '@done') {
+      if (dueDone) break // a second one stays part of the title
+      dueDone = true
+    } else if (token.startsWith('@')) {
       if (due !== null) break // a second date stays part of the title
       due = token.slice(1)
     } else {
@@ -135,7 +144,7 @@ function parseTitleLine(text: string): Pick<KanbanCard, 'title' | 'labels' | 'du
     }
     title = title.slice(0, match.index).trimEnd()
   }
-  return { title, labels, due }
+  return { title, labels, due, dueDone }
 }
 
 // Keeps columns, cards and checklist items that survive a reload or merge on
@@ -148,6 +157,80 @@ export function adoptBoardIds(previous: KanbanBoard, next: KanbanBoard) {
     (card) => card.title,
     (previousCard, nextCard) => adoptIds(previousCard.checklist, nextCard.checklist, (item) => item.text),
   )
+}
+
+// ── Board edits (shared by the card editor and the card menu) ────────────────
+export const columnName = (column: KanbanColumn) => column.title || 'Untitled column'
+
+export function findCardWithColumn(board: KanbanBoard, cardId: number): { card: KanbanCard; column: KanbanColumn } | null {
+  for (const column of board.columns) {
+    const card = column.cards.find((candidate) => candidate.id === cardId)
+    if (card) return { card, column }
+  }
+  return null
+}
+
+export function removeCard(board: KanbanBoard, cardId: number) {
+  const found = findCardWithColumn(board, cardId)
+  if (found) found.column.cards = found.column.cards.filter((card) => card.id !== cardId)
+}
+
+// Moves the card to the end of another column; nothing happens within its own.
+export function moveCard(board: KanbanBoard, cardId: number, targetColumnId: number) {
+  const found = findCardWithColumn(board, cardId)
+  const target = board.columns.find((column) => column.id === targetColumnId)
+  if (!found || !target || found.column === target) return
+  found.column.cards = found.column.cards.filter((card) => card.id !== cardId)
+  target.cards.push(found.card)
+}
+
+// Puts a duplicate of the card right below it and returns it (new ids, nothing shared).
+export function duplicateCard(board: KanbanBoard, cardId: number): KanbanCard | null {
+  const found = findCardWithColumn(board, cardId)
+  if (!found) return null
+  const { card, column } = found
+  const duplicate: KanbanCard = {
+    ...card,
+    id: nextId++,
+    labels: [...card.labels],
+    checklist: card.checklist.map((item) => makeChecklistItem(item.text, item.done)),
+  }
+  column.cards.splice(column.cards.indexOf(card) + 1, 0, duplicate)
+  return duplicate
+}
+
+// ── Card menu (right-click or ⋯ on a card) ───────────────────────────────────
+export interface CardMenuActions {
+  open: (card: KanbanCard) => void
+  toggleDueDone: (card: KanbanCard) => void
+  moveTo: (card: KanbanCard, columnId: number) => void
+  duplicate: (card: KanbanCard) => void
+  delete: (card: KanbanCard) => void
+}
+
+// Open; Mark done / not done when the card has a due date; Move to each other
+// column; Duplicate; Delete. Empty when the card isn't on the board (any more).
+export function buildCardMenu(board: KanbanBoard, cardId: number, actions: CardMenuActions): ContextMenuItem[] {
+  const found = findCardWithColumn(board, cardId)
+  if (!found) return []
+  const { card, column } = found
+  const otherColumns = board.columns.filter((other) => other !== column)
+  const items: ContextMenuItem[] = [{ label: 'Open', icon: 'pencilSquare', action: () => actions.open(card) }]
+  if (card.due) {
+    items.push({ label: card.dueDone ? 'Mark not done' : 'Mark done', icon: 'checkCircle', action: () => actions.toggleDueDone(card) })
+  }
+  if (otherColumns.length) {
+    items.push({ separator: true })
+    for (const other of otherColumns) {
+      items.push({ label: `Move to ${columnName(other)}`, icon: 'arrowRight', action: () => actions.moveTo(card, other.id) })
+    }
+  }
+  items.push(
+    { separator: true },
+    { label: 'Duplicate', icon: 'copy', action: () => actions.duplicate(card) },
+    { label: 'Delete', icon: 'trash', danger: true, action: () => actions.delete(card) },
+  )
+  return items
 }
 
 // ── The open card in the URL ─────────────────────────────────────────────────
@@ -273,6 +356,7 @@ function serializeCard(card: KanbanCard): string[] {
     singleLine(card.title),
     ...card.labels.map((label) => `#${label}`),
     card.due ? `@${card.due}` : '',
+    card.dueDone ? '@done' : '',
   ].filter(Boolean).join(' ')
 
   // Drop leading/trailing blank lines but keep indentation inside the description.

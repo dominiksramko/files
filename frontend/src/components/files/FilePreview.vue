@@ -244,6 +244,8 @@ function onCarouselWheel(e: WheelEvent) {
 // --- Keyboard ---
 function onKey(e: KeyboardEvent) {
   if (!props.entry) return
+  // Already handled by something over the preview (Escape closing a menu).
+  if (e.defaultPrevented) return
   if (isTypingTarget(e.target)) return
   // A dialog opened over the preview (delete, rename, a kanban card) owns the keyboard.
   if (isModalOpen()) return

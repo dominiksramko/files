@@ -6,6 +6,7 @@ import { useToast } from '@/composables/useToast'
 import { makeChecklistItem, labelColor, normalizeLabel, type KanbanChecklistItem } from '@/utils/kanban'
 import { renderMarkdown } from '@/utils/markdown'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppCheckbox from '@/components/ui/AppCheckbox.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
@@ -17,6 +18,7 @@ const title       = defineModel<string>('title', { required: true })
 const description = defineModel<string>('description', { required: true })
 const labels      = defineModel<string[]>('labels', { required: true })
 const due         = defineModel<string | null>('due', { required: true })
+const dueDone     = defineModel<boolean>('dueDone', { required: true })
 const checklist   = defineModel<KanbanChecklistItem[]>('checklist', { required: true })
 
 const props = defineProps<{
@@ -34,6 +36,12 @@ const emit = defineEmits<{
 }>()
 
 const { show: showToast } = useToast()
+
+// ── Due date: clearing it clears "done" too, so no stray @done stays in the file ──
+function setDue(value: string | null) {
+  due.value = value
+  if (!value) dueDone.value = false
+}
 
 // ── Labels ───────────────────────────────────────────────────────────────────
 const labelDraft = ref('')
@@ -141,17 +149,21 @@ function onMoveSelect(columnId: string | number) {
               type="date"
               :value="due ?? ''"
               class="rounded-lg border border-transparent bg-zinc-800 px-2.5 py-1 text-xs text-zinc-100 [color-scheme:dark] focus:border-zinc-600 focus:outline-none"
-              @change="due = ($event.target as HTMLInputElement).value || null"
+              @change="setDue(($event.target as HTMLInputElement).value || null)"
             />
             <button
               v-if="due"
               type="button"
               class="rounded p-1 text-zinc-500 transition-colors hover:text-zinc-200"
               title="Clear due date"
-              @click="due = null"
+              @click="setDue(null)"
             >
               <AppIcon name="x" class="size-3.5" />
             </button>
+            <label v-if="due" class="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-zinc-300">
+              <AppCheckbox v-model="dueDone" />
+              Done
+            </label>
           </div>
         </div>
       </div>

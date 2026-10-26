@@ -102,3 +102,33 @@ describe('FilePreview', () => {
     expect(shown.value).toBeNull()
   })
 })
+
+describe('FilePreview and Escape', () => {
+  async function mountPreview() {
+    const closes: number[] = []
+    const root = document.createElement('div')
+    document.body.append(root)
+    const app = createApp({
+      render: () => h(FilePreview, { entry, hasPrev: false, hasNext: false, index: 0, total: 1, onClose: () => closes.push(1) }),
+    })
+    app.mount(root)
+    cleanups.push(() => { app.unmount(); root.remove() })
+    await nextTick()
+    return closes
+  }
+  const escape = () => new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+
+  it('closes on Escape', async () => {
+    const closes = await mountPreview()
+    window.dispatchEvent(escape())
+    expect(closes).toHaveLength(1)
+  })
+
+  it('stays open when something over it already handled the Escape (a menu closing)', async () => {
+    const closes = await mountPreview()
+    const handled = escape()
+    handled.preventDefault()
+    window.dispatchEvent(handled)
+    expect(closes).toHaveLength(0)
+  })
+})

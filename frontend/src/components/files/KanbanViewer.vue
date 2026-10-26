@@ -7,14 +7,23 @@ import { useEditableFile } from '@/composables/useFileContent'
 import { dragOverNearestList } from '@/utils/sortable'
 import {
   adoptBoardIds,
+  buildCardMenu,
+  columnName,
+  duplicateCard,
   DEFAULT_COLUMNS,
+  findCardWithColumn,
   makeColumn,
+  moveCard,
   parseKanban,
+  removeCard,
   serializeKanban,
   type KanbanBoard,
   type KanbanCard,
 } from '@/utils/kanban'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppDialog from '@/components/ui/AppDialog.vue'
 import AppIcon from '@/components/ui/AppIcon.vue'
+import ContextMenu from '@/components/ui/ContextMenu.vue'
 import EditableFileState from '@/components/files/EditableFileState.vue'
 import KanbanCardModal from '@/components/files/KanbanCardModal.vue'
 import KanbanColumn from '@/components/files/KanbanColumn.vue'
@@ -102,16 +111,12 @@ const openedCardId = ref<number | null>(null)
 
 // The opened card and the column it currently sits in (it may have been dragged
 // or moved since it was opened); null once the card is gone.
-const openedCard = computed(() => {
-  for (const column of board.value.columns) {
-    const card = column.cards.find((candidate) => candidate.id === openedCardId.value)
-    if (card) return { card, column }
-  }
-  return null
-})
+const openedCard = computed(() =>
+  openedCardId.value === null ? null : findCardWithColumn(board.value, openedCardId.value),
+)
 
 const columnOptions = computed(() =>
-  board.value.columns.map((column) => ({ label: column.title || 'Untitled column', value: column.id })),
+  board.value.columns.map((column) => ({ label: columnName(column), value: column.id })),
 )
 
 function openCard(card: KanbanCard) {
@@ -121,18 +126,49 @@ function openCard(card: KanbanCard) {
 useCardInUrl({ board, openedCardId, active: () => props.active === true, loaded: boardLoaded })
 
 function deleteOpenedCard() {
-  const opened = openedCard.value
-  if (!opened) return
-  opened.column.cards = opened.column.cards.filter((card) => card.id !== opened.card.id)
+  if (openedCardId.value === null) return
+  removeCard(board.value, openedCardId.value)
   openedCardId.value = null
 }
 
 function moveOpenedCard(targetColumnId: number) {
-  const opened = openedCard.value
-  const target = board.value.columns.find((column) => column.id === targetColumnId)
-  if (!opened || !target) return
-  opened.column.cards = opened.column.cards.filter((card) => card.id !== opened.card.id)
-  target.cards.push(opened.card)
+  if (openedCardId.value !== null) moveCard(board.value, openedCardId.value, targetColumnId)
+}
+
+function toggleDueDone(card: KanbanCard) {
+  card.dueDone = !card.dueDone
+}
+
+// ── Card menu (right-click or ⋯ on a card) ───────────────────────────────────
+const cardMenu = ref<{ cardId: number; x: number; y: number } | null>(null)
+
+function openCardMenu(card: KanbanCard, x: number, y: number) {
+  cardMenu.value = { cardId: card.id, x, y }
+}
+
+const cardMenuItems = computed(() => {
+  const menu = cardMenu.value
+  if (!menu) return []
+  // Each action closes the menu first.
+  const closing = <Args extends unknown[]>(action: (...args: Args) => void) => (...args: Args) => {
+    cardMenu.value = null
+    action(...args)
+  }
+  return buildCardMenu(board.value, menu.cardId, {
+    open: closing(openCard),
+    toggleDueDone: closing(toggleDueDone),
+    moveTo: closing((card, columnId) => moveCard(board.value, card.id, columnId)),
+    duplicate: closing((card) => { duplicateCard(board.value, card.id) }),
+    delete: closing((card) => { deletingCardId.value = card.id }),
+  })
+})
+
+// Deleting from the menu asks first, as the card editor does (deletes are permanent).
+const deletingCardId = ref<number | null>(null)
+
+function confirmDeleteCard() {
+  if (deletingCardId.value !== null) removeCard(board.value, deletingCardId.value)
+  deletingCardId.value = null
 }
 </script>
 
@@ -175,6 +211,8 @@ function moveOpenedCard(targetColumnId: number) {
               :drop-target="dropColumnId === column.id"
               @remove="removeColumn(column.id)"
               @open-card="openCard"
+              @toggle-due-done="toggleDueDone"
+              @card-menu="openCardMenu"
               @card-drag-start="startCardDrag(column.id)"
               @card-drag-enter="dropColumnId = column.id"
               @card-drag-end="endCardDrag"
@@ -199,6 +237,7 @@ function moveOpenedCard(targetColumnId: number) {
       v-model:description="openedCard.card.description"
       v-model:labels="openedCard.card.labels"
       v-model:due="openedCard.card.due"
+      v-model:due-done="openedCard.card.dueDone"
       v-model:checklist="openedCard.card.checklist"
       :column-id="openedCard.column.id"
       :column-title="openedCard.column.title"
@@ -209,5 +248,25 @@ function moveOpenedCard(targetColumnId: number) {
       @delete="deleteOpenedCard"
       @move="moveOpenedCard"
     />
+
+    <!-- On <body>: the preview's carousel is moved with a transform, which
+         would put fixed elements inside it away from where they belong. -->
+    <Teleport to="body">
+      <ContextMenu
+        v-if="cardMenu && cardMenuItems.length"
+        :x="cardMenu.x"
+        :y="cardMenu.y"
+        :items="cardMenuItems"
+        @close="cardMenu = null"
+      />
+      <AppDialog :open="deletingCardId !== null" @close="deletingCardId = null">
+        <h3 class="mb-3 text-sm font-semibold text-zinc-100">Delete this card?</h3>
+        <p class="text-xs text-zinc-400">It can't be brought back.</p>
+        <template #actions>
+          <AppButton @click="deletingCardId = null">Cancel</AppButton>
+          <AppButton variant="destructive" @click="confirmDeleteCard">Delete</AppButton>
+        </template>
+      </AppDialog>
+    </Teleport>
   </div>
 </template>
